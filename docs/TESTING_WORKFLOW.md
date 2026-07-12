@@ -37,13 +37,13 @@ py -3 tools/run_benchmark_matrix.py --self-test
 py -3 tools/run_patch_benchmark_matrix.py --self-test
 ```
 
-重复矩阵默认每个 case 使用 1 次 warm-up 和 3 次 measured run，报告 min/median/max 并保留全部 raw result；`--verify-openpyxl` 只验证 median 代表 workbook，Office 仍是独立步骤。当前 validator 应通过 2 个 production Streaming bundle 和 2 个 production Patch bundle；它们都只能支持 manifest 限定的单机 workload 结论，不能泛化到其他机器或数据规模。`office_open="not_run"` 不得写成 Office 已验证。
+重复矩阵默认每个 case 使用 1 次 warm-up 和 3 次 measured run，报告 min/median/max 并保留全部 raw result；`--verify-openpyxl` 只验证 median 代表 workbook，Office 仍是独立步骤。当前 validator 应通过 3 个 production Streaming bundle、3 个 Patch bundle 和 1 个 OpenXLSX reference bundle；它们都只能支持 manifest 限定的单机 workload 结论，不能泛化到其他机器或数据规模。`office_open="not_run"` 不得写成 Office 已验证。
 
 当前 benchmark executable 输出 schema v5。Streaming 必须分列 generation、package close、throughput、body buffer peak/flush count 和 close 后 active temporary file count；Patch 必须分列 direct-range 与 single-pass transform telemetry。历史 schema-v4 artifact 仍可由 summarizer 读取，但新 evidence 不得删除 v5 资源生命周期字段。
 
 Patch 矩阵使用 `run_patch_benchmark_matrix.py` 在独立准备进程生成一次 source fixture，warm-up/measured 进程通过 `--reuse-source` 只测 open → mutation → save，避免 source `WorkbookWriter` 污染 editor process peak working set。`--source-compression-level` 与 `--output-compression-level` 分开记录。Copied/rewritten bytes 来自 ZIP central-directory 的 logical `file_size` / compressed `compress_size`；copy-original entry 必须保持 source/output CRC 与 logical size 一致，copied source/output compressed bytes 分列，不能误写成 raw compressed-byte copy。
 
-OpenXLSX 只在 `windows-nmake-release-reference-benchmark` opt-in preset 下构建。比较必须使用相同机器、cell count、value/string distribution、compression 与 warm-up/measured protocol，并同时报告 output size 与 process peak working set；只允许声明实际覆盖的 workload，不从单一 numeric case 推导总体领先。
+OpenXLSX 只在 `windows-nmake-release-reference-benchmark` opt-in preset 下构建。比较必须使用相同机器、cell count、value/string distribution 与 warm-up/measured protocol，并同时报告 save/compression 设置、output size 与 process peak working set；若双方 public API 无法选择相同 compression，必须明确协议差异，不得伪装为 identical-backend microbenchmark。只允许声明实际覆盖的 workload，不从单一 case 推导总体领先。
 
 ## 文档与静态检查
 

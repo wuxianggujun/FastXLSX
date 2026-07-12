@@ -1,0 +1,44 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-13-windows-msvc-openxlsx-reference",
+  "created_utc": "2026-07-12T21:48:00Z",
+  "git_revision": "f406e861eae51c3f0de7567c2ac0607c711b57ed",
+  "benchmark_kind": "reference-writer",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-reference-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "summary.json",
+      "sha256": "8d24b1b35afcebe70386b5347cf249dfead2a8d137ddf638e41bf10ce634e49d",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "bca948c65255f566fd0788daef227bb3a89b9375ddc60cf92b9a257b2aab818d",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "On this machine and one-million-cell numeric public-API writer workload, FastXLSX Streaming median elapsed time was 1583 ms versus OpenXLSX 0.4.1 workbook API 3180 ms, a 2.01x throughput ratio; median peak working set was 6.87109 MB versus 395.258 MB.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    },
+    {
+      "statement": "On this machine and one-million-cell mixed workload with 20 percent strings, FastXLSX Streaming median elapsed time was 1248 ms versus OpenXLSX 3292 ms, a 2.64x throughput ratio; median peak working set was 6.88672 MB versus 403.957 MB.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    },
+    {
+      "statement": "Numeric output sizes were 3129660 bytes for FastXLSX and 3128643 bytes for OpenXLSX; mixed output sizes were 3413774 and 3337140 bytes. OpenXLSX used document.save() defaults while FastXLSX used explicit DEFLATE level 6, so this is a scoped public-API workload comparison rather than an identical-backend microbenchmark.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    },
+    {
+      "statement": "The OpenXLSX unique-string workload did not complete within 300 seconds. The timeout is retained as exploratory evidence and no OpenXLSX completion time or peak-memory value is inferred.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    }
+  ]
+}

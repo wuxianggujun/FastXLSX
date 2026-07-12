@@ -8,6 +8,7 @@
 - Patch missing-cell upsert、relationship-bearing worksheet 与其他 direct-range 不适用场景改为单次 source-order scan；同一扫描完成 replacement/insertion、dimension、relationship audit 与 telemetry，再以 file ranges + 小型 memory chunk staging 输出。
 - 重复 Patch rewrite 在新事务提交后立即删除已被替代且不再引用的 owned temporary file，提交前失败仍由 RAII 清理新资源并保留旧状态。
 - Benchmark JSON 升级为 schema v5，分列 Streaming generation/package-close/body-buffer/resource-lifecycle 指标，以及 Patch single-pass scan、match/insert、staged bytes 与 transform/commit 指标。
+- 新增 3 个 validated evidence bundle：schema-v5 Streaming、Patch single-pass 与 OpenXLSX 0.4.1 reference。限定在同机 1,000,000-cell numeric/mixed public writer workload，FastXLSX 吞吐约为 OpenXLSX 的 2.01×/2.64×，同时保留输出大小、peak working set、协议差异与非泛化边界。
 
 ## [0.1.0] - 2026-07-13
 

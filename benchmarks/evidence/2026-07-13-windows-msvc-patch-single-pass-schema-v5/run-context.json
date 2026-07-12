@@ -1,0 +1,13 @@
+{
+  "run_context_schema_version": "1",
+  "measured_utc": "2026-07-12T20:50:00Z",
+  "git_revision": "f406e861eae51c3f0de7567c2ac0607c711b57ed",
+  "working_tree": "implementation diff was committed unchanged as git_revision after measurement",
+  "benchmark_build_preset": "windows-nmake-release-benchmark",
+  "command": "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/benchmark-schema-v5-patch --rows 100000 --cols 10 --source-compression-level 6 --output-compression-level 6 --warmup-runs 1 --measured-runs 3 --verify-openpyxl",
+  "protocol": "One production DEFLATE level 6 source fixture; no-op, document-properties, 1,000-cell targeted replace and 1,000-cell targeted upsert; one warm-up followed by three measured runs per case. The run nearest total_editor_ms median is representative and is verified with openpyxl.",
+  "peak_memory_metric": "Windows PROCESS_MEMORY_COUNTERS.PeakWorkingSetSize for each benchmark process; source fixture generation is outside measured reused-source cases",
+  "byte_accounting_metric": "ZIP central-directory logical file_size and compressed compress_size. Copy-original requires equal CRC and logical size but does not claim raw compressed-byte passthrough.",
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine, one 1,000,000-cell numeric source and DEFLATE level 6. No arbitrary-workbook or random-editing claim."
+}

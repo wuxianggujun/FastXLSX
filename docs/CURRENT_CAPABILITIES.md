@@ -87,13 +87,17 @@
 
 文档只能在明确的 internal/architecture 语境提及它们。
 
+## Performance Evidence
+
+- tracked benchmark evidence 机制已建立；当前有 3 个 production Streaming bundle、3 个 production Patch bundle 与 1 个 OpenXLSX reference bundle。最新 schema-v5 Streaming/Patch 矩阵和 reference numeric/mixed 主场景均使用 1 次 warm-up + 3 次 measured run，并记录 process peak working set、输出大小与 openpyxl 代表输出验证；它们只支持 manifest 限定的单机同数据集结论。
+- 最新 schema-v5 Patch 矩阵的 targeted replace total/mutation median 为 1844/596 ms、peak 为 8.41406 MB；single-pass targeted upsert 为 3821/2327 ms、peak 为 8.55078 MB，相对同协议旧 upsert 的 total/mutation 降低约 12.2%/21.6%。两条路径仍重写约 34.9 MB logical worksheet XML，不是大文件任意随机编辑承诺。
+- 同机 1,000,000-cell numeric/mixed public writer workload 中，FastXLSX Streaming median 为 1583/1248 ms 与 6.87109/6.88672 MB peak working set，OpenXLSX 0.4.1 workbook API 为 3180/3292 ms 与 395.258/403.957 MB。该证据只说明两个已记录 workload 的 2.01×/2.64×吞吐比，不形成全功能或跨机器“总体超越”承诺。
+
 ## Planned
 
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。
 - `planned-xml` 中的 zlib-ng、Expat、pugixml 当前未被实现链接；manifest presence 不等于当前能力。
-- tracked benchmark evidence 机制已建立；当前有 2 个 production Streaming bundle 与 2 个 production Patch bundle。Streaming 重复策略矩阵覆盖 7 个 1,000,000-cell 场景；Patch 矩阵覆盖同机 1,000,000 numeric cells source 上的 no-op copy、core/app metadata rewrite 和 1,000-cell targeted replace/upsert；每场景均为 1 次 warm-up + 3 次 measured run。它们只支持 manifest 限定的单机同数据集结论，不形成跨机器、跨数据规模或泛化 release 性能承诺。
-- 最新 Patch tracked matrix 的 targeted replace total/mutation median 为 1529/489 ms、process peak working set median 为 7.80859 MB；同机旧 bundle 为 5325/4027 ms 与 7.96484 MB。Targeted upsert total/mutation median 为 4353/2968 ms、peak 为 8.01562 MB。两者仍重写约 34.9 MB logical worksheet/workbook XML；这证明限定 workload 的改进，不是大文件任意随机编辑承诺。
 
 ## Explicit Non-goals
 

@@ -1,0 +1,44 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-13-windows-msvc-patch-single-pass-schema-v5",
+  "created_utc": "2026-07-12T21:43:00Z",
+  "git_revision": "f406e861eae51c3f0de7567c2ac0607c711b57ed",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "summary.json",
+      "sha256": "c1e74aa7312de3a88d9124c432d74c69e63b9585507d403fe9347292f318335f",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "a6e440aa2685e6db1dd93e090109128539ce41da766170d9d44e14011767ff01",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "On this machine and one-million-cell numeric DEFLATE level 6 workload, 1,000-cell targeted upsert used one source-order scan, matched 500 existing cells, inserted 500 cells, and staged 34897577 output bytes.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    },
+    {
+      "statement": "Targeted upsert median total/mutation/single-pass-transform time was 3821/2327/2132 ms with 8.55078 MB peak working set, versus the same-protocol historical total/mutation baseline of 4353/2968 ms; total and mutation decreased by about 12.2% and 21.6% on this workload.",
+      "artifact_paths": ["summary.json"]
+    },
+    {
+      "statement": "Targeted replace median total/mutation/save time was 1844/596/1249 ms with 8.41406 MB peak working set; targeted replace and upsert still rewrite and recompress the complete worksheet part.",
+      "artifact_paths": ["summary.json"]
+    },
+    {
+      "statement": "No-op copy median total/save time was 1431/1424 ms with 6.97266 MB peak working set. Copy-original means logical payload and CRC preservation and does not claim raw compressed-byte passthrough.",
+      "artifact_paths": ["summary.json"]
+    }
+  ]
+}

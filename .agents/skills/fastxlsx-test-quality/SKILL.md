@@ -15,4 +15,4 @@ description: "添加或排查 FastXLSX CTest、OpenXML、profile 和 benchmark e
 
 普通 CTest timeout 为 60 秒；public-state 测试已全部拆为 standalone targets，不再保留专用 120 秒 legacy shard。
 
-Benchmark 不进默认 CTest。Release 只引用 `benchmarks/evidence/` 中通过 `validate_benchmark_evidence.py` 的 bundle；当前 2 个 production Streaming bundle 与 2 个 Patch bundle 只支持 manifest 限定的单机 workload 结论。新 executable 使用 schema v5：Streaming 分列 generation/package-close/body-buffer/resource-lifecycle，Patch 分列 direct-range 与 single-pass telemetry。Patch matrix 必须分列 copied source/output compressed bytes，不能把 logical copy-original 写成 raw ZIP copy；任何结果不得泛化到未覆盖 workload。
+Benchmark 不进默认 CTest。Release 只引用 `benchmarks/evidence/` 中通过 `validate_benchmark_evidence.py` 的 bundle；当前 3 个 production Streaming bundle、3 个 Patch bundle 与 1 个 OpenXLSX reference bundle 只支持 manifest 限定的单机 workload 结论。新 executable 使用 schema v5：Streaming 分列 generation/package-close/body-buffer/resource-lifecycle，Patch 分列 direct-range 与 single-pass telemetry。Patch matrix 必须分列 copied source/output compressed bytes，不能把 logical copy-original 写成 raw ZIP copy；reference 必须记录 API、save/compression 差异、output size 与 peak working set，任何结果不得泛化到未覆盖 workload。

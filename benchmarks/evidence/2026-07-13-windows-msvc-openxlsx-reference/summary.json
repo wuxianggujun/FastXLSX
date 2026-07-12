@@ -1,0 +1,73 @@
+{
+  "reference_summary_schema_version": "1",
+  "library": "OpenXLSX",
+  "library_version": "0.4.1",
+  "vcpkg_port_version": "2025-07-14",
+  "library_mode": "public workbook API",
+  "workload": {
+    "rows": 100000,
+    "columns": 10,
+    "sheets": 1,
+    "cells_per_case": 1000000,
+    "warmup_runs_per_primary_case": 1,
+    "measured_runs_per_primary_case": 3,
+    "save_settings": "OpenXLSX document.save() defaults"
+  },
+  "primary_cases": [
+    {
+      "name": "numeric",
+      "elapsed_ms": [3180, 3546, 2823],
+      "peak_memory_mb": [395.281, 395.258, 395.242],
+      "median": {"elapsed_ms": 3180, "peak_memory_mb": 395.258},
+      "output_bytes": 3128643,
+      "representative_openpyxl": "opened; first and tail values verified"
+    },
+    {
+      "name": "mixed-20-percent-strings",
+      "elapsed_ms": [3171, 3292, 3497],
+      "peak_memory_mb": [403.957, 403.957, 403.984],
+      "median": {"elapsed_ms": 3292, "peak_memory_mb": 403.957},
+      "output_bytes": 3337140,
+      "representative_openpyxl": "opened; first and tail values verified"
+    }
+  ],
+  "fastxlsx_comparison": {
+    "fastxlsx_evidence_id": "2026-07-13-windows-msvc-streaming-schema-v5",
+    "fastxlsx_settings": "Streaming InlineString, minizip-ng DEFLATE level 6",
+    "numeric": {
+      "fastxlsx_median_elapsed_ms": 1583,
+      "fastxlsx_median_peak_memory_mb": 6.87109,
+      "fastxlsx_output_bytes": 3129660,
+      "elapsed_speedup_ratio": 2.00884,
+      "elapsed_reduction_percent": 50.22,
+      "peak_memory_ratio": 57.52
+    },
+    "mixed": {
+      "fastxlsx_median_elapsed_ms": 1248,
+      "fastxlsx_median_peak_memory_mb": 6.88672,
+      "fastxlsx_output_bytes": 3413774,
+      "elapsed_speedup_ratio": 2.63782,
+      "elapsed_reduction_percent": 62.09,
+      "peak_memory_ratio": 58.66
+    }
+  },
+  "exploratory_cases": [
+    {
+      "name": "one-million-repeated-strings",
+      "protocol": "single OpenXLSX run only; not a repeated-matrix claim",
+      "openxlsx_elapsed_ms": 2025,
+      "openxlsx_peak_memory_mb": 438.359,
+      "fastxlsx_inline_median_elapsed_ms": 1352,
+      "fastxlsx_inline_median_peak_memory_mb": 6.86719
+    },
+    {
+      "name": "one-million-unique-strings",
+      "openxlsx_status": "timeout after 300 seconds",
+      "fastxlsx_inline_median_elapsed_ms": 1498,
+      "fastxlsx_inline_median_peak_memory_mb": 6.92578,
+      "claim_policy": "The timeout is recorded but no OpenXLSX elapsed or memory value is inferred."
+    }
+  ],
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine and the recorded public-API writer workloads only. OpenXLSX uses its save defaults while FastXLSX uses explicit DEFLATE level 6; output sizes are reported so the comparison is not presented as an identical-backend microbenchmark."
+}

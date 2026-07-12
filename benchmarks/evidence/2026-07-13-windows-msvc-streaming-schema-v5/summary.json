@@ -1,0 +1,108 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "5",
+  "workload": {
+    "rows": 100000,
+    "columns": 10,
+    "sheets": 1,
+    "cells_per_case": 1000000,
+    "compression": "minizip-ng DEFLATE level 6",
+    "warmup_runs_per_case": 1,
+    "measured_runs_per_case": 3
+  },
+  "cases": [
+    {
+      "name": "numeric-inline",
+      "elapsed_ms": [1274, 1583, 1592],
+      "generation_ms": [138, 92, 212],
+      "package_close_ms": [1135, 1491, 1379],
+      "peak_memory_mb": [6.85547, 6.87109, 6.88281],
+      "median": {"elapsed_ms": 1583, "generation_ms": 138, "package_close_ms": 1379, "peak_memory_mb": 6.87109},
+      "output_bytes": 3129660,
+      "worksheet_body_buffer_peak_bytes": 262086,
+      "worksheet_body_flush_count": 134,
+      "active_worksheet_temporary_files_after_close": 0,
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "mixed-inline",
+      "elapsed_ms": [1248, 1113, 1318],
+      "generation_ms": [199, 175, 156],
+      "package_close_ms": [1048, 938, 1161],
+      "peak_memory_mb": [6.88672, 6.88281, 6.89062],
+      "median": {"elapsed_ms": 1248, "generation_ms": 175, "package_close_ms": 1048, "peak_memory_mb": 6.88672},
+      "output_bytes": 3413774,
+      "worksheet_body_buffer_peak_bytes": 262099,
+      "worksheet_body_flush_count": 133,
+      "active_worksheet_temporary_files_after_close": 0,
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "mixed-shared",
+      "elapsed_ms": [1191, 1359, 1400],
+      "generation_ms": [163, 135, 192],
+      "package_close_ms": [1027, 1224, 1208],
+      "peak_memory_mb": [6.85938, 6.87891, 6.86719],
+      "median": {"elapsed_ms": 1359, "generation_ms": 163, "package_close_ms": 1208, "peak_memory_mb": 6.86719},
+      "output_bytes": 3342045,
+      "worksheet_body_buffer_peak_bytes": 262135,
+      "worksheet_body_flush_count": 150,
+      "active_worksheet_temporary_files_after_close": 0,
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "repeated-inline",
+      "elapsed_ms": [1352, 1167, 1583],
+      "generation_ms": [141, 132, 154],
+      "package_close_ms": [1211, 1034, 1428],
+      "peak_memory_mb": [6.86719, 6.87109, 6.86328],
+      "median": {"elapsed_ms": 1352, "generation_ms": 141, "package_close_ms": 1211, "peak_memory_mb": 6.86719},
+      "output_bytes": 2334613,
+      "worksheet_body_buffer_peak_bytes": 262075,
+      "worksheet_body_flush_count": 214,
+      "active_worksheet_temporary_files_after_close": 0,
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "repeated-shared",
+      "elapsed_ms": [1370, 1371, 1153],
+      "generation_ms": [142, 119, 149],
+      "package_close_ms": [1228, 1251, 1003],
+      "peak_memory_mb": [6.86719, 6.87891, 6.87891],
+      "median": {"elapsed_ms": 1370, "generation_ms": 142, "package_close_ms": 1228, "peak_memory_mb": 6.87891},
+      "output_bytes": 2084338,
+      "worksheet_body_buffer_peak_bytes": 262086,
+      "worksheet_body_flush_count": 130,
+      "active_worksheet_temporary_files_after_close": 0,
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "unique-inline",
+      "elapsed_ms": [1735, 1498, 1442],
+      "generation_ms": [302, 226, 264],
+      "package_close_ms": [1432, 1271, 1177],
+      "peak_memory_mb": [6.92578, 6.92578, 6.92188],
+      "median": {"elapsed_ms": 1498, "generation_ms": 264, "package_close_ms": 1271, "peak_memory_mb": 6.92578},
+      "output_bytes": 3593977,
+      "worksheet_body_buffer_peak_bytes": 262036,
+      "worksheet_body_flush_count": 237,
+      "active_worksheet_temporary_files_after_close": 0,
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "unique-shared",
+      "elapsed_ms": [3128, 3356, 3555],
+      "generation_ms": [846, 702, 907],
+      "package_close_ms": [2282, 2653, 2647],
+      "peak_memory_mb": [123.035, 123.062, 123.039],
+      "median": {"elapsed_ms": 3356, "generation_ms": 846, "package_close_ms": 2647, "peak_memory_mb": 123.039},
+      "output_bytes": 5810478,
+      "worksheet_body_buffer_peak_bytes": 262048,
+      "worksheet_body_flush_count": 149,
+      "active_worksheet_temporary_files_after_close": 0,
+      "representative_openpyxl": "opened"
+    }
+  ],
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine and the recorded one-million-cell workloads only. Process peak working set includes the benchmark process but not filesystem cache."
+}

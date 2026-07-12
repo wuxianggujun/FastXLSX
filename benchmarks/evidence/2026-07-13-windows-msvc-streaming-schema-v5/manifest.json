@@ -1,0 +1,44 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-13-windows-msvc-streaming-schema-v5",
+  "created_utc": "2026-07-12T21:43:00Z",
+  "git_revision": "f406e861eae51c3f0de7567c2ac0607c711b57ed",
+  "benchmark_kind": "streaming-writer",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "summary.json",
+      "sha256": "1af6060cadc373bc475602aae6643127fa94bf6f994a5fb689b87494e5af5015",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "078bf49810501bda75f0301ce39b37a430cc91667668a6a5d4f8eb6d01f1fc7d",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "On this machine and one-million-cell DEFLATE level 6 workload, numeric-inline median elapsed time was 1583 ms with 6.87109 MB peak working set; mixed-inline median elapsed time was 1248 ms with 6.88672 MB peak working set.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    },
+    {
+      "statement": "All seven representative runs kept the worksheet body pending buffer below the 262144-byte limit, performed nonzero batch flushes, and reported zero active worksheet temporary files after successful close.",
+      "artifact_paths": ["summary.json"]
+    },
+    {
+      "statement": "For numeric-inline and mixed-inline, median package-close time was 1379/1048 ms versus 138/175 ms generation time, identifying ZIP/DEFLATE package close as the dominant measured stage for these workloads.",
+      "artifact_paths": ["summary.json"]
+    },
+    {
+      "statement": "For one million unique strings, inline median elapsed/peak was 1498 ms and 6.92578 MB versus sharedStrings 3356 ms and 123.039 MB; this supports InlineString as the default for unknown or high-cardinality text on this workload only.",
+      "artifact_paths": ["summary.json"]
+    }
+  ]
+}

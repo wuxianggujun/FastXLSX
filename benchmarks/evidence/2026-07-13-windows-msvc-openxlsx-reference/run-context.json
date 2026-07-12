@@ -1,0 +1,14 @@
+{
+  "run_context_schema_version": "1",
+  "measured_utc": "2026-07-12T21:47:00Z",
+  "git_revision": "f406e861eae51c3f0de7567c2ac0607c711b57ed",
+  "working_tree": "FastXLSX implementation and reference adapter were committed unchanged as git_revision after the initial measurement; the final measured numeric/mixed run used the same executable and environment",
+  "benchmark_build_preset": "windows-nmake-release-reference-benchmark",
+  "adapter": "build/windows-nmake-release-reference-benchmark/benchmarks/fastxlsx_bench_reference_openxlsx.exe",
+  "protocol": "The first numeric/mixed run is warm-up. The next three runs are measured. Each adapter process creates one worksheet with 100,000 rows and 10 columns using OpenXLSX public worksheet.cell(row, column).value(), then calls document.save() and document.close(). Numeric and mixed representative outputs were reopened with openpyxl and first/tail values were checked.",
+  "peak_memory_metric": "Windows PROCESS_MEMORY_COUNTERS.PeakWorkingSetSize for each adapter process",
+  "compression_note": "The adapter uses OpenXLSX document.save() defaults because the public adapter does not select a compression level. FastXLSX comparison results use explicit minizip-ng DEFLATE level 6; both output byte sizes are retained.",
+  "timeout_policy": "The unique-string case was terminated by the benchmark runner after 300 seconds. No elapsed completion time or peak memory is inferred from the timeout.",
+  "office_open": "not_run",
+  "scope": "Single machine, OpenXLSX 0.4.1 public workbook API, and the recorded dataset only. No general all-feature or all-machine superiority claim."
+}

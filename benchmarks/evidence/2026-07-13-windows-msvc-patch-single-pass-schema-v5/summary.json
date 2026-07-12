@@ -1,0 +1,68 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "5",
+  "workload": {
+    "source_rows": 100000,
+    "source_columns": 10,
+    "source_cells": 1000000,
+    "requested_patch_cells": 1000,
+    "source_compression": "minizip-ng DEFLATE level 6",
+    "output_compression": "minizip-ng DEFLATE level 6",
+    "source_worksheet_uncompressed_bytes": 34866991,
+    "warmup_runs_per_case": 1,
+    "measured_runs_per_case": 3
+  },
+  "cases": [
+    {
+      "name": "noop-copy",
+      "total_editor_ms": [1775, 1431, 1389],
+      "save_ms": [1767, 1424, 1385],
+      "peak_memory_mb": [6.96484, 6.97266, 6.97266],
+      "median": {"total_editor_ms": 1431, "save_ms": 1424, "peak_memory_mb": 6.97266},
+      "output_bytes": 3129601,
+      "copy_original_semantics": "logical payload and CRC preservation; no raw compressed-byte passthrough claim",
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "document-properties",
+      "total_editor_ms": [1446, 1666, 1688],
+      "save_ms": [1442, 1659, 1681],
+      "peak_memory_mb": [7.01172, 7.01953, 7.0],
+      "median": {"total_editor_ms": 1666, "save_ms": 1659, "peak_memory_mb": 7.01172},
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "targeted-replace",
+      "total_editor_ms": [1844, 1750, 1914],
+      "mutation_ms": [589, 596, 618],
+      "save_ms": [1249, 1147, 1291],
+      "peak_memory_mb": [8.41016, 8.41797, 8.41406],
+      "median": {"total_editor_ms": 1844, "mutation_ms": 596, "save_ms": 1249, "peak_memory_mb": 8.41406},
+      "path": "one-inflate direct-range",
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "targeted-upsert",
+      "total_editor_ms": [3508, 4126, 3821],
+      "mutation_ms": [2327, 2618, 2321],
+      "save_ms": [1173, 1501, 1494],
+      "single_pass_transform_ms": [2132, 2321, 2026],
+      "peak_memory_mb": [8.52344, 8.55078, 8.5625],
+      "median": {"total_editor_ms": 3821, "mutation_ms": 2327, "save_ms": 1494, "single_pass_transform_ms": 2132, "peak_memory_mb": 8.55078},
+      "path": "single-pass source-order transform",
+      "scanned_source_cells": 1000000,
+      "matched_replacements": 500,
+      "inserted_cells": 500,
+      "staged_output_bytes": 34897577,
+      "representative_openpyxl": "opened"
+    }
+  ],
+  "historical_upsert_baseline": {
+    "total_editor_ms_median": 4353,
+    "mutation_ms_median": 2968,
+    "peak_memory_mb_median": 8.01562,
+    "same_machine_and_protocol": true
+  },
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine, one numeric worksheet and the recorded Patch cases only. Full worksheet part rewrite and recompression remain in targeted replace/upsert."
+}

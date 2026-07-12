@@ -1,0 +1,13 @@
+{
+  "run_context_schema_version": "1",
+  "measured_utc": "2026-07-12T20:25:00Z",
+  "git_revision": "f406e861eae51c3f0de7567c2ac0607c711b57ed",
+  "working_tree": "implementation diff was committed unchanged as git_revision after measurement",
+  "benchmark_build_preset": "windows-nmake-release-benchmark",
+  "command": "py -3 tools/run_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_streaming_writer.exe --output-dir build/qa/benchmark-schema-v5-streaming --rows 100000 --cols 10 --sheets 1 --compression-levels 6 --warmup-runs 1 --measured-runs 3 --verify-openpyxl",
+  "protocol": "Seven Streaming cases; one warm-up followed by three measured runs per case. The measured run nearest elapsed_ms median is representative and is verified with openpyxl.",
+  "peak_memory_metric": "Windows PROCESS_MEMORY_COUNTERS.PeakWorkingSetSize for each benchmark process",
+  "resource_metrics": "Worksheet body pending-buffer high-water mark, flush count, and active worksheet temporary-file count after successful close",
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine, one 1,000,000-cell dataset family and DEFLATE level 6. No cross-machine or arbitrary-workload claim."
+}

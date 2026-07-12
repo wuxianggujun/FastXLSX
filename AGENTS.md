@@ -60,7 +60,7 @@ Stored bootstrap：`windows-nmake-release-stored`。No-images：`windows-nmake-r
 - Patch：failure-before-state-change、retry、reopen、unknown part、relationship/content type/calc side effects，以及跨状态 mutation 的提交前故障注入。
 - In-memory：typed strict diagnostics、explicit lossy、generic policy mismatch、guardrail、no-state-pollution、two-phase save handoff、post-stage failure retry、move/handle lifecycle。
 - Streaming：row order、无 DOM/dense matrix、package side effects。
-- CTest 普通上限 60 秒；legacy public-state 剩余 4 个 shard 在拆分超大 translation unit 期间专用 120 秒上限，已拆出的 standalone tests 不放宽。
+- CTest 普通上限 60 秒；legacy public-state 剩余 3 个 shard 在拆分超大 translation unit 期间专用 120 秒上限，已拆出的 standalone tests 不放宽。
 - Benchmark：只有 `benchmarks/evidence/` 中通过 validator 的 bundle 可用于 release claim；0 bundle 表示当前无 tracked evidence。
 - 文档：Markdown links、UTF-8/LF、deleted-doc refs、high-risk wording、`git diff --check`。
 

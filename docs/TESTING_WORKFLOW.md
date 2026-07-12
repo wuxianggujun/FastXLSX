@@ -15,7 +15,7 @@ cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release
 ```
 
-普通 CTest timeout 为 60 秒，`noTestsAction=error`；仍位于 legacy public-state translation unit 的 4 个显式 shard 使用 120 秒上限，避免正常 I/O-heavy recovery 矩阵在较慢 MSVC/NTFS 环境被误判为 hang。已拆出的 standalone tests 继续使用普通上限，Benchmark 不进入默认 CTest。
+普通 CTest timeout 为 60 秒，`noTestsAction=error`；仍位于 legacy public-state translation unit 的 3 个显式 shard 使用 120 秒上限，避免正常 I/O-heavy recovery 矩阵在较慢 MSVC/NTFS 环境被误判为 hang。已拆出的 standalone tests 继续使用普通上限，Benchmark 不进入默认 CTest。
 
 ## 关键矩阵
 

@@ -29,6 +29,7 @@
 - Internal worksheet cell transformer fallback 将 file-backed output ownership 与 transform diagnostics 随 worksheet state 一次发布；indexed direct-range fast path 将 structured telemetry 与 notes 写入 staged replacement/edit-plan 副本。两条路径的提交前失败不再泄漏 temp chunks、telemetry 或 notes，并支持保留既有 patch 后 retry。
 - 继续拆分 legacy public-state 超大 translation unit：source StyleId rejection/public-view 与 source-style clear/erase 场景迁入 style-focused target，materialized dirty state、save/reopen、multi-sheet aggregate 与 move lifecycle 场景迁入 materialized-session target；移除两个对应 legacy shard，专用 120 秒 shard 从 7 个降为 5 个，standalone tests 保持普通 60 秒上限。
 - 将 `public-state-reacquire-guards` 的 13 个测试迁入 materialized-session 与 coordinate-guards 独立目标，删除重复的 legacy shard 调度入口；专用 120 秒 shard 从 5 个降为 4 个，迁入目标继续使用普通 60 秒上限。
+- 将 `public-state-reacquire` 的 32 个测试按 renamed、saved 与 retry/failure 责任拆为三个独立 60 秒目标，共享 test-only support helper；删除 legacy shard 调度入口，专用 120 秒 shard 从 4 个降为 3 个。
 
 ### Documentation
 

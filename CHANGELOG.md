@@ -16,6 +16,8 @@
 
 ### Changed
 
+- DEFLATE worksheet 的 strict targeted `replace_cells()` 在无 worksheet relationships 且目标全部存在时改用 one-inflate + target-only direct-range staging；PackageEditor-owned 临时文件与 patch state 事务提交，失败自动清理并可 retry。Minizip writer 同时复用同路径 file-range 输入句柄，避免大型 sparse patch 保存时反复打开同一文件。
+- 新增优化后的 production Patch tracked evidence bundle；限定的 1,000,000-cell、1,000-target replace workload 中，total/mutation median 从 5325/4027 ms 降至 1529/489 ms，process peak working set median 保持约 7.8 MB。该结论不泛化到 missing-cell upsert、relationship-bearing worksheet、其他机器或任意 XLSX。
 - `run_benchmark_matrix.py` 默认对每个场景执行 1 次 warm-up 和 3 次 measured run，保留全部 schema-v4 原始结果，并输出 min/median/max 与 median 代表 run；openpyxl 只验证代表 workbook，避免验证耗时污染 benchmark 内部计时。
 - `fastxlsx_bench_workbook_editor` 新增 no-op copy、document-properties、独立 source/output compression level 与 source reuse 场景，并通过 benchmark-only diagnostics 输出 copy-original/rewrite entry 分类；`run_patch_benchmark_matrix.py` 重复矩阵隔离 fixture generation，分列 copied source/output compressed bytes，统计 rewritten logical/compressed bytes 并验证代表 workbook。
 - `fastxlsx_bench_package_editor_cell_replacement` 显式启用 internal test-hook 编译边界，使其可通过受控 accessor 读取 public facade 选择的 package plan；普通 library consumer 不获得该 internal surface。
@@ -52,7 +54,7 @@
 ### Not Yet Claimed
 
 - Stable public API / ABI。
-- 泛化“高性能/低内存”结论；当前两份 Streaming 与一份 Patch tracked evidence 仍只覆盖一台 Windows/MSVC 机器和各自限定 workload。
+- 泛化“高性能/低内存”结论；当前两份 Streaming 与两份 Patch tracked evidence 仍只覆盖一台 Windows/MSVC 机器和各自限定 workload。
 - Native chart/VBA generation 或完整 tables/drawings/comments/pivot/custom XML semantic editing。
 - Atomic in-place save、公式求值、cached value 生成或完整 `calcChain.xml` rebuild。
 

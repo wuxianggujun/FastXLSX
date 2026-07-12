@@ -32,6 +32,7 @@
 - `request_full_calculation()` 对 workbook XML、calcChain、relationships、content types、manifest 和 edit plan 使用事务式 staging；提交前失败保留调用前计划与输出语义，后续可安全重试。
 - `rename_sheet()` 在发布前完成 PackageEditor state、public catalog、pending payload、materialized formula rewrite 和 targeted-cell diagnostics 的 staging；提交前失败不泄漏部分 rename，保留既有 patch 并可安全重试。
 - `set_document_properties()` 事务式重写 `docProps/core.xml`、`docProps/app.xml` 及缺失的 root relationships/content types；重复调用 last-write-wins，失败保留既有 Patch plan、pending/unsaved 水位与 retry 能力。Custom properties 和未知 entries 保留，但不提供 custom-properties 对象模型。
+- 对 DEFLATE source、无 worksheet relationships、目标已存在且具有 top-level dimension 的 strict `replace_cells()`，会将 worksheet 单次 inflate 到 PackageEditor-owned 临时文件，再以 target-only scan + file ranges staging；临时文件所有权、telemetry 和 package state 同事务提交，提交前失败由 RAII 清理，内存保持与 worksheet 大小解耦。Missing-cell upsert、relationship-bearing worksheet 和 linked-part fail policy 继续使用 transformer fallback。
 
 ### In-memory：小型 worksheet
 
@@ -81,7 +82,7 @@
 - Internal non-worksheet `PackageEditor::replace_part_chunks()` 对 stream-rewrite chunks、part restore、edit plan、part/entry replacements、omitted entries 和 manifest 使用事务式 staging；它是 package writer 的 internal handoff，不是 public arbitrary-part streaming API。
 - Internal worksheet chunk replacement 对 worksheet/workbook rewrite、calc metadata、relationship/content-type side effects、edit plan、part/entry replacements、omitted entries、manifest 和 file-backed 临时文件所有权使用统一 staging，并在提交前完成 routing notes 与 dependency audits；完整 worksheet chunk-source wrapper 只在 `noexcept` commit 时发布临时文件所有权，提交前失败由 RAII 删除未发布 staged file。失败保留既有计划、输出语义和 retry 能力。它仍是 internal worksheet rewrite foundation，不是 public arbitrary worksheet XML API。
 - Internal bounded sheetData replacement 会把最终 `LocalDomRewrite` mode、file-backed staged output ownership、preservation/dependency audits 与 direct/by-name notes 纳入同一 worksheet transaction；提交前失败删除临时输出并保留调用前 package state。它仍不是 large-file transformer、任意 cell random editing 或 linked metadata repair。
-- Internal worksheet cell replacement 的 transformer fallback 会把 file-backed output ownership 与 transform notes 纳入同一 staged transaction；indexed direct-range fast path 会把 telemetry 与 notes 写入 staged replacement/edit plan 副本。两条路径的提交前失败都保留调用前状态与 retry 能力，但这不改变其 bounded payload、relationship policy 和非语义修复边界。
+- Internal worksheet cell replacement 的 transformer fallback 会把 file-backed output ownership 与 transform notes 纳入同一 staged transaction；indexed direct-range fast path 支持 stored source package ranges，以及 DEFLATE source 的单次 inflate + owned temporary-file ranges，并把 telemetry、临时文件所有权与 notes 写入 staged replacement/edit plan 副本。两条路径的提交前失败都保留调用前状态与 retry 能力，但这不改变其 bounded payload、relationship policy 和非语义修复边界。
 
 文档只能在明确的 internal/architecture 语境提及它们。
 
@@ -90,8 +91,8 @@
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。
 - `planned-xml` 中的 zlib-ng、Expat、pugixml 当前未被实现链接；manifest presence 不等于当前能力。
-- tracked benchmark evidence 机制已建立；当前有 2 个 production Streaming bundle 与 1 个 production Patch bundle。Streaming 重复策略矩阵覆盖 7 个 1,000,000-cell 场景；Patch 矩阵覆盖同机 1,000,000 numeric cells source 上的 no-op copy、core/app metadata rewrite 和 1,000-cell targeted replace/upsert；每场景均为 1 次 warm-up + 3 次 measured run。它们只支持 manifest 限定的单机同数据集结论，不形成跨机器、跨数据规模或泛化 release 性能承诺。
-- Patch tracked matrix 的 total median 为 no-op 1530 ms、document-properties 1138 ms、targeted replace 5325 ms、targeted upsert 5402 ms；process peak working set median 为 6.41406–7.99609 MB。Targeted 两场景仍重写约 34.9 MB logical worksheet/workbook XML；这是当前 workload 的瓶颈证据，不是大文件任意随机编辑承诺。
+- tracked benchmark evidence 机制已建立；当前有 2 个 production Streaming bundle 与 2 个 production Patch bundle。Streaming 重复策略矩阵覆盖 7 个 1,000,000-cell 场景；Patch 矩阵覆盖同机 1,000,000 numeric cells source 上的 no-op copy、core/app metadata rewrite 和 1,000-cell targeted replace/upsert；每场景均为 1 次 warm-up + 3 次 measured run。它们只支持 manifest 限定的单机同数据集结论，不形成跨机器、跨数据规模或泛化 release 性能承诺。
+- 最新 Patch tracked matrix 的 targeted replace total/mutation median 为 1529/489 ms、process peak working set median 为 7.80859 MB；同机旧 bundle 为 5325/4027 ms 与 7.96484 MB。Targeted upsert total/mutation median 为 4353/2968 ms、peak 为 8.01562 MB。两者仍重写约 34.9 MB logical worksheet/workbook XML；这证明限定 workload 的改进，不是大文件任意随机编辑承诺。
 
 ## Explicit Non-goals
 

@@ -1,0 +1,18 @@
+{
+  "run_context_schema_version": "1",
+  "measured_utc": "2026-07-12T15:00:06Z",
+  "git_revision": "7a7f13ffb9437654994d54528fb67301d7c9de03",
+  "working_tree": "implementation diff was committed unchanged as git_revision after measurement",
+  "benchmark_build_preset": "windows-nmake-release-benchmark",
+  "command": "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-benchmark-matrix-2026-07-12-bounded-direct-range-v4 --rows 100000 --cols 10 --source-compression-level 6 --output-compression-level 6 --warmup-runs 1 --measured-runs 3 --verify-openpyxl",
+  "protocol": "One production minizip-ng DEFLATE level 6 source fixture with 1,000,000 numeric cells; four public WorkbookEditor Patch cases; one warm-up followed by three measured runs per case. The actual run nearest the total_editor_ms median is representative, with the earliest run breaking ties. openpyxl checks only the representative workbook after benchmark process timing.",
+  "peak_memory_metric": "Windows PROCESS_MEMORY_COUNTERS.PeakWorkingSetSize for each benchmark process; source WorkbookWriter fixture generation runs in a separate process",
+  "byte_accounting_metric": "ZIP central-directory logical file_size and compressed compress_size. Copy-original entries require equal source/output CRC and logical size; source/output compressed sizes are reported separately and do not claim raw compressed-byte passthrough.",
+  "source_report": {
+    "tracked": false,
+    "sha256": "44e26a49ea3441bbe7b5a8f1518b8b1449c57b85778f8ad79971b439e312c4eb",
+    "sanitization": "The tracked matrix report removes local absolute paths, commands, stdout and stderr while retaining all measured performance metrics, statistics, output-plan entry classification, byte accounting and representative verification."
+  },
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine, one 1,000,000-cell dataset and DEFLATE level 6. Supports only the recorded Patch scenarios; it is not a cross-machine, arbitrary-workload or generalized performance claim."
+}

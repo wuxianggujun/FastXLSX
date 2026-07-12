@@ -22,6 +22,7 @@ source package -> part index/relationships -> staged edits -> part-level rewrite
 - Public facade 是 `WorkbookEditor`。
 - Unchanged/unknown part 默认 copy-original。
 - Changed part 选择 stream rewrite、small-part rewrite 或 remove。
+- Relationship-free DEFLATE worksheet 的 strict existing-cell replace 可走 one-inflate target-only direct-range：解压后的 worksheet 放在 owned temporary file，未触碰 XML 以 file ranges replay，replacement payload 使用小型 memory chunks。该路径不物化 DOM，也不适用于 missing-cell upsert 或 relationship-bearing worksheet。
 - 每个功能必须明确 preserve/audit/fail/edit，以及 relationships/content types/calc metadata 联动。
 - `save_as()` 成功后 staged plan 可继续用于另一个输出或后续编辑；因此 `has_pending_changes()` 不等于“未保存”。
 - `has_unsaved_changes()` 是保存水位：只表示最近一次成功保存之后的新变化。

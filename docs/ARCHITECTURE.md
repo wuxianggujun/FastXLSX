@@ -62,11 +62,12 @@ source XLSX
   -> PackageReader / OPC index
   -> public edit request
   -> dependency audit + internal EditPlan
+  -> compressed strict cell replace: one inflate -> owned temp -> target scan -> file ranges
   -> copy-original / stream-rewrite / local-DOM-rewrite / remove
   -> save_as(new path)
 ```
 
-`EditPlan` 是 internal traceability，不是 public package mutation surface。
+`EditPlan` 是 internal traceability，不是 public package mutation surface。Targeted strict replace 的临时文件只保存解压后的 worksheet bytes，不构建 worksheet DOM 或 dense cell map；文件所有权随 staged transaction 发布，失败前由 RAII 清理。Minizip writer 对同路径 ranges 复用输入句柄，避免每个 replacement range 重开文件。
 
 ### In-memory
 

@@ -960,17 +960,6 @@ add_fastxlsx_workbook_editor_target(
     test_workbook_editor_public_retry_projection.cpp
 )
 add_fastxlsx_workbook_editor_target(
-    fastxlsx_workbook_editor_public_state_tests
-    test_workbook_editor_public_state.cpp
-)
-if(MSVC)
-    # Keep the legacy oversized translation unit cheap to rebuild until C0
-    # finishes splitting it into independent sources. This affects tests only.
-    target_compile_options(
-        fastxlsx_workbook_editor_public_state_tests PRIVATE /bigobj /Od
-    )
-endif()
-add_fastxlsx_workbook_editor_target(
     fastxlsx_workbook_editor_public_guards_tests
     test_workbook_editor_public_guards.cpp
 )
@@ -987,7 +976,6 @@ add_custom_target(fastxlsx_workbook_editor_tests
         fastxlsx_workbook_editor_public_retry_reacquire_tests
         fastxlsx_workbook_editor_public_retry_guards_tests
         fastxlsx_workbook_editor_public_retry_projection_tests
-        fastxlsx_workbook_editor_public_state_tests
         fastxlsx_workbook_editor_public_guards_tests
         fastxlsx_workbook_editor_public_edge_shard_tests
 )
@@ -1019,12 +1007,6 @@ add_fastxlsx_workbook_editor_shard(
 add_fastxlsx_workbook_editor_shard(
     public-retry-projection
     fastxlsx_workbook_editor_public_retry_projection_tests 60
-)
-set(FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT 120)
-add_fastxlsx_workbook_editor_shard(
-    public-state-shifts
-    fastxlsx_workbook_editor_public_state_tests
-    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
 )
 add_fastxlsx_workbook_editor_shard(
     public-guards fastxlsx_workbook_editor_public_guards_tests 60
@@ -1131,6 +1113,9 @@ add_fastxlsx_workbook_editor_standalone_test(public_patch_cells test_workbook_ed
 add_fastxlsx_workbook_editor_standalone_test(public_snapshot test_workbook_editor_public_snapshot.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_edits test_workbook_editor_public_state_edits.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_formula_audits test_workbook_editor_public_state_formula_audits.cpp 60)
+add_fastxlsx_workbook_editor_standalone_test(public_state_shift_insertions test_workbook_editor_public_state_shift_insertions.cpp 60)
+add_fastxlsx_workbook_editor_standalone_test(public_state_shift_formula_audits test_workbook_editor_public_state_shift_formula_audits.cpp 60)
+add_fastxlsx_workbook_editor_standalone_test(public_state_shift_deletions test_workbook_editor_public_state_shift_deletions.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_reacquire_renamed test_workbook_editor_public_state_reacquire_renamed.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_reacquire_saved test_workbook_editor_public_state_reacquire_saved.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_reacquire_retry test_workbook_editor_public_state_reacquire_retry.cpp 60)
@@ -1161,6 +1146,9 @@ add_dependencies(
     fastxlsx_workbook_editor_public_snapshot_tests
     fastxlsx_workbook_editor_public_state_edits_tests
     fastxlsx_workbook_editor_public_state_formula_audits_tests
+    fastxlsx_workbook_editor_public_state_shift_insertions_tests
+    fastxlsx_workbook_editor_public_state_shift_formula_audits_tests
+    fastxlsx_workbook_editor_public_state_shift_deletions_tests
     fastxlsx_workbook_editor_public_state_reacquire_renamed_tests
     fastxlsx_workbook_editor_public_state_reacquire_saved_tests
     fastxlsx_workbook_editor_public_state_reacquire_retry_tests

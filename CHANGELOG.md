@@ -32,6 +32,7 @@
 - 将 `public-state-reacquire` 的 32 个测试按 renamed、saved 与 retry/failure 责任拆为三个独立 60 秒目标，共享 test-only support helper；删除 legacy shard 调度入口，专用 120 秒 shard 从 4 个降为 3 个。
 - 将 `public-state-edits` 的 17 个 clear/erase 与 memory-budget 回归迁入独立 60 秒目标，并将 reacquire helper 通用化为 public-state test support；删除 legacy shard 调度入口，专用 120 秒 shard 从 3 个降为 2 个。
 - 将 `public-state-formula-audits` 的 52 个 renamed/full-calculation、saved-reacquire 与 shift-after-rename 回归迁入独立 60 秒目标，并提取 formula-audits test-only support；删除 legacy shard 调度入口，专用 120 秒 shard 从 2 个降为 1 个。
+- 将最后的 `public-state-shifts` 57 个结构编辑与 formula-reference 回归按 insertion、formula audit、deletion 职责拆为三个独立 60 秒目标，删除 shard 参数解析、旧聚合 target 与 `/bigobj /Od` 特例；public-state 专用 120 秒 legacy shard 清零。
 
 ### Documentation
 

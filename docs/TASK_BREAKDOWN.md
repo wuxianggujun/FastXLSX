@@ -38,7 +38,8 @@
 
 ## C6 Performance / Release Evidence
 
-- 生成第一份可复现真实 benchmark bundle，提交 machine-readable artifacts、environment、hash 和 claims；在此之前保持 0 bundle / no release claim。
+- 以首份 production Streaming tracked bundle 为基线，补同环境重复测量和 inline/shared、numeric/mixed/strings 策略矩阵；形成统计与比较证据前只引用单次观测，不做泛化 release claim。
+- 新 bundle 继续提交 machine-readable artifacts、environment、hash、验证状态和 claim-to-artifact 映射；Office 未运行必须保持 `not_run`。
 - 性能结论必须满足 `PERFORMANCE_TARGETS.md`。
 
 ## C7 Packaging / Dev Tooling

@@ -34,7 +34,7 @@ py -3 tools/validate_benchmark_evidence.py --self-test
 py -3 tools/validate_benchmark_evidence.py --root benchmarks/evidence
 ```
 
-当前 0 bundle 是合法状态，表示没有 tracked release evidence。`office_open="not_run"` 不得写成 Office 已验证。
+当前 validator 应通过 1 个 production Streaming bundle；它只支持 manifest 内的精确单机单次 claim。`office_open="not_run"` 不得写成 Office 已验证。
 
 ## 文档与静态检查
 

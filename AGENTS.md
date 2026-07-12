@@ -61,7 +61,7 @@ Stored bootstrap：`windows-nmake-release-stored`。No-images：`windows-nmake-r
 - In-memory：typed strict diagnostics、explicit lossy、generic policy mismatch、guardrail、no-state-pollution、two-phase save handoff、post-stage failure retry、move/handle lifecycle。
 - Streaming：row order、无 DOM/dense matrix、package side effects。
 - CTest 普通上限 60 秒；public-state 测试已全部拆为 standalone targets，不再保留专用 120 秒 legacy shard。
-- Benchmark：只有 `benchmarks/evidence/` 中通过 validator 的 bundle 可用于 release claim；0 bundle 表示当前无 tracked evidence。
+- Benchmark：只有 `benchmarks/evidence/` 中通过 validator 的 bundle 可用于 release claim；当前有 1 个 production Streaming 单机/单场景/单次测量 bundle，不足以形成泛化性能结论。
 - 文档：Markdown links、UTF-8/LF、deleted-doc refs、high-risk wording、`git diff --check`。
 
 ## 项目 Skills

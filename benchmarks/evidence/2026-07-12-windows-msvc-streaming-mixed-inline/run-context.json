@@ -1,0 +1,13 @@
+{
+  "run_context_schema_version": "1",
+  "git_revision": "a68c7a462bcf20da93c28ffbffe9f3c2dd3d60a3",
+  "working_tree": "clean",
+  "warmup_runs": 1,
+  "measured_runs": 1,
+  "command": "fastxlsx_bench_streaming_writer --scenario mixed --rows 100000 --cols 10 --sheets 1 --string-pattern mixed --string-strategy inline --string-ratio 0.2 --compression-level 6 --output result.xlsx --result result.json",
+  "peak_memory_metric": "Windows PROCESS_MEMORY_COUNTERS.PeakWorkingSetSize for the benchmark process",
+  "temporary_worksheet_part_footprint_metric": "worksheet body file bytes; not process RSS or total package assembly memory",
+  "scope": "single measured run on the manifest environment; not a cross-machine, comparative, or generalized performance claim",
+  "workbook_retention": "generated workbook verified locally and intentionally not tracked",
+  "office_open": "not_run"
+}

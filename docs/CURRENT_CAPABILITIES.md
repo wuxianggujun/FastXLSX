@@ -88,7 +88,7 @@
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。
 - `planned-xml` 中的 zlib-ng、Expat、pugixml 当前未被实现链接；manifest presence 不等于当前能力。
-- tracked benchmark evidence 机制已建立；当前为 0 bundle，没有可供 release 引用的性能结论。
+- tracked benchmark evidence 机制已建立；当前有 1 个 production Streaming 单机/单场景/单次测量 bundle，可引用其精确 dataset、环境和观测值，但不足以形成跨机器、跨策略或泛化 release 性能结论。
 
 ## Explicit Non-goals
 

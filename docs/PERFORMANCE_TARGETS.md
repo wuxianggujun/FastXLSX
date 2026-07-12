@@ -29,6 +29,11 @@ py -3 tools/validate_benchmark_evidence.py --root benchmarks/evidence
 
 当前没有 bundle 时，不得从本地 build 目录或 Markdown 摘抄形成 release claim。
 
+当前 tracked bundle：
+
+- [`2026-07-12-windows-msvc-streaming-mixed-inline`](../benchmarks/evidence/2026-07-12-windows-msvc-streaming-mixed-inline/manifest.json)：production Streaming、1,000,000 cells、20% mixed repeated strings、inline strings、minizip-ng DEFLATE level 6；仅允许引用 manifest 中的单机单次观测和 ZIP/XML/openpyxl 验证，Office 为 `not_run`。
+- 该 bundle 不是跨机器比较、重复性统计、inline/shared 策略比较或泛化“高性能/低内存”证据。
+
 ## 禁止措辞
 
 - 未给数据集和 backend 的“高性能”。

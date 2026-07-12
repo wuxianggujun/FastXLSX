@@ -15,4 +15,4 @@ description: "添加或排查 FastXLSX CTest、OpenXML、profile 和 benchmark e
 
 普通 CTest timeout 为 60 秒；public-state 测试已全部拆为 standalone targets，不再保留专用 120 秒 legacy shard。
 
-Benchmark 不进默认 CTest。Release 只引用 `benchmarks/evidence/` 中通过 `validate_benchmark_evidence.py` 的 bundle；0 bundle 是合法“无证据”状态。
+Benchmark 不进默认 CTest。Release 只引用 `benchmarks/evidence/` 中通过 `validate_benchmark_evidence.py` 的 bundle；当前 1 个 production Streaming bundle 仅支持精确单机单次 claim，不支持泛化性能结论。

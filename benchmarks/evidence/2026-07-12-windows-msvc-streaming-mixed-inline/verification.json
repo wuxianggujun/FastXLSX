@@ -1,0 +1,24 @@
+{
+  "verification_schema_version": "1",
+  "verified_utc": "2026-07-12T11:43:04Z",
+  "workbook_sha256": "2f79fb96d14a03d5a084ae3c59f011f506a2ddd165243b9a26225bd58dbc39aa",
+  "zip_crc": "passed",
+  "xml_parse": "passed",
+  "xml_entry_count": 5,
+  "openpyxl": "passed",
+  "openpyxl_version": "3.1.2",
+  "worksheet_names": [
+    "Sheet1"
+  ],
+  "max_row": 100000,
+  "max_column": 10,
+  "first_cell": {
+    "reference": "A1",
+    "value": 1001001
+  },
+  "last_cell": {
+    "reference": "J100000",
+    "value": "repeat"
+  },
+  "office_open": "not_run"
+}

@@ -1,0 +1,46 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-12-windows-msvc-streaming-mixed-inline",
+  "created_utc": "2026-07-12T11:43:55Z",
+  "git_revision": "a68c7a462bcf20da93c28ffbffe9f3c2dd3d60a3",
+  "benchmark_kind": "streaming-writer",
+  "environment": {
+    "os": "Microsoft Windows 11 专业版 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "result.json",
+      "sha256": "178e7114e27de9b2cc63fb49f596a65cca2bfb33e1e449f99b73597a9bc2f993",
+      "role": "result"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "f3d24da4bb7c873e3356a438bbba882540a62872e25fea848fa282c18c0a8d4a",
+      "role": "summary"
+    },
+    {
+      "path": "verification.json",
+      "sha256": "e1ada5245cc55a6f4c69260d55ffac76b8b8e7d2a42f026a84e3c775a0b4a0ed",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "仅在本 manifest 环境与 run-context 协议下，单次 production Streaming 测量对 1,000,000 cells、20% mixed repeated strings、inline strings、minizip-ng DEFLATE level 6 报告 elapsed_ms=1580、output_bytes=3413774；不得泛化到其他机器、数据集或策略。",
+      "artifact_paths": [
+        "result.json",
+        "run-context.json"
+      ]
+    },
+    {
+      "statement": "生成 workbook 在本机通过 ZIP CRC、5 个 XML entry 解析和 openpyxl 3.1.2 read-only 边界值检查；Microsoft Office 未运行。",
+      "artifact_paths": [
+        "verification.json"
+      ]
+    }
+  ]
+}

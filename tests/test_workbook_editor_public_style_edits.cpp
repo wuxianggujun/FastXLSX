@@ -788,6 +788,83 @@ void test_public_style_edit_failures_and_noops_preserve_clean_state()
         "style move parse failures should preserve clean state and record diagnostics");
 }
 
+void test_same_session_style_from_aliases_are_clean_noops()
+{
+    const StyleEditSource source = write_style_edit_source(
+        "fastxlsx-workbook-editor-same-session-style-alias-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-same-session-style-alias-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::size_t baseline_cell_count = sheet.cell_count();
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+    const auto check_clean_style_state = [&] {
+        check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
+                && !editor.last_edit_error().has_value()
+                && editor.pending_change_count() == 0
+                && editor.pending_materialized_worksheet_names().empty()
+                && sheet.cell_count() == baseline_cell_count
+                && sheet.estimated_memory_usage() == baseline_memory,
+            "same-session style alias should preserve clean editor/session state");
+        const fastxlsx::CellValue a1 = sheet.get_cell("A1");
+        const fastxlsx::CellValue b1 = sheet.get_cell("B1");
+        const fastxlsx::CellValue c1 = sheet.get_cell("C1");
+        const fastxlsx::CellValue a2 = sheet.get_cell("A2");
+        const fastxlsx::CellValue b2 = sheet.get_cell("B2");
+        check(a1.kind() == fastxlsx::CellValueKind::Number
+                && a1.number_value() == 12.5 && !a1.has_style()
+                && b1.kind() == fastxlsx::CellValueKind::Formula
+                && b1.text_value() == "A1*2"
+                && c1.kind() == fastxlsx::CellValueKind::Text
+                && c1.text_value() == "styled-text"
+                && a2.kind() == fastxlsx::CellValueKind::Text
+                && a2.text_value() == "unstyled-source" && !a2.has_style()
+                && b2.kind() == fastxlsx::CellValueKind::Number
+                && b2.number_value() == 0.5,
+            "same-session style alias should preserve all cell values");
+        check_style(b1, source.decimal_style,
+            "same-session style alias should preserve formula style");
+        check_style(c1, source.percent_style,
+            "same-session style alias should preserve text style");
+        check_style(b2, source.percent_style,
+            "same-session style alias should preserve number style");
+    };
+    const auto seed_recoverable_diagnostic = [&] {
+        check(throws_fastxlsx_error([&] { sheet.clear_cell_style("a1"); }),
+            "same-session style alias setup should reject invalid A1 reference");
+        check(editor.last_edit_error().has_value(),
+            "same-session style alias setup should retain mutation diagnostic");
+    };
+
+    seed_recoverable_diagnostic();
+    sheet.copy_cell_styles_from(sheet, "A1:C2", "A1");
+    check_clean_style_state();
+
+    seed_recoverable_diagnostic();
+    sheet.move_cell_styles_from(sheet, "A1:C2", "A1");
+    check_clean_style_state();
+
+    editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(output) == source_entries
+            && fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "same-session style aliases should preserve exact entries on no-op save");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    check(!reopened.has_unsaved_changes() && !reopened_sheet.has_pending_changes()
+            && reopened_sheet.cell_count() == baseline_cell_count,
+        "same-session style alias output should reopen cleanly");
+    check_style(reopened_sheet.get_cell("B1"), source.decimal_style,
+        "same-session style alias output should preserve formula style");
+    check_style(reopened_sheet.get_cell("C1"), source.percent_style,
+        "same-session style alias output should preserve text style");
+    check_style(reopened_sheet.get_cell("B2"), source.percent_style,
+        "same-session style alias output should preserve number style");
+}
+
 } // namespace
 
 int main()
@@ -802,6 +879,7 @@ int main()
         test_public_cross_sheet_style_move_failures_noops_and_dirty_ownership();
         test_public_cross_sheet_style_move_survives_owner_moves();
         test_public_style_edit_failures_and_noops_preserve_clean_state();
+        test_same_session_style_from_aliases_are_clean_noops();
         std::cout << "WorkbookEditor public style edit tests passed\n";
         return 0;
     } catch (const std::exception& error) {

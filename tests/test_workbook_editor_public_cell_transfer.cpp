@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -910,6 +911,165 @@ void test_value_only_move_guard_failure_preserves_source_values()
         "same-location value-only move should be a clean no-op and clear diagnostics");
 }
 
+void test_equal_value_moves_dirty_only_changed_sessions()
+{
+    const CopyCellsSource source = write_cross_sheet_copy_source(
+        "fastxlsx-workbook-editor-equal-value-move-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path baseline = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-equal-value-move-baseline.xlsx");
+    const std::filesystem::path same_sheet_noop = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-equal-value-move-same-sheet-noop.xlsx");
+    const std::filesystem::path moved_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-equal-value-move-output.xlsx");
+    const std::filesystem::path repeated_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-equal-value-move-repeat.xlsx");
+    const std::filesystem::path full_move_baseline = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-equal-full-move-baseline.xlsx");
+    const std::filesystem::path full_move_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-equal-full-move-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+    fastxlsx::WorksheetEditor destination_sheet = editor.worksheet("Destination");
+
+    source_sheet.set_cell("E5", fastxlsx::CellValue::blank());
+    source_sheet.set_cell("F5", fastxlsx::CellValue::blank());
+    source_sheet.copy_cell_style("B1", "F5");
+    source_sheet.clear_cell_value("A1");
+    source_sheet.clear_cell_value("B1");
+    editor.save_as(baseline);
+
+    const std::size_t baseline_pending_count = editor.pending_change_count();
+    const std::size_t source_cell_count = source_sheet.cell_count();
+    const std::size_t source_memory = source_sheet.estimated_memory_usage();
+    check(throws_fastxlsx_error([&] {
+        source_sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid"));
+    }), "equal same-sheet value move setup should retain a diagnostic");
+
+    source_sheet.move_cell_values("A1:B1", "E5");
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.has_unsaved_changes()
+            && !editor.last_edit_error().has_value()
+            && editor.pending_change_count() == baseline_pending_count
+            && editor.pending_materialized_worksheet_names().empty()
+            && source_sheet.cell_count() == source_cell_count
+            && source_sheet.estimated_memory_usage() == source_memory,
+        "all-equal same-sheet value move should be a clean no-op");
+    editor.save_as(same_sheet_noop);
+    check(fastxlsx::test::read_zip_entries(same_sheet_noop)
+            == fastxlsx::test::read_zip_entries(baseline),
+        "save after an all-equal same-sheet value move should reproduce the baseline");
+
+    const std::size_t destination_cell_count = destination_sheet.cell_count();
+    destination_sheet.move_cell_values_from(source_sheet, "A1:B1", "E5");
+    check(!source_sheet.has_pending_changes()
+            && destination_sheet.has_pending_changes()
+            && editor.has_unsaved_changes()
+            && editor.pending_materialized_worksheet_names()
+                == std::vector<std::string> {"Destination"}
+            && editor.pending_materialized_cell_count()
+                == destination_sheet.cell_count(),
+        "explicit blank cross-sheet sources should dirty only the changed destination");
+    check(source_sheet.cell_count() == source_cell_count
+            && source_sheet.estimated_memory_usage() == source_memory
+            && source_sheet.get_cell("A1").kind()
+                == fastxlsx::CellValueKind::Blank,
+        "blank-only cross-sheet value move should preserve the source sparse state");
+    const fastxlsx::CellValue source_styled_blank = source_sheet.get_cell("B1");
+    check(source_styled_blank.kind() == fastxlsx::CellValueKind::Blank
+            && source_styled_blank.has_style()
+            && source_styled_blank.style_id().value()
+                == source.formula_style.value(),
+        "blank-only cross-sheet value move should preserve the source blank style");
+    check(destination_sheet.cell_count() == destination_cell_count + 2
+            && destination_sheet.get_cell("E5").kind()
+                == fastxlsx::CellValueKind::Blank
+            && !destination_sheet.get_cell("E5").has_style()
+            && destination_sheet.get_cell("F5").kind()
+                == fastxlsx::CellValueKind::Blank
+            && !destination_sheet.get_cell("F5").has_style(),
+        "blank-only cross-sheet value move should insert unstyled destination blanks");
+
+    editor.save_as(moved_output);
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.has_unsaved_changes(),
+        "saving the destination-only value move should clear its dirty state");
+    const std::size_t moved_pending_count = editor.pending_change_count();
+    const std::size_t destination_memory =
+        destination_sheet.estimated_memory_usage();
+    check(throws_fastxlsx_error([&] {
+        destination_sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid"));
+    }), "equal cross-sheet value move setup should retain a diagnostic");
+
+    destination_sheet.move_cell_values_from(source_sheet, "A1:B1", "E5");
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.has_unsaved_changes()
+            && !editor.last_edit_error().has_value()
+            && editor.pending_change_count() == moved_pending_count
+            && editor.pending_materialized_worksheet_names().empty()
+            && destination_sheet.cell_count() == destination_cell_count + 2
+            && destination_sheet.estimated_memory_usage() == destination_memory,
+        "all-equal cross-sheet value move should be a clean no-op");
+
+    editor.save_as(repeated_output);
+    check(fastxlsx::test::read_zip_entries(repeated_output)
+            == fastxlsx::test::read_zip_entries(moved_output),
+        "save after an all-equal cross-sheet value move should reproduce prior output");
+
+    destination_sheet.copy_cell_styles_from(source_sheet, "A1:B1", "E5");
+    editor.save_as(full_move_baseline);
+    const std::size_t full_move_pending_count = editor.pending_change_count();
+    const std::size_t styled_destination_memory =
+        destination_sheet.estimated_memory_usage();
+
+    destination_sheet.move_cells_from(source_sheet, "A1:B1", "E5");
+    check(source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && editor.has_unsaved_changes()
+            && editor.pending_change_count() == full_move_pending_count
+            && editor.pending_materialized_worksheet_names()
+                == std::vector<std::string> {"Source"}
+            && editor.pending_materialized_cell_count()
+                == source_sheet.cell_count(),
+        "full cross-sheet move with an equal overlay should dirty only the source");
+    check(!source_sheet.contains_cell("A1")
+            && !source_sheet.contains_cell("B1")
+            && source_sheet.cell_count() == source_cell_count - 2
+            && destination_sheet.cell_count() == destination_cell_count + 2
+            && destination_sheet.estimated_memory_usage()
+                == styled_destination_memory,
+        "equal full-move overlay should remove source records without replacing destination state");
+
+    editor.save_as(full_move_output);
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.has_unsaved_changes(),
+        "saving the source-only full move should clear its dirty state");
+    check(fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "equal move workflow should leave the source package unchanged");
+
+    fastxlsx::WorkbookEditor reopened =
+        fastxlsx::WorkbookEditor::open(full_move_output);
+    fastxlsx::WorksheetEditor reopened_source = reopened.worksheet("Source");
+    fastxlsx::WorksheetEditor reopened_destination =
+        reopened.worksheet("Destination");
+    const fastxlsx::CellValue reopened_styled_blank =
+        reopened_destination.get_cell("F5");
+    check(!reopened_source.contains_cell("A1")
+            && !reopened_source.contains_cell("B1")
+            && reopened_destination.get_cell("E5").kind()
+                == fastxlsx::CellValueKind::Blank
+            && reopened_styled_blank.kind() == fastxlsx::CellValueKind::Blank
+            && reopened_styled_blank.has_style()
+            && reopened_styled_blank.style_id().value()
+                == source.formula_style.value(),
+        "reopened equal full-move output should preserve source removal and destination blanks");
+}
+
 void test_cross_sheet_value_only_move_save_retry_and_reopen()
 {
     const CopyCellsSource source = write_cross_sheet_copy_source(
@@ -1501,6 +1661,7 @@ int main()
         test_cross_sheet_copies_survive_owner_moves();
         test_value_only_move_preserves_both_style_snapshots();
         test_value_only_move_guard_failure_preserves_source_values();
+        test_equal_value_moves_dirty_only_changed_sessions();
         test_cross_sheet_value_only_move_save_retry_and_reopen();
         test_cross_sheet_value_only_move_failures_preserve_both_sessions();
         test_cross_sheet_move_dual_session_save_retry_and_reopen();

@@ -1127,8 +1127,9 @@ public:
     /// Formula text is translated by the source-to-target coordinate delta.
     /// Bounds and CellStore guardrails are validated on a candidate store before
     /// active state is swapped, so failure publishes neither source clearing nor
-    /// destination writes. Moving to the source top-left or moving an empty
-    /// sparse range is a clean no-op.
+    /// destination writes. Moving to the source top-left, moving an empty sparse
+    /// range, or producing a candidate identical to the active sparse state is a
+    /// clean no-op.
     ///
     /// This is sparse value movement, not full cut/paste. It does not move style
     /// handles, erase source records, update worksheet metadata or linked
@@ -1156,8 +1157,10 @@ public:
     /// Source and destination CellStore candidates are fully validated before
     /// noexcept swaps publish either side. A guardrail, owner, session, bounds,
     /// or formula-translation failure preserves both active sessions apart from
-    /// last_edit_error(). An effective move dirties both sessions and failed
-    /// save_as() retains both sides for retry.
+    /// last_edit_error(). Each session becomes dirty only when its own final
+    /// candidate differs from its active sparse state: moving an explicit blank
+    /// can change only the destination, and an all-equal result is a clean no-op.
+    /// Failed save_as() retains every dirty side for retry.
     ///
     /// This is same-workbook value-only movement, not cross-workbook transfer,
     /// worksheet relocation, style-table migration, metadata cut/paste, formula
@@ -1238,8 +1241,10 @@ public:
     /// both CellStore candidates are fully validated before active state changes.
     /// The source-removal and destination-overlay candidates are committed only
     /// through noexcept store swaps, so target max_cells/memory guardrail or
-    /// staging failures publish neither half. An effective move dirties both
-    /// sessions; failed save_as() retains both sides for retry.
+    /// staging failures publish neither half. An effective move always dirties
+    /// the source because represented records are removed; the destination is
+    /// dirty only when its final overlay differs from its active sparse state.
+    /// Failed save_as() retains every dirty side for retry.
     ///
     /// This is same-workbook sparse record movement, not worksheet relocation or
     /// full Excel cross-sheet cut/paste. It does not move row/column metadata,

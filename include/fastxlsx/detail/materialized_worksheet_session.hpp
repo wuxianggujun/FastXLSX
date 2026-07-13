@@ -944,6 +944,25 @@ private:
         return false;
     }
 
+    static bool same_record_maps(const std::map<CellPosition, CellRecord>& left,
+        const std::map<CellPosition, CellRecord>& right) noexcept
+    {
+        if (left.size() != right.size()) {
+            return false;
+        }
+
+        auto left_record = left.begin();
+        auto right_record = right.begin();
+        for (; left_record != left.end(); ++left_record, ++right_record) {
+            if (left_record->first.row != right_record->first.row
+                || left_record->first.column != right_record->first.column
+                || !same_record(left_record->second, right_record->second)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     static void validate_style_move(
         const CellRange& source, CellPosition destination, std::string_view operation)
     {
@@ -1065,6 +1084,9 @@ private:
         for (ValueMoveRecord& record : records) {
             next_records[record.destination] = std::move(record.destination_value);
         }
+        if (same_record_maps(next_records, store_.records())) {
+            return;
+        }
 
         CellStore next_store(store_.options());
         next_store.replace_records(std::move(next_records));
@@ -1094,16 +1116,27 @@ private:
             next_destination_records[record.destination] =
                 std::move(record.destination_value);
         }
+        const bool changes_source = !same_record_maps(
+            next_source_records, source_session.store_.records());
+        const bool changes_destination =
+            !same_record_maps(next_destination_records, store_.records());
+        if (!changes_source && !changes_destination) {
+            return;
+        }
 
         CellStore next_source_store(source_session.store_.options());
         next_source_store.replace_records(std::move(next_source_records));
         CellStore next_destination_store(store_.options());
         next_destination_store.replace_records(std::move(next_destination_records));
 
-        source_session.store_.swap(next_source_store);
-        store_.swap(next_destination_store);
-        source_session.dirty_ = true;
-        dirty_ = true;
+        if (changes_source) {
+            source_session.store_.swap(next_source_store);
+            source_session.dirty_ = true;
+        }
+        if (changes_destination) {
+            store_.swap(next_destination_store);
+            dirty_ = true;
+        }
     }
 
     void move_cells_between_sessions(MaterializedWorksheetSession& source_session,
@@ -1174,6 +1207,8 @@ private:
             next_destination_records[transferred.destination] =
                 std::move(transferred.record);
         }
+        const bool changes_destination =
+            !same_record_maps(next_destination_records, store_.records());
 
         CellStore next_source_store(source_session.store_.options());
         next_source_store.replace_records(std::move(next_source_records));
@@ -1181,9 +1216,11 @@ private:
         next_destination_store.replace_records(std::move(next_destination_records));
 
         source_session.store_.swap(next_source_store);
-        store_.swap(next_destination_store);
         source_session.dirty_ = true;
-        dirty_ = true;
+        if (changes_destination) {
+            store_.swap(next_destination_store);
+            dirty_ = true;
+        }
     }
 
     void transfer_cells(const MaterializedWorksheetSession& source_session,

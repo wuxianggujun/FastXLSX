@@ -382,6 +382,141 @@ void check_reopened_default_data_sheet_output(
         });
 }
 
+void test_public_worksheet_editor_equal_single_cell_edits_remain_clean()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-equal-single-cell-source.xlsx");
+    const std::filesystem::path equal_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-equal-single-cell-output.xlsx");
+    const std::filesystem::path blank_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-equal-single-cell-blank-output.xlsx");
+    const std::filesystem::path repeated_clear_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-equal-single-cell-repeated-clear-output.xlsx");
+
+    fastxlsx::StyleId source_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        source_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter sheet = writer.add_worksheet("Styled");
+        sheet.append_row({
+            fastxlsx::CellView::text("equal-a1"),
+            fastxlsx::CellView::number(2.5).with_style(source_style),
+        });
+        writer.close();
+    }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+    sheet.set_cell(
+        "A1", fastxlsx::CellValue::text("equal-a1").with_style(fastxlsx::StyleId {}));
+    sheet.set_cell_value(
+        1, 2, fastxlsx::CellValue::number(2.5).with_style(fastxlsx::StyleId {}));
+
+    const fastxlsx::CellValue equal_a1 = sheet.get_cell("A1");
+    const fastxlsx::CellValue equal_b1 = sheet.get_cell("B1");
+    check(equal_a1.kind() == fastxlsx::CellValueKind::Text
+            && equal_a1.text_value() == "equal-a1" && !equal_a1.has_style(),
+        "equal set_cell should preserve the normalized unstyled A1 record");
+    check(equal_b1.kind() == fastxlsx::CellValueKind::Number
+            && equal_b1.number_value() == 2.5 && equal_b1.has_style()
+            && equal_b1.style_id().value() == source_style.value(),
+        "equal set_cell_value should preserve the styled B1 record");
+    check(sheet.cell_count() == 2 && sheet.estimated_memory_usage() == baseline_memory,
+        "equal single-cell edits should preserve sparse count and memory estimate");
+    check(!sheet.has_pending_changes(),
+        "equal single-cell edits should keep the materialized session clean");
+    check_workbook_editor_public_no_pending_state(editor, "equal single-cell edits");
+    check(editor.pending_materialized_worksheet_names().empty()
+            && editor.pending_materialized_cell_count() == 0
+            && editor.estimated_pending_materialized_memory_usage() == 0,
+        "equal single-cell edits should keep materialized diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "equal single-cell edits");
+
+    editor.save_as(equal_output);
+    check(!sheet.has_pending_changes() && editor.pending_change_count() == 0,
+        "equal single-cell save should not record a materialized handoff");
+    check(fastxlsx::test::read_zip_entries(equal_output) == source_entries,
+        "equal single-cell save should preserve all source entry payloads");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "equal single-cell save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        equal_output, "Styled", "equal single-cell save",
+        [source_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            const fastxlsx::CellValue a1 = reopened_sheet.get_cell("A1");
+            const fastxlsx::CellValue b1 = reopened_sheet.get_cell("B1");
+            check(a1.kind() == fastxlsx::CellValueKind::Text
+                    && a1.text_value() == "equal-a1" && !a1.has_style(),
+                "equal single-cell reopened A1 should remain unstyled text");
+            check(b1.kind() == fastxlsx::CellValueKind::Number
+                    && b1.number_value() == 2.5 && b1.has_style()
+                    && b1.style_id().value() == source_style.value(),
+                "equal single-cell reopened B1 should retain its source style");
+        });
+
+    sheet.clear_cell_value("B1");
+    const fastxlsx::CellValue live_blank = sheet.get_cell("B1");
+    check(live_blank.kind() == fastxlsx::CellValueKind::Blank
+            && live_blank.has_style()
+            && live_blank.style_id().value() == source_style.value(),
+        "first clear_cell_value should create a styled explicit blank");
+    check(sheet.has_pending_changes(),
+        "first clear_cell_value should dirty the materialized session");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 0, "first clear_cell_value");
+
+    editor.save_as(blank_output);
+    const auto blank_entries = fastxlsx::test::read_zip_entries(blank_output);
+    const std::string styled_blank =
+        R"(<c r="B1" s=")" + std::to_string(source_style.value()) + R"("/>)";
+    check_contains(blank_entries.at("xl/worksheets/sheet1.xml"), styled_blank,
+        "first clear_cell_value save should persist the styled explicit blank");
+    check(!sheet.has_pending_changes() && editor.pending_change_count() == 1,
+        "first clear_cell_value save should commit exactly one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty()
+            && editor.pending_materialized_cell_count() == 0
+            && editor.estimated_pending_materialized_memory_usage() == 0,
+        "first clear_cell_value save should clear dirty materialized diagnostics");
+
+    sheet.clear_cell_value("B1");
+    check(!sheet.has_pending_changes(),
+        "repeated clear_cell_value on an explicit blank should remain clean");
+    check(editor.pending_change_count() == 1,
+        "repeated clear_cell_value should not record a materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty()
+            && editor.pending_materialized_cell_count() == 0
+            && editor.estimated_pending_materialized_memory_usage() == 0
+            && editor.pending_worksheet_edits().empty(),
+        "repeated clear_cell_value should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "repeated clear_cell_value should keep public diagnostics clear");
+
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_repeated_clear_save =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(repeated_clear_output);
+    check(!sheet.has_pending_changes() && editor.pending_change_count() == 1,
+        "repeated clear save should not add another materialized handoff");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_repeated_clear_save,
+        "repeated clear_cell_value save");
+    check(fastxlsx::test::read_zip_entries(repeated_clear_output) == blank_entries,
+        "repeated clear output should match the first blank output");
+    check(fastxlsx::test::read_zip_entries(blank_output) == blank_entries,
+        "repeated clear save should leave the first blank output unchanged");
+    check_reopened_clean_sheet_output(
+        repeated_clear_output, "Styled", "repeated clear_cell_value save",
+        [source_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            const fastxlsx::CellValue b1 = reopened_sheet.get_cell("B1");
+            check(b1.kind() == fastxlsx::CellValueKind::Blank
+                    && b1.has_style()
+                    && b1.style_id().value() == source_style.value(),
+                "repeated clear reopened B1 should remain a styled explicit blank");
+        });
+}
+
 void test_public_worksheet_editor_set_cell_replacement_drops_source_style()
 {
     const std::filesystem::path source = artifact(
@@ -4324,6 +4459,7 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
 int main()
 {
     try {
+        test_public_worksheet_editor_equal_single_cell_edits_remain_clean();
         test_public_worksheet_editor_set_cell_replacement_drops_source_style();
         test_public_worksheet_editor_set_cell_accepts_default_style_id_as_unstyled();
         test_public_worksheet_editor_set_cell_value_accepts_default_style_id_as_style_preserving_value_edit();

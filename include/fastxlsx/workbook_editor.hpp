@@ -645,7 +645,12 @@ public:
     /// and memory_budget_bytes guardrails as other cell values. Supported
     /// number, boolean, and formula values use the current sparse-store
     /// projection; formulas are not evaluated and do not generate cached
-    /// results.
+    /// results. After StyleId{0} normalization, replacing an active sparse
+    /// record with the same kind, payload, and style is a successful no-op that
+    /// does not dirty the materialized session and clears prior public edit
+    /// diagnostics. Because this is a full-cell replacement, writing the same
+    /// payload to a source-styled cell is still an effective edit when it drops
+    /// that style; use set_cell_value() to preserve the source style.
     ///
     /// Non-default StyleId handles are rejected because the first public slice
     /// has no existing-workbook style registry or migration policy. An explicit
@@ -1534,7 +1539,10 @@ public:
     /// targets. Caller-supplied non-default StyleId handles are still rejected
     /// because this method does not migrate, merge, validate, or create styles.
     /// Use set_cell() when the intended operation is a full cell replacement
-    /// that drops any prior style.
+    /// that drops any prior style. After destination-style preservation, a
+    /// normalized value that equals the active sparse record is a successful
+    /// no-op that does not dirty the materialized session and clears prior
+    /// public edit diagnostics.
     void set_cell_value(
         std::uint32_t row, std::uint32_t column, const CellValue& value);
 
@@ -1652,7 +1660,9 @@ public:
     /// projection; formulas are not evaluated and do not generate cached
     /// results. Explicit default StyleId{0} handles are normalized to no style
     /// handle. Non-default StyleId handles follow the row/column overload: they
-    /// are rejected before the sparse store is mutated or dirtied.
+    /// are rejected before the sparse store is mutated or dirtied. Normalized
+    /// final-state equality and full-replacement style-drop behavior also match
+    /// the row/column overload.
     void set_cell(std::string_view cell_reference, const CellValue& value);
 
     /// Replaces one sparse-store cell value by strict uppercase A1 reference
@@ -1661,8 +1671,9 @@ public:
     /// The reference parsing, coordinate guardrails, missing-cell insertion
     /// behavior, explicit default StyleId{0} acceptance, and non-default
     /// caller-supplied StyleId rejection follow the row/column set_cell_value()
-    /// overload. This remains a value-only convenience, not a public style
-    /// migration or style editing API.
+    /// overload. Destination-style-preserving final-state equality is a clean
+    /// successful no-op. This remains a value-only convenience, not a public
+    /// style migration or style editing API.
     void set_cell_value(std::string_view cell_reference, const CellValue& value);
 
     /// Clears the value of one represented cell while preserving its style.
@@ -1671,18 +1682,19 @@ public:
     /// If the existing materialized cell has a non-default source StyleId, the
     /// blank keeps that workbook-local handle and dirty save_as() projects an
     /// empty styled `<c>` cell. Existing unstyled cells become unstyled explicit
-    /// blanks. A missing target cell is a successful no-op: it does not insert a
-    /// blank, does not dirty the session, and clears prior public edit
-    /// diagnostics. Invalid coordinates are mutation failures and update the
-    /// owning WorkbookEditor::last_edit_error(). This is not erase_cell(), does
-    /// not create tombstones, and does not migrate, merge, validate, or create
-    /// styles.
+    /// blanks. A missing target cell, or a represented target that is already an
+    /// explicit blank with the same preserved style, is a successful no-op: it
+    /// does not insert or rewrite a record, does not dirty the session, and
+    /// clears prior public edit diagnostics. Invalid coordinates are mutation
+    /// failures and update the owning WorkbookEditor::last_edit_error(). This is
+    /// not erase_cell(), does not create tombstones, and does not migrate, merge,
+    /// validate, or create styles.
     void clear_cell_value(std::uint32_t row, std::uint32_t column);
 
     /// Clears the value of one represented cell by strict uppercase A1 reference
     /// while preserving the target cell's current source style handle.
     ///
-    /// The reference parsing, coordinate guardrails, missing-cell no-op
+    /// The reference parsing, coordinate guardrails, missing/already-blank no-op
     /// behavior, and non-tombstone explicit-blank semantics follow the
     /// row/column clear_cell_value() overload.
     void clear_cell_value(std::string_view cell_reference);
@@ -1692,8 +1704,10 @@ public:
     /// API mode: In-memory / existing-workbook small-file mutation. Every
     /// active sparse record currently represented by the materialized store is
     /// converted to an explicit blank. Existing source StyleId handles are
-    /// preserved per cell. An empty materialized store is a successful no-op
-    /// that does not dirty the session and clears prior public edit diagnostics.
+    /// preserved per cell. An empty materialized store, or one whose represented
+    /// records are already explicit blanks with those styles, is a successful
+    /// no-op that does not dirty the session and clears prior public edit
+    /// diagnostics.
     ///
     /// Dirty save_as() keeps represented coordinates as blank `<c>` cells and
     /// may keep the worksheet dimension expanded to those coordinates. This is
@@ -1707,11 +1721,12 @@ public:
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. The row is
     /// a 1-based Excel row number. Only active sparse records already present
-    /// in that row are converted to explicit blanks; missing rows are
-    /// successful no-ops that do not dirty the materialized session and clear
-    /// prior public edit diagnostics. Existing source StyleId handles are
-    /// preserved per represented cell. Invalid row numbers are mutation
-    /// failures and update WorkbookEditor::last_edit_error().
+    /// in that row are converted to explicit blanks; missing rows and rows whose
+    /// represented records are already explicit blanks are successful no-ops
+    /// that do not dirty the materialized session and clear prior public edit
+    /// diagnostics. Existing source StyleId handles are preserved per
+    /// represented cell. Invalid row numbers are mutation failures and update
+    /// WorkbookEditor::last_edit_error().
     ///
     /// Dirty save_as() keeps the represented coordinates as blank `<c>` cells
     /// and may keep the worksheet dimension expanded to those coordinates.
@@ -1726,7 +1741,8 @@ public:
     /// API mode: In-memory / existing-workbook small-file mutation. The
     /// row-range bounds are 1-based Excel row numbers and must satisfy
     /// `first_row <= last_row`. Only active sparse records already present in
-    /// those rows are converted to explicit blanks; missing-only ranges are
+    /// those rows are converted to explicit blanks; missing-only ranges and
+    /// ranges whose represented records are already explicit blanks are
     /// successful no-ops that do not dirty the materialized session and clear
     /// prior public edit diagnostics. Existing source StyleId handles are
     /// preserved per represented cell. Invalid or reversed ranges reject before
@@ -1745,8 +1761,9 @@ public:
     /// API mode: In-memory / existing-workbook small-file mutation. The column
     /// is a 1-based Excel column number. Only active sparse records already
     /// present in that column are converted to explicit blanks; missing columns
-    /// are successful no-ops that do not dirty the materialized session and
-    /// clear prior public edit diagnostics. Existing source StyleId handles are
+    /// and columns whose represented records are already explicit blanks are
+    /// successful no-ops that do not dirty the materialized session and clear
+    /// prior public edit diagnostics. Existing source StyleId handles are
     /// preserved per represented cell. Invalid column numbers are mutation
     /// failures and update WorkbookEditor::last_edit_error().
     ///
@@ -1764,10 +1781,11 @@ public:
     /// column-range bounds are 1-based Excel column numbers and must satisfy
     /// `first_column <= last_column`. Only active sparse records already
     /// present in those columns are converted to explicit blanks; missing-only
-    /// ranges are successful no-ops that do not dirty the materialized session
-    /// and clear prior public edit diagnostics. Existing source StyleId handles
-    /// are preserved per represented cell. Invalid or reversed ranges reject
-    /// before mutating the sparse store and update
+    /// ranges and ranges whose represented records are already explicit blanks
+    /// are successful no-ops that do not dirty the materialized session and
+    /// clear prior public edit diagnostics. Existing source StyleId handles are
+    /// preserved per represented cell. Invalid or reversed ranges reject before
+    /// mutating the sparse store and update
     /// WorkbookEditor::last_edit_error().
     ///
     /// Dirty save_as() keeps represented coordinates as blank `<c>` cells and
@@ -1784,10 +1802,11 @@ public:
     /// CellRange is 1-based and inclusive, and is validated against Excel
     /// worksheet limits. Only active sparse records already present in the
     /// materialized store are converted to explicit blanks; missing cells inside
-    /// the range are not synthesized, and a range with no active cells is a
-    /// successful no-op that does not dirty the session. Existing non-default
-    /// source style handles are preserved per cell, so dirty save_as() projects
-    /// empty styled `<c>` cells only for cells that were already represented.
+    /// the range are not synthesized. A range with no active cells, or whose
+    /// represented records are already explicit blanks, is a successful no-op
+    /// that does not dirty the session. Existing non-default source style handles
+    /// are preserved per cell, so dirty save_as() projects empty styled `<c>`
+    /// cells only for cells that were already represented.
     /// Invalid ranges are mutation failures and update
     /// WorkbookEditor::last_edit_error(). This is not dense range editing,
     /// erase/tombstone semantics, range metadata recalculation, style
@@ -1820,8 +1839,9 @@ public:
     /// converted to explicit blanks; missing coordinates are no-ops and are not
     /// synthesized. Existing non-default source style handles are preserved per
     /// cell, so dirty save_as() projects empty styled `<c>` cells only for
-    /// cells that were already represented. Empty input, or input containing no
-    /// represented cells, is a successful no-op that does not dirty the session.
+    /// cells that were already represented. Empty input, input containing no
+    /// represented cells, or a final affected set that is already entirely
+    /// explicit blank is a successful no-op that does not dirty the session.
     /// Invalid coordinates reject the entire batch before the active sparse
     /// store is mutated and update WorkbookEditor::last_edit_error().
     ///

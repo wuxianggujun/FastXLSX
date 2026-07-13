@@ -3002,13 +3002,16 @@ CellStore::CellStore(CellStoreOptions options)
 {
 }
 
-void CellStore::set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value)
+bool CellStore::set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value)
 {
     validate_position(row, column);
     const CellPosition position {row, column};
     CellRecord record = CellRecord::from_value(value);
     const auto existing = cells_.find(position);
     const bool inserting_new_record = existing == cells_.end();
+    if (!inserting_new_record && same_cell_record(existing->second, record)) {
+        return false;
+    }
     const std::size_t next_cell_count = cells_.size() + (inserting_new_record ? 1U : 0U);
 
     if (options_.max_cells.has_value() && next_cell_count > *options_.max_cells) {
@@ -3027,6 +3030,7 @@ void CellStore::set_cell(std::uint32_t row, std::uint32_t column, const CellValu
     }
 
     cells_[position] = std::move(record);
+    return true;
 }
 
 bool CellStore::apply_cell_edits(

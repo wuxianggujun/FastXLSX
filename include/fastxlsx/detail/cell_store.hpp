@@ -197,7 +197,9 @@ class CellStore {
 public:
     explicit CellStore(CellStoreOptions options = {});
 
-    void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
+    /// Sets one normalized sparse record and returns true only when the active
+    /// record changes. A final-state-equal write is a successful no-op.
+    bool set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
     /// Applies sparse erasures followed by sparse updates as one preflighted
     /// edit. Returns true when the edit contains at least one effective erase
     /// or update.

@@ -559,7 +559,10 @@ void test_internal_cell_store_sparse_boundary()
     check(empty_memory >= sizeof(fastxlsx::detail::CellStore),
         "empty CellStore memory estimate should include the store object");
 
-    store.set_cell(3, 3, fastxlsx::CellValue::number(3.25));
+    check(store.set_cell(3, 3, fastxlsx::CellValue::number(3.25)),
+        "CellStore set_cell should report a new sparse record");
+    check(!store.set_cell(3, 3, fastxlsx::CellValue::number(3.25)),
+        "CellStore set_cell should report a final-state-equal record as a no-op");
     const fastxlsx::detail::CellRecord* number = store.try_cell(3, 3);
     check(number != nullptr, "CellStore should find an inserted numeric cell");
     check(number->kind == fastxlsx::CellValueKind::Number,
@@ -607,7 +610,10 @@ void test_internal_cell_store_sparse_boundary()
     check(!round_tripped_error.to_cell().has_value(),
         "CellRecord error should round trip without a Cell representation");
 
-    store.set_cell(2, 1, fastxlsx::CellValue::boolean(false));
+    check(store.set_cell(2, 1, fastxlsx::CellValue::boolean(false)),
+        "CellStore set_cell should report an effective replacement");
+    check(!store.set_cell(2, 1, fastxlsx::CellValue::boolean(false)),
+        "CellStore set_cell should report an equal replacement as a no-op");
     check(store.cell_count() == 4, "CellStore overwrite should not grow the sparse index");
     const fastxlsx::detail::CellRecord* boolean = store.find_cell(2, 1);
     check(boolean != nullptr, "CellStore should find an overwritten boolean cell");
@@ -889,6 +895,13 @@ void test_internal_materialized_worksheet_session()
     check(session.cell_count() == 2,
         "materialized worksheet session should expose source-loaded cell count");
 
+    session.set_cell(1, 1, fastxlsx::CellValue::number(1.0));
+    check(!session.dirty(),
+        "final-state-equal materialized set_cell should remain a clean no-op");
+    session.clear_cell_value(2, 1);
+    check(!session.dirty(),
+        "clearing an explicit blank materialized cell should remain a clean no-op");
+
     const fastxlsx::CellValue equal_number = fastxlsx::CellValue::number(1.0);
     const std::vector<fastxlsx::detail::CellStoreUpdate> equal_updates = {
         {fastxlsx::detail::CellPosition {1, 1}, &equal_number},
@@ -953,6 +966,17 @@ void test_internal_materialized_worksheet_session()
     mismatched_options.max_cells = 3;
     check(!session.options_match(mismatched_options),
         "materialized worksheet session should detect mismatched rematerialization options");
+
+    fastxlsx::detail::CellStore formula_store;
+    formula_store.set_cell(1, 1, fastxlsx::CellValue::formula("A1+1"));
+    fastxlsx::detail::MaterializedWorksheetSession formula_session(
+        "Formula", std::move(formula_store));
+    formula_session.replace_formula_text(1, 1, "A1+1");
+    check(!formula_session.dirty(),
+        "final-state-equal materialized formula rewrite should remain clean");
+    formula_session.replace_formula_text(1, 1, "B1+1");
+    check(formula_session.dirty(),
+        "effective materialized formula rewrite should mark the session dirty");
 }
 
 void test_internal_materialized_worksheet_session_shifts_sparse_records()

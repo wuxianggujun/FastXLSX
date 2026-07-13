@@ -65,8 +65,7 @@ public:
 
     void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value)
     {
-        store_.set_cell(row, column, value);
-        dirty_ = true;
+        dirty_ = store_.set_cell(row, column, value) || dirty_;
     }
 
     void set_cells(
@@ -105,8 +104,7 @@ public:
         if (existing->style_id.has_value()) {
             value = value.with_style(*existing->style_id);
         }
-        store_.set_cell(row, column, value);
-        dirty_ = true;
+        dirty_ = store_.set_cell(row, column, value) || dirty_;
     }
 
     void erase_cell(std::uint32_t row, std::uint32_t column)
@@ -127,8 +125,7 @@ public:
         if (existing->style_id.has_value()) {
             value = value.with_style(*existing->style_id);
         }
-        store_.set_cell(row, column, value);
-        dirty_ = true;
+        dirty_ = store_.set_cell(row, column, value) || dirty_;
     }
 
     void clear_cell_values()

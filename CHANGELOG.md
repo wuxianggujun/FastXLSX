@@ -13,6 +13,7 @@
 - Patch schema-v5 telemetry 增加 raw-copy entry names/count/bytes，矩阵逐 entry 验证 exact source/output compressed payload；新增 Streaming compression 与 Patch raw-copy 两个 validated evidence bundle，记录 level 1/3/6 的吞吐、输出大小、peak working set 和 openpyxl 结果。
 - Patch single-pass rewrite 使用 256 KiB 有界 output batching 合并事件碎片，复用 transformer 已解析 cell coordinate，并减少 relationship scanner 的 namespace-scope 复制；事务、精确 dimension、relationship audit、retry 与 temporary ownership 契约保持不变。
 - Patch benchmark telemetry 增加 transform residual、append/flush/peak buffer、relationship/temporary IO 与 package writer target-entry 分解；新增 1,000,000/5,000,000-cell validated rewrite batching bundle。记录 workload 中 level 1 的 1,000,000-cell transform median 降至 0.767 秒，5,000,000-cell process peak working set 为 8.80859 MB；结论不跨机器或泛化到任意 XLSX。
+- Patch worksheet reader 在 single-pass rewrite 中合并相邻非公式 value 事件，transformer 合并 pass-through action 并对有序 upsert 复用 next-target；新增 parser/callback/coalesced/action telemetry 与 numeric、mixed inline、sharedStrings、formula + hyperlink evidence。记录的 5,000,000-cell numeric level 1 workload 中 transform/residual median 较紧邻同机基线降低 11.53%/14.21%，process peak working set 保持约 8.79 MB；不泛化到其他机器或任意 XLSX。
 
 ## [0.1.0] - 2026-07-13
 

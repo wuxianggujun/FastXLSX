@@ -1,0 +1,73 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-13-windows-msvc-patch-event-coalescing-profile",
+  "created_utc": "2026-07-13T11:59:45Z",
+  "git_revision": "c3ea2ee7036b7d25633a0685f2d00bd46039ae74",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "summary.json",
+      "sha256": "9ee6adf2ab245640bb05b103c7ea63d6a2635ad63144d8886bd2d095bd2e709c",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "c45ec77cffaffcc356b977c894a60f86e139484a14f237fc43595b16b9b32678",
+      "role": "summary"
+    },
+    {
+      "path": "numeric-1m-report.json",
+      "sha256": "9906a87017170c53e5451b56c5999b19f880e4c07d1bc837870b7123e26012d5",
+      "role": "matrix-report"
+    },
+    {
+      "path": "numeric-5m-report.json",
+      "sha256": "d54346103c694413f7c02aa94a1e0eac4e07aaed4545e9863baf8a0ba8e5bf3b",
+      "role": "matrix-report"
+    },
+    {
+      "path": "mixed-inline-1m-report.json",
+      "sha256": "9839a3dc6d0d24df782d57fc37edd4f268e59f2e9b253c4ea2ca1ab91e7be706",
+      "role": "matrix-report"
+    },
+    {
+      "path": "mixed-shared-1m-report.json",
+      "sha256": "1a1156a4ad9a371eb4c15f77c6fc71c85e021cd3a61eedb5978afd8bc3cfeffc",
+      "role": "matrix-report"
+    },
+    {
+      "path": "formula-hyperlink-1m-report.json",
+      "sha256": "53fedcc1cedd092e179d76e0fadda37e2a72e437bd54ee64470f8433645bb2a1",
+      "role": "matrix-report"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "On this machine and the recorded five-million-cell numeric level 1 targeted-upsert workload, median total editor, mutation, transform and source-scan/action residual time decreased by 5.77%, 10.30%, 11.53% and 14.21% respectively versus the immediately preceding same-machine batching profile; timing remains system-sensitive and this is not a cross-machine guarantee.",
+      "artifact_paths": ["summary.json", "run-context.json", "numeric-5m-report.json"]
+    },
+    {
+      "statement": "The recorded five-million-cell numeric transform reduced 26000006 parsed events to 16000068 source callbacks and 11001084 transform action callbacks, used a 262144-byte peak owned output buffer and recorded an 8.79297 MB median process peak working set.",
+      "artifact_paths": ["summary.json", "numeric-5m-report.json"]
+    },
+    {
+      "statement": "The one-million-cell distribution matrix covered numeric, mixed inline strings, sharedStrings and formula metadata; the formula fixture also retained its external A1 hyperlink relationship and worksheet binding. These profiles are compatibility/distribution evidence, not broad elapsed-time claims.",
+      "artifact_paths": ["summary.json", "mixed-inline-1m-report.json", "mixed-shared-1m-report.json", "formula-hyperlink-1m-report.json"]
+    },
+    {
+      "statement": "The runner verified output-plan byte accounting and exact compressed payload equality for every planned raw-copy entry in all warm-up and measured outputs, and each median representative opened with openpyxl 3.1.5. Microsoft Office was not run.",
+      "artifact_paths": ["run-context.json", "numeric-1m-report.json", "numeric-5m-report.json", "mixed-inline-1m-report.json", "mixed-shared-1m-report.json", "formula-hyperlink-1m-report.json"]
+    },
+    {
+      "statement": "The implementation passed production and stored-only 130-test CTest profiles, the no-images smoke and installed-package consumer builds for production, stored-only and no-images profiles.",
+      "artifact_paths": ["run-context.json"]
+    }
+  ]
+}

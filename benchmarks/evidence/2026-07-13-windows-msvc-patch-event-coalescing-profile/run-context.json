@@ -1,0 +1,27 @@
+{
+  "run_context_schema_version": "1",
+  "completed_utc": "2026-07-13T11:59:45Z",
+  "git_revision": "c3ea2ee7036b7d25633a0685f2d00bd46039ae74",
+  "working_tree": "Benchmark executable and reports correspond to the implementation committed as c3ea2ee7036b7d25633a0685f2d00bd46039ae74; documentation/evidence files were added afterward.",
+  "benchmark_build_preset": "windows-nmake-release-benchmark",
+  "performance_commands": [
+    "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-event-coalescing-numeric-l1 --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-pattern numeric --source-compression-level 6 --output-compression-level 1 --verify-openpyxl",
+    "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-event-coalescing-numeric-5m-l1-final --rows 500000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-pattern numeric --source-compression-level 6 --output-compression-level 1 --verify-openpyxl",
+    "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-event-coalescing-1m-mixed-inline --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-pattern mixed-inline --source-compression-level 6 --output-compression-level 1 --verify-openpyxl",
+    "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-event-coalescing-1m-mixed-shared --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-pattern mixed-shared --source-compression-level 6 --output-compression-level 1 --verify-openpyxl",
+    "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-event-coalescing-1m-formula --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-pattern formula --source-external-hyperlink --source-compression-level 6 --output-compression-level 1 --verify-openpyxl"
+  ],
+  "protocol": "Each profile generated a fresh DEFLATE level 6 source workbook in a separate process, ran two warm-ups, retained five measured editor-process runs and selected the elapsed-time median representative. Only targeted upsert was measured.",
+  "peak_memory_metric": "Windows PROCESS_MEMORY_COUNTERS.PeakWorkingSetSize for each benchmark process; source fixture generation and Python verification are outside measured reused-source runs.",
+  "transform_metrics": "Single-pass transform microseconds, parsed/source-callback/coalesced/action traffic, output append/flush counts, peak owned batching buffer, relationship scan time, temporary-file write time and the source-scan/action residual.",
+  "package_writer_metrics": "Caller-owned internal telemetry enabled only for benchmark save: package and target worksheet entry open/read/write/close timing, bytes and call counts. Normal callers do not collect per-call clock data.",
+  "compatibility_protocol": "The runner validated output-plan byte accounting and exact compressed payload equality for every raw-copy entry in every warm-up and measured output. Each median representative opened with openpyxl 3.1.5. The relationship-bearing formula profile additionally streamed the worksheet XML and inspected the small worksheet relationship part to verify the A1 external hyperlink binding and target without loading a one-million-cell DOM.",
+  "validation": {
+    "production_ctest": "130/130 passed",
+    "stored_only_ctest": "130/130 passed",
+    "no_images_smoke": "passed",
+    "install_consumer_profiles": ["production", "stored-only", "no-images"]
+  },
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine, numeric/mixed-inline/mixed-shared/formula source distributions, one relationship-bearing fixture, one-million and five-million source-cell profiles, 1,000 targeted upserts and output DEFLATE level 1. No arbitrary-workbook, random-editing, cross-machine or Office compatibility claim."
+}

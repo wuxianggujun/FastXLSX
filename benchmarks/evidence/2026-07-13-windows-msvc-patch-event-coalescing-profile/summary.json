@@ -1,0 +1,217 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "5",
+  "git_revision": "c3ea2ee7036b7d25633a0685f2d00bd46039ae74",
+  "workload": {
+    "columns": 10,
+    "requested_patch_cells": 1000,
+    "matched_existing_cells": 500,
+    "inserted_cells": 500,
+    "source_compression_level": 6,
+    "output_compression_level": 1,
+    "warmup_runs_per_profile": 2,
+    "measured_runs_per_profile": 5
+  },
+  "profiles": [
+    {
+      "name": "numeric-1m",
+      "source_pattern": "numeric",
+      "source_rows": 100000,
+      "source_cells": 1000000,
+      "source_bytes": 3129601,
+      "output_bytes": 3438241,
+      "total_editor_ms": [1270, 1228, 1263, 1254, 1248],
+      "mutation_ms": [984, 938, 968, 937, 981],
+      "single_pass_transform_us": [801039, 772815, 778438, 749959, 806559],
+      "peak_memory_mb": [8.78516, 8.80469, 8.80078, 8.82031, 8.8125],
+      "median": {
+        "total_editor_ms": 1254,
+        "mutation_ms": 968,
+        "save_ms": 286,
+        "single_pass_transform_us": 778438,
+        "source_scan_action_residual_us": 599960,
+        "relationship_scan_us": 157056,
+        "temporary_write_us": 23057,
+        "package_writer_total_us": 284843,
+        "peak_memory_mb": 8.80469
+      },
+      "event_traffic": {
+        "parsed_events": 5200006,
+        "source_callbacks": 3200017,
+        "coalesced_input_events": 3000000,
+        "coalesced_output_events": 1000011,
+        "transform_action_callbacks": 2201017,
+        "output_append_calls": 2201016,
+        "output_flushes": 134,
+        "peak_output_buffer_bytes": 262144
+      },
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "numeric-5m",
+      "source_pattern": "numeric",
+      "source_rows": 500000,
+      "source_cells": 5000000,
+      "source_bytes": 15887388,
+      "output_bytes": 17432167,
+      "total_editor_ms": [7978, 8757, 8031, 8004, 7939],
+      "mutation_ms": [6214, 6779, 6197, 6210, 6142],
+      "single_pass_transform_us": [5191799, 5465869, 5180113, 5162936, 5138149],
+      "peak_memory_mb": [8.78906, 8.80469, 8.79297, 8.80078, 8.78516],
+      "median": {
+        "total_editor_ms": 8004,
+        "mutation_ms": 6210,
+        "save_ms": 1790,
+        "single_pass_transform_us": 5180113,
+        "source_scan_action_residual_us": 4059595,
+        "relationship_scan_us": 997828,
+        "temporary_write_us": 131443,
+        "package_writer_total_us": 1788977,
+        "peak_memory_mb": 8.79297
+      },
+      "event_traffic": {
+        "parsed_events": 26000006,
+        "source_callbacks": 16000068,
+        "coalesced_input_events": 15000000,
+        "coalesced_output_events": 5000062,
+        "transform_action_callbacks": 11001084,
+        "output_append_calls": 11001083,
+        "output_flushes": 701,
+        "peak_output_buffer_bytes": 262144
+      },
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "mixed-inline-1m",
+      "source_pattern": "mixed-inline",
+      "source_rows": 100000,
+      "source_cells": 1000000,
+      "source_bytes": 4388936,
+      "output_bytes": 5030208,
+      "median": {
+        "total_editor_ms": 1532,
+        "mutation_ms": 1168,
+        "save_ms": 394,
+        "single_pass_transform_us": 973401,
+        "source_scan_action_residual_us": 747590,
+        "relationship_scan_us": 198235,
+        "temporary_write_us": 27576,
+        "package_writer_total_us": 393074,
+        "peak_memory_mb": 9.8125
+      },
+      "event_traffic": {
+        "parsed_events": 5866672,
+        "source_callbacks": 3866682,
+        "coalesced_input_events": 3000000,
+        "coalesced_output_events": 1000010,
+        "transform_action_callbacks": 3200515,
+        "output_append_calls": 3200514,
+        "output_flushes": 163,
+        "peak_output_buffer_bytes": 262144
+      },
+      "timing_use": "distribution coverage only",
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "mixed-shared-1m",
+      "source_pattern": "mixed-shared",
+      "source_rows": 100000,
+      "source_cells": 1000000,
+      "source_bytes": 3899982,
+      "output_bytes": 5110221,
+      "median": {
+        "total_editor_ms": 1533,
+        "mutation_ms": 1181,
+        "save_ms": 354,
+        "single_pass_transform_us": 990598,
+        "source_scan_action_residual_us": 773201,
+        "relationship_scan_us": 186387,
+        "temporary_write_us": 27664,
+        "package_writer_total_us": 352319,
+        "peak_memory_mb": 9.80469
+      },
+      "event_traffic": {
+        "parsed_events": 5200006,
+        "source_callbacks": 3200015,
+        "coalesced_input_events": 3000000,
+        "coalesced_output_events": 1000009,
+        "transform_action_callbacks": 2201019,
+        "output_append_calls": 2201018,
+        "output_flushes": 133,
+        "peak_output_buffer_bytes": 262144
+      },
+      "timing_use": "distribution coverage only",
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "formula-hyperlink-1m",
+      "source_pattern": "formula",
+      "source_external_hyperlink": true,
+      "source_rows": 100000,
+      "source_cells": 1000000,
+      "source_bytes": 3758502,
+      "output_bytes": 4454227,
+      "median": {
+        "total_editor_ms": 2488,
+        "mutation_ms": 1521,
+        "save_ms": 921,
+        "single_pass_transform_us": 1218821,
+        "source_scan_action_residual_us": 951702,
+        "relationship_scan_us": 238898,
+        "temporary_write_us": 33633,
+        "package_writer_total_us": 509336,
+        "peak_memory_mb": 8.22266
+      },
+      "event_traffic": {
+        "parsed_events": 5200009,
+        "source_callbacks": 3600016,
+        "coalesced_input_events": 2600000,
+        "coalesced_output_events": 1000007,
+        "transform_action_callbacks": 2800722,
+        "output_append_calls": 2800721,
+        "output_flushes": 134,
+        "peak_output_buffer_bytes": 262144
+      },
+      "timing_use": "distribution and relationship-preservation coverage only",
+      "representative_openpyxl": "opened",
+      "verified_external_hyperlink_target": "https://example.com/fastxlsx-benchmark"
+    }
+  ],
+  "same_machine_historical_comparison": {
+    "baseline_artifact": "../2026-07-13-windows-msvc-patch-rewrite-batching-profile/summary.json",
+    "baseline_profile": "numeric five-million-cell targeted upsert, output DEFLATE level 1, two warm-ups and five measured runs",
+    "baseline_median": {
+      "total_editor_ms": 8494,
+      "mutation_ms": 6923,
+      "single_pass_transform_us": 5855255,
+      "source_scan_action_residual_us": 4732286,
+      "output_append_calls": 25999505,
+      "peak_memory_mb": 8.80859
+    },
+    "current_median": {
+      "total_editor_ms": 8004,
+      "mutation_ms": 6210,
+      "single_pass_transform_us": 5180113,
+      "source_scan_action_residual_us": 4059595,
+      "output_append_calls": 11001083,
+      "peak_memory_mb": 8.79297
+    },
+    "decrease_percent": {
+      "total_editor_ms": 5.77,
+      "mutation_ms": 10.3,
+      "single_pass_transform_us": 11.53,
+      "source_scan_action_residual_us": 14.21,
+      "output_append_calls": 57.69
+    },
+    "peak_memory_delta_mb": -0.01562,
+    "qualification": "Same machine and recorded protocol; elapsed time remains system-sensitive and is not a cross-machine guarantee."
+  },
+  "observations": {
+    "event_coalescing": "The five-million-cell numeric profile reduced 26000006 parsed events to 16000068 source callbacks and 11001084 transform action callbacks while preserving exact source bytes outside edits.",
+    "bounded_memory": "The five-million-cell profile kept the owned output batching buffer at 262144 bytes and recorded an 8.79297 MB median process peak working set. The one-million-cell distribution profiles recorded 8.22266 MB to 9.8125 MB median process peaks.",
+    "distribution_coverage": "Numeric, mixed inline strings, sharedStrings, formula metadata and a relationship-bearing external hyperlink fixture all completed targeted upsert and opened with openpyxl.",
+    "remaining_hotspots": "At five million numeric cells, relationship scanning remained approximately 0.998 seconds median and package writing approximately 1.789 seconds median; compression and relationship handling remain separate optimization lanes."
+  },
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine, the recorded 10-column source distributions, 1,000 targeted upserts and output DEFLATE level 1 only. This evidence does not claim arbitrary-workbook, cross-machine or full-feature superiority."
+}

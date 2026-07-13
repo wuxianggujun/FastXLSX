@@ -89,9 +89,9 @@
 
 ## Performance Evidence
 
-- tracked benchmark evidence 机制已建立；当前有 4 个 production Streaming bundle、5 个 production Patch bundle 与 1 个 OpenXLSX reference bundle。每个 bundle 只支持 manifest 限定的单机同数据集结论，warm-up/measured 次数以各自 run context 为准。
+- tracked benchmark evidence 机制已建立；当前有 4 个 production Streaming bundle、6 个 production Patch bundle 与 1 个 OpenXLSX reference bundle。每个 bundle 只支持 manifest 限定的单机同数据集结论，warm-up/measured 次数以各自 run context 为准。
 - 最新 compression profile 在同机 1,000,000-cell numeric/mixed InlineString workload 中，Streaming level 1 median 为 322/406 ms、level 6 为 955/981 ms；level 1 输出增大 9.62%/21.63%，全部 measured process peak working set 为 6.28125–6.32812 MB。该结论不泛化到其他数据分布。
-- 最新 Patch rewrite batching profile 中，1,000,000-cell upsert、level 1 的 total/mutation/transform median 为 1205/931/767.186 ms，process peak working set 为 8.80078 MB；5,000,000-cell、183,697,902 logical-byte rewrite 的 total/transform median 为 8494/5855.255 ms，peak 为 8.80859 MB，owned output buffer 保持 262,144 bytes。Level 6 的 package writer median 933.636 ms 高于 transform 865.366 ms；这些数据只覆盖记录的顺序 upsert workload，不是大文件任意随机编辑承诺。
+- 最新 Patch event/action profile 中，5,000,000-cell numeric level 1 upsert 的 total/mutation/transform/residual median 为 8004/6210/5180.113/4059.595 ms，较紧邻同协议 bundle 分别降低 5.77%/10.30%/11.53%/14.21%，process peak working set 为 8.79297 MB，owned output buffer 保持 262,144 bytes。1,000,000-cell profile 另覆盖 numeric、mixed inline、sharedStrings、formula metadata 与 external hyperlink relationship；这些数据只覆盖记录的顺序 upsert workload，不是大文件任意随机编辑承诺。
 - 同机 1,000,000-cell numeric/mixed public writer workload 中，FastXLSX Streaming median 为 1583/1248 ms 与 6.87109/6.88672 MB peak working set，OpenXLSX 0.4.1 workbook API 为 3180/3292 ms 与 395.258/403.957 MB。该证据只说明两个已记录 workload 的 2.01×/2.64×吞吐比，不形成全功能或跨机器“总体超越”承诺。
 
 ## Planned

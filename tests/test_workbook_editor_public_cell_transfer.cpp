@@ -488,6 +488,76 @@ void test_cross_sheet_value_only_copy_failures_preserve_state()
         "different-owner value-only rejection should preserve destination record");
 }
 
+void test_cross_sheet_transfer_memory_failures_preserve_both_sessions()
+{
+    const CopyCellsSource source = write_cross_sheet_copy_source(
+        "fastxlsx-workbook-editor-cross-sheet-transfer-memory-guards.xlsx");
+    std::size_t exact_destination_memory = 0;
+    {
+        fastxlsx::WorkbookEditor probe = fastxlsx::WorkbookEditor::open(source.path);
+        exact_destination_memory =
+            probe.worksheet("Destination").estimated_memory_usage();
+    }
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+    fastxlsx::WorksheetEditorOptions destination_options;
+    destination_options.memory_budget_bytes = exact_destination_memory;
+    fastxlsx::WorksheetEditor destination_sheet =
+        editor.worksheet("Destination", destination_options);
+    const std::size_t source_cell_count = source_sheet.cell_count();
+    const std::size_t source_memory = source_sheet.estimated_memory_usage();
+    const std::size_t destination_cell_count = destination_sheet.cell_count();
+
+    const auto check_clean_transfer_state = [&] {
+        check(!source_sheet.has_pending_changes()
+                && !destination_sheet.has_pending_changes()
+                && !editor.has_unsaved_changes()
+                && editor.pending_change_count() == 0
+                && source_sheet.cell_count() == source_cell_count
+                && source_sheet.estimated_memory_usage() == source_memory
+                && destination_sheet.cell_count() == destination_cell_count
+                && destination_sheet.estimated_memory_usage()
+                    == exact_destination_memory,
+            "cross-sheet memory failure should preserve both clean sparse sessions");
+        check(source_sheet.get_cell("A1").number_value() == 10.0
+                && source_sheet.get_cell("B1").kind()
+                    == fastxlsx::CellValueKind::Formula
+                && source_sheet.get_cell("A2").text_value() == "source-a2",
+            "cross-sheet memory failure should preserve source payloads");
+        check(destination_sheet.get_cell("B2").text_value() == "old-b2"
+                && destination_sheet.get_cell("C2").text_value() == "old-c2"
+                && !destination_sheet.contains_cell("E5")
+                && !destination_sheet.contains_cell("F5")
+                && !destination_sheet.contains_cell("E6"),
+            "cross-sheet memory failure should publish no destination overlay");
+        check(editor.last_edit_error().has_value()
+                && editor.last_edit_error()->find("memory_budget_bytes")
+                    != std::string::npos,
+            "cross-sheet memory failure should expose the memory guard diagnostic");
+    };
+
+    check(throws_fastxlsx_error(
+              [&] { destination_sheet.copy_cells_from(source_sheet, "A1:B2", "E5"); }),
+        "copy_cells_from should enforce the destination memory budget");
+    check_clean_transfer_state();
+
+    check(throws_fastxlsx_error([&] {
+        destination_sheet.copy_cell_values_from(source_sheet, "A1:B2", "E5");
+    }), "copy_cell_values_from should enforce the destination memory budget");
+    check_clean_transfer_state();
+
+    check(throws_fastxlsx_error([&] {
+        destination_sheet.move_cell_values_from(source_sheet, "A1:B2", "E5");
+    }), "move_cell_values_from should reject the destination candidate before dual commit");
+    check_clean_transfer_state();
+
+    check(throws_fastxlsx_error(
+              [&] { destination_sheet.move_cells_from(source_sheet, "A1:B2", "E5"); }),
+        "move_cells_from should reject the destination candidate before dual commit");
+    check_clean_transfer_state();
+}
+
 void test_cross_sheet_copies_survive_owner_moves()
 {
     const CopyCellsSource source = write_cross_sheet_copy_source(
@@ -1262,6 +1332,7 @@ int main()
         test_value_only_copy_preserves_destination_styles();
         test_cross_sheet_value_only_copy_save_retry_and_reopen();
         test_cross_sheet_value_only_copy_failures_preserve_state();
+        test_cross_sheet_transfer_memory_failures_preserve_both_sessions();
         test_cross_sheet_copies_survive_owner_moves();
         test_value_only_move_preserves_both_style_snapshots();
         test_value_only_move_guard_failure_preserves_source_values();

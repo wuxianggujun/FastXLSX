@@ -802,6 +802,140 @@ void test_cross_sheet_move_failures_preserve_both_sessions()
         "different-owner move rejection should preserve local source and destination state");
 }
 
+void test_cross_sheet_moves_survive_owner_moves()
+{
+    const CopyCellsSource source = write_cross_sheet_copy_source(
+        "fastxlsx-workbook-editor-cross-sheet-transfer-owner-moves.xlsx");
+    const std::filesystem::path move_constructed_output =
+        fastxlsx::test::artifact_path(
+            "fastxlsx-workbook-editor-cross-sheet-transfer-move-constructed.xlsx");
+    const std::filesystem::path move_assigned_output =
+        fastxlsx::test::artifact_path(
+            "fastxlsx-workbook-editor-cross-sheet-transfer-move-assigned.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+        fastxlsx::WorksheetEditor stale_source = editor.worksheet("Source");
+        fastxlsx::WorksheetEditor stale_destination = editor.worksheet("Destination");
+        stale_destination.move_cells_from(stale_source, "A1:B2", "B2");
+
+        fastxlsx::WorkbookEditor moved = std::move(editor);
+        check(throws_fastxlsx_error([&] { (void)stale_source.has_pending_changes(); }),
+            "move construction should invalidate full-move source handle");
+        check(throws_fastxlsx_error(
+                  [&] { (void)stale_destination.has_pending_changes(); }),
+            "move construction should invalidate full-move destination handle");
+        check(!editor.has_pending_changes() && !editor.has_unsaved_changes(),
+            "move-constructed-from editor should expose no transfer state");
+
+        fastxlsx::WorksheetEditor moved_source = moved.worksheet("Source");
+        fastxlsx::WorksheetEditor moved_destination =
+            moved.worksheet("Destination");
+        check(moved_source.has_pending_changes()
+                && moved_destination.has_pending_changes()
+                && moved.has_unsaved_changes(),
+            "move construction should preserve both dirty full-move sessions");
+        check(!moved_source.try_cell("A1").has_value()
+                && !moved_source.try_cell("B1").has_value()
+                && !moved_source.try_cell("A2").has_value(),
+            "move construction should preserve full-move source removal");
+        check(moved_destination.get_cell("B2").number_value() == 10.0
+                && moved_destination.get_cell("B3").text_value() == "source-a2",
+            "move construction should preserve full-move destination values");
+        check_formula(moved_destination.get_cell("C2"), "B2+$A$1+B$1+$A2",
+            source.formula_style,
+            "move construction should preserve translated full-move formula and style");
+
+        moved.save_as(move_constructed_output);
+        fastxlsx::WorkbookEditor reopened =
+            fastxlsx::WorkbookEditor::open(move_constructed_output);
+        check(!reopened.worksheet("Source").try_cell("A1").has_value(),
+            "reopened move-constructed output should preserve source removal");
+        check_formula(reopened.worksheet("Destination").get_cell("C2"),
+            "B2+$A$1+B$1+$A2", source.formula_style,
+            "reopened move-constructed output should preserve destination formula");
+    }
+
+    {
+        fastxlsx::WorkbookEditor target = fastxlsx::WorkbookEditor::open(source.path);
+        fastxlsx::WorksheetEditor stale_target_source = target.worksheet("Source");
+        fastxlsx::WorksheetEditor stale_target_destination =
+            target.worksheet("Destination");
+        stale_target_destination.set_cell(
+            "A1", fastxlsx::CellValue::text("discarded-target-edit"));
+
+        fastxlsx::WorkbookEditor assigned_source_editor =
+            fastxlsx::WorkbookEditor::open(source.path);
+        fastxlsx::WorksheetEditor stale_assigned_source =
+            assigned_source_editor.worksheet("Source");
+        fastxlsx::WorksheetEditor stale_assigned_destination =
+            assigned_source_editor.worksheet("Destination");
+        stale_assigned_destination.move_cell_values_from(
+            stale_assigned_source, "A1:B2", "B2");
+
+        target = std::move(assigned_source_editor);
+        check(throws_fastxlsx_error(
+                  [&] { (void)stale_target_source.has_pending_changes(); })
+                && throws_fastxlsx_error(
+                    [&] { (void)stale_target_destination.has_pending_changes(); }),
+            "move assignment should invalidate overwritten target transfer handles");
+        check(throws_fastxlsx_error(
+                  [&] { (void)stale_assigned_source.has_pending_changes(); })
+                && throws_fastxlsx_error(
+                    [&] { (void)stale_assigned_destination.has_pending_changes(); }),
+            "move assignment should invalidate assigned transfer handles");
+        check(!assigned_source_editor.has_pending_changes()
+                && !assigned_source_editor.has_unsaved_changes(),
+            "move-assigned-from editor should expose no transfer state");
+
+        fastxlsx::WorksheetEditor assigned_source = target.worksheet("Source");
+        fastxlsx::WorksheetEditor assigned_destination =
+            target.worksheet("Destination");
+        check(assigned_source.has_pending_changes()
+                && assigned_destination.has_pending_changes()
+                && target.has_unsaved_changes(),
+            "move assignment should preserve both dirty value-move sessions");
+        const fastxlsx::CellValue source_a1 = assigned_source.get_cell("A1");
+        const fastxlsx::CellValue source_b1 = assigned_source.get_cell("B1");
+        const fastxlsx::CellValue source_a2 = assigned_source.get_cell("A2");
+        check(source_a1.kind() == fastxlsx::CellValueKind::Blank
+                && !source_a1.has_style()
+                && source_b1.kind() == fastxlsx::CellValueKind::Blank
+                && source_b1.has_style()
+                && source_b1.style_id().value() == source.formula_style.value()
+                && source_a2.kind() == fastxlsx::CellValueKind::Blank
+                && !source_a2.has_style(),
+            "move assignment should preserve value-move source blanks and styles");
+        check(assigned_destination.get_cell("B2").number_value() == 10.0
+                && assigned_destination.get_cell("B3").text_value() == "source-a2",
+            "move assignment should preserve value-move destination payloads");
+        const fastxlsx::CellValue assigned_formula =
+            assigned_destination.get_cell("C2");
+        check(assigned_formula.kind() == fastxlsx::CellValueKind::Formula
+                && assigned_formula.text_value() == "B2+$A$1+B$1+$A2"
+                && !assigned_formula.has_style(),
+            "move assignment should preserve translated value-move formula and target style ownership");
+        check(assigned_destination.get_cell("A1").text_value() == "destination-a1",
+            "move assignment should discard overwritten target edits");
+
+        target.save_as(move_assigned_output);
+        fastxlsx::WorkbookEditor reopened =
+            fastxlsx::WorkbookEditor::open(move_assigned_output);
+        check(reopened.worksheet("Source").get_cell("A1").kind()
+                == fastxlsx::CellValueKind::Blank,
+            "reopened move-assigned output should preserve source blank");
+        check(reopened.worksheet("Destination").get_cell("A1").text_value()
+                == "destination-a1",
+            "reopened move-assigned output should exclude overwritten target edit");
+        const fastxlsx::CellValue reopened_formula =
+            reopened.worksheet("Destination").get_cell("C2");
+        check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula
+                && reopened_formula.text_value() == "B2+$A$1+B$1+$A2"
+                && !reopened_formula.has_style(),
+            "reopened move-assigned output should preserve destination formula and target style ownership");
+    }
+}
+
 void test_move_cells_sparse_transfer_save_retry_and_reopen()
 {
     const CopyCellsSource source =
@@ -1008,6 +1142,7 @@ int main()
         test_cross_sheet_value_only_move_failures_preserve_both_sessions();
         test_cross_sheet_move_dual_session_save_retry_and_reopen();
         test_cross_sheet_move_failures_preserve_both_sessions();
+        test_cross_sheet_moves_survive_owner_moves();
         test_move_cells_sparse_transfer_save_retry_and_reopen();
         test_move_cells_overlap_reads_snapshot();
         test_move_cells_failures_preserve_clean_state();

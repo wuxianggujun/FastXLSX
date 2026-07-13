@@ -24,7 +24,7 @@ struct MaterializedCellSnapshot {
 
 /// Internal state holder for one explicitly materialized worksheet.
 ///
-/// This is a private building block for a future WorkbookEditor-owned
+/// This is the private state holder behind a WorkbookEditor-owned
 /// WorksheetEditor session. It is intentionally not a public random-edit API:
 /// callers still need a higher-level workbook facade to resolve sheet names,
 /// enforce operation-mixing rules, and persist dirty stores through save_as().
@@ -1298,7 +1298,7 @@ struct MaterializedWorksheetSheetDataProjection {
 
 /// Internal registry for WorkbookEditor-owned materialized worksheet sessions.
 ///
-/// The registry is a private ownership helper for the future WorksheetEditor
+/// The registry is the private ownership helper for the WorksheetEditor
 /// path. It keeps repeated materialization for the same planned sheet
 /// idempotent when options match, rejects option mismatches before registry
 /// mutation, and exposes dirty-session bookkeeping / projection sources for a
@@ -1370,8 +1370,8 @@ public:
     /// Inserts a clean session or returns the existing matching session.
     ///
     /// Repeated materialization with matching options preserves the existing
-    /// session, including dirty cells. This lets a future WorkbookEditor facade
-    /// retry a lookup without losing pending edits.
+    /// session, including dirty cells. This lets the WorkbookEditor facade retry
+    /// a lookup without losing pending edits.
     MaterializedWorksheetSession& materialize(std::string planned_name, CellStore store)
     {
         preflight_materialization(planned_name, store.options());

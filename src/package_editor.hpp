@@ -109,6 +109,9 @@ struct PackageEditorOutputEntryPlan {
     bool package_part = false;
     bool generated = false;
     bool copied_from_source = false;
+    bool raw_compressed_source_copy = false;
+    std::uint16_t source_compression_method = 0;
+    std::uint64_t raw_compressed_source_bytes = 0;
     bool omitted = false;
     bool file_backed_source_copy = false;
     bool staged_replacement_chunks = false;
@@ -555,8 +558,12 @@ public:
         CalcChainAction calc_chain_action = CalcChainAction::Remove);
     void set_document_properties(const DocumentProperties& properties);
     [[nodiscard]] PackageEditorOutputPlan planned_output() const;
+    [[nodiscard]] PackageEditorOutputPlan planned_output(
+        PackageWriterOptions options) const;
     [[nodiscard]] std::vector<PackageEditorOutputEntryPlan> planned_output_entries()
         const;
+    [[nodiscard]] std::vector<PackageEditorOutputEntryPlan> planned_output_entries(
+        PackageWriterOptions options) const;
     void save_as(const std::filesystem::path& path,
         PackageWriterOptions options = {PackageWriterBackend::StoredZipBootstrap}) const;
 

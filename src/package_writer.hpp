@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -58,10 +59,20 @@ struct PackageEntryChunk {
     }
 };
 
+struct PackageRawCompressedEntrySource {
+    std::filesystem::path path;
+    std::uint64_t data_offset = 0;
+    std::uint64_t compressed_size = 0;
+    std::uint64_t uncompressed_size = 0;
+    std::uint32_t crc32 = 0;
+    std::uint16_t compression_method = 0;
+};
+
 struct PackageEntry {
     std::string name;
     std::string data;
     std::vector<PackageEntryChunk> chunks;
+    std::optional<PackageRawCompressedEntrySource> raw_compressed_source;
 
     PackageEntry() = default;
 
@@ -75,6 +86,15 @@ struct PackageEntry {
         : name(std::move(entry_name))
         , chunks(std::move(entry_chunks))
     {
+    }
+
+    [[nodiscard]] static PackageEntry raw_compressed_copy(
+        std::string entry_name, PackageRawCompressedEntrySource source)
+    {
+        PackageEntry entry;
+        entry.name = std::move(entry_name);
+        entry.raw_compressed_source = std::move(source);
+        return entry;
     }
 };
 
@@ -92,6 +112,9 @@ struct PackageWriterOptions {
     PackageWriterBackend backend = PackageWriterBackend::Auto;
     int compression_level = package_writer_default_compression_level;
 };
+
+[[nodiscard]] bool package_writer_can_raw_copy_compression_method(
+    PackageWriterOptions options, std::uint16_t compression_method) noexcept;
 
 // Internal package writer boundary. Auto selects the production minizip-ng
 // backend when the dependency is enabled; otherwise it keeps the Phase 1

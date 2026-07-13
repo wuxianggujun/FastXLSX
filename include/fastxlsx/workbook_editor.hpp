@@ -100,9 +100,10 @@ struct WorkbookEditorSaveOptions {
     /// reject positive DEFLATE levels before any dirty WorksheetEditor session
     /// is staged for saving.
     ///
-    /// Copy-original preservation compares logical entry payloads. A compressed
-    /// output save may recompress preserved source entries, so their ZIP-local
-    /// compressed bytes are not guaranteed to remain identical.
+    /// With the production minizip-ng backend, unchanged entries whose source
+    /// compression method matches the requested output method are copied as raw
+    /// compressed payloads. Rewritten entries and method-changing saves are
+    /// encoded normally. Stored-bootstrap output keeps the logical copy path.
     int zip_compression_level = 0;
 };
 

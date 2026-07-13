@@ -1,5 +1,8 @@
 #include "../src/package_reader.hpp"
+#include "../src/workbook_editor_package_diagnostics.hpp"
 #include "test_workbook_editor_facade_common.hpp"
+
+#include <algorithm>
 
 void remove_artifact_if_present(const std::filesystem::path& path)
 {
@@ -16,6 +19,33 @@ const fastxlsx::detail::PackageReaderEntry& require_entry(
     }
     return *entry;
 }
+
+#ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+std::string read_raw_compressed_payload(const std::filesystem::path& path,
+    const fastxlsx::detail::PackageReaderEntry& entry)
+{
+    const std::string package = fastxlsx::test::read_file(path);
+    check(entry.data_offset <= package.size()
+            && entry.compressed_size <= package.size() - entry.data_offset,
+        "raw compressed payload should stay within the package");
+    return package.substr(static_cast<std::size_t>(entry.data_offset),
+        static_cast<std::size_t>(entry.compressed_size));
+}
+
+const fastxlsx::detail::PackageEditorOutputEntryPlan& require_output_plan_entry(
+    const fastxlsx::detail::PackageEditorOutputPlan& plan, std::string_view name)
+{
+    const auto item = std::find_if(plan.entries.begin(), plan.entries.end(),
+        [name](const fastxlsx::detail::PackageEditorOutputEntryPlan& entry) {
+            return entry.entry_name == name;
+        });
+    if (item == plan.entries.end()) {
+        throw std::runtime_error("expected output-plan entry is missing: "
+            + std::string(name));
+    }
+    return *item;
+}
+#endif
 
 void test_default_save_preserves_stored_output_compatibility()
 {
@@ -151,6 +181,59 @@ void test_backend_default_compression_uses_active_profile()
 #endif
 }
 
+void test_matching_deflate_save_raw_copies_unchanged_entries()
+{
+#ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-save-raw-copy-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-save-raw-copy-output.xlsx");
+    remove_artifact_if_present(output);
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source);
+    const fastxlsx::detail::PackageReaderEntry& source_untouched =
+        require_entry(source_reader, "xl/worksheets/sheet2.xml");
+    check(source_untouched.compression_method == 8,
+        "production source should use DEFLATE for raw-copy coverage");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.request_full_calculation();
+    fastxlsx::detail::PackageWriterOptions package_options;
+    package_options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    package_options.compression_level = 1;
+    const fastxlsx::detail::PackageEditorOutputPlan plan =
+        fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(
+            editor, package_options);
+    const auto& untouched_plan =
+        require_output_plan_entry(plan, "xl/worksheets/sheet2.xml");
+    check(untouched_plan.copied_from_source
+            && untouched_plan.raw_compressed_source_copy,
+        "matching DEFLATE save should plan unchanged worksheet raw-copy");
+    check(untouched_plan.raw_compressed_source_bytes
+            == source_untouched.compressed_size,
+        "raw-copy plan should expose the source compressed byte count");
+    check(!require_output_plan_entry(plan, "xl/workbook.xml")
+                .raw_compressed_source_copy,
+        "rewritten workbook metadata should not use raw-copy");
+
+    fastxlsx::WorkbookEditorSaveOptions save_options;
+    save_options.zip_compression_level = 1;
+    editor.save_as(output, save_options);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const fastxlsx::detail::PackageReaderEntry& output_untouched =
+        require_entry(output_reader, "xl/worksheets/sheet2.xml");
+    check(output_reader.read_entry("xl/worksheets/sheet2.xml")
+            == source_reader.read_entry("xl/worksheets/sheet2.xml"),
+        "raw-copy save should preserve unchanged worksheet logical bytes");
+    check(read_raw_compressed_payload(output, output_untouched)
+            == read_raw_compressed_payload(source, source_untouched),
+        "raw-copy save should preserve unchanged worksheet compressed bytes exactly");
+#endif
+}
+
 } // namespace
 
 int main()
@@ -159,6 +242,7 @@ int main()
         test_default_save_preserves_stored_output_compatibility();
         test_save_options_validate_before_dirty_session_staging_and_retry();
         test_backend_default_compression_uses_active_profile();
+        test_matching_deflate_save_raw_copies_unchanged_entries();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());
         return 1;

@@ -86,7 +86,10 @@ struct RunStats {
     std::size_t copied_entry_count = 0;
     std::size_t rewritten_entry_count = 0;
     std::size_t omitted_entry_count = 0;
+    std::size_t raw_compressed_copy_entry_count = 0;
+    std::uint64_t raw_compressed_copy_bytes = 0;
     std::vector<std::string> copied_entry_names;
+    std::vector<std::string> raw_compressed_copy_entry_names;
     std::vector<std::string> rewritten_entry_names;
     std::vector<std::string> omitted_entry_names;
     bool single_pass_worksheet_transform = false;
@@ -557,10 +560,27 @@ void run_document_properties(fastxlsx::WorkbookEditor& editor)
     editor.set_document_properties(std::move(properties));
 }
 
-void observe_output_plan(const fastxlsx::WorkbookEditor& editor, RunStats& stats)
+fastxlsx::detail::PackageWriterOptions package_writer_options_for_benchmark(
+    int compression_level)
+{
+    fastxlsx::detail::PackageWriterOptions options;
+    options.compression_level = compression_level;
+    if (compression_level == fastxlsx::min_zip_compression_level) {
+        options.backend = fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap;
+    } else if (compression_level == fastxlsx::default_zip_compression_level) {
+        options.backend = fastxlsx::detail::PackageWriterBackend::Auto;
+    } else {
+        options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    }
+    return options;
+}
+
+void observe_output_plan(
+    const fastxlsx::WorkbookEditor& editor, int compression_level, RunStats& stats)
 {
     const fastxlsx::detail::PackageEditorOutputPlan plan =
-        fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(editor);
+        fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(
+            editor, package_writer_options_for_benchmark(compression_level));
     stats.output_plan_entry_count = plan.entries.size();
     for (const fastxlsx::detail::PackageEditorOutputEntryPlan& entry : plan.entries) {
         if (entry.single_pass_worksheet_transform) {
@@ -582,14 +602,22 @@ void observe_output_plan(const fastxlsx::WorkbookEditor& editor, RunStats& stats
         }
         if (entry.copied_from_source) {
             stats.copied_entry_names.push_back(entry.entry_name);
+            if (entry.raw_compressed_source_copy) {
+                stats.raw_compressed_copy_entry_names.push_back(entry.entry_name);
+                stats.raw_compressed_copy_bytes += entry.raw_compressed_source_bytes;
+            }
         } else {
             stats.rewritten_entry_names.push_back(entry.entry_name);
         }
     }
     std::sort(stats.copied_entry_names.begin(), stats.copied_entry_names.end());
+    std::sort(stats.raw_compressed_copy_entry_names.begin(),
+        stats.raw_compressed_copy_entry_names.end());
     std::sort(stats.rewritten_entry_names.begin(), stats.rewritten_entry_names.end());
     std::sort(stats.omitted_entry_names.begin(), stats.omitted_entry_names.end());
     stats.copied_entry_count = stats.copied_entry_names.size();
+    stats.raw_compressed_copy_entry_count =
+        stats.raw_compressed_copy_entry_names.size();
     stats.rewritten_entry_count = stats.rewritten_entry_names.size();
     stats.omitted_entry_count = stats.omitted_entry_names.size();
 }
@@ -637,6 +665,10 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"copied_entry_count\": " << stats.copied_entry_count << ",\n";
     out << "  \"rewritten_entry_count\": " << stats.rewritten_entry_count << ",\n";
     out << "  \"omitted_entry_count\": " << stats.omitted_entry_count << ",\n";
+    out << "  \"raw_compressed_copy_entry_count\": "
+        << stats.raw_compressed_copy_entry_count << ",\n";
+    out << "  \"raw_compressed_copy_bytes\": "
+        << stats.raw_compressed_copy_bytes << ",\n";
     out << "  \"single_pass_worksheet_transform\": "
         << (stats.single_pass_worksheet_transform ? "true" : "false") << ",\n";
     out << "  \"single_pass_scanned_source_cell_count\": "
@@ -652,6 +684,8 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"single_pass_commit_ms\": "
         << stats.single_pass_commit_ms << ",\n";
     write_json_string_array(out, "copied_entry_names", stats.copied_entry_names, true);
+    write_json_string_array(out, "raw_compressed_copy_entry_names",
+        stats.raw_compressed_copy_entry_names, true);
     write_json_string_array(out, "rewritten_entry_names", stats.rewritten_entry_names, true);
     write_json_string_array(out, "omitted_entry_names", stats.omitted_entry_names, true);
     out << "  \"editor_mode\": \""
@@ -717,7 +751,7 @@ RunStats run_benchmark(const Options& options)
         stats.estimated_memory_after = sheet.estimated_memory_usage();
     }
     stats.timings.mutation_ms = milliseconds_since(phase_started);
-    observe_output_plan(editor, stats);
+    observe_output_plan(editor, options.output_compression_level, stats);
 
     ensure_parent_directory(options.output);
     phase_started = std::chrono::steady_clock::now();

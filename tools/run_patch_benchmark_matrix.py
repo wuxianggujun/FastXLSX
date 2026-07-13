@@ -33,6 +33,7 @@ METRICS = [
     "copied_uncompressed_bytes",
     "copied_source_compressed_bytes",
     "copied_output_compressed_bytes",
+    "raw_compressed_copy_bytes",
     "rewritten_uncompressed_bytes",
     "rewritten_compressed_bytes",
     "single_pass_transform_ms",
@@ -142,9 +143,18 @@ def account_plan_bytes(
         source_info = {entry.filename: entry for entry in source.infolist()}
         output_info = {entry.filename: entry for entry in output.infolist()}
 
+        raw_copy_names = set(result.get("raw_compressed_copy_entry_names", []))
+        require(
+            len(raw_copy_names) == int(result.get("raw_compressed_copy_entry_count", 0)),
+            "raw compressed-copy entry count mismatch",
+        )
+        require(raw_copy_names.issubset(set(copied_names)),
+            "raw compressed-copy entries must be copy-original entries")
+
         copied_uncompressed = 0
         copied_source_compressed = 0
         copied_output_compressed = 0
+        raw_compressed_copy_bytes = 0
         for name in copied_names:
             require(name in source_info, f"copied source entry missing: {name}")
             require(name in output_info, f"copied output entry missing: {name}")
@@ -156,6 +166,13 @@ def account_plan_bytes(
             copied_uncompressed += source_info[name].file_size
             copied_source_compressed += source_info[name].compress_size
             copied_output_compressed += output_info[name].compress_size
+            if name in raw_copy_names:
+                require(
+                    raw_entry_payload(source_path, source_info[name])
+                    == raw_entry_payload(output_path, output_info[name]),
+                    f"raw compressed-copy entry bytes changed: {name}",
+                )
+                raw_compressed_copy_bytes += source_info[name].compress_size
 
         rewritten_uncompressed = 0
         rewritten_compressed = 0
@@ -167,13 +184,31 @@ def account_plan_bytes(
         for name in omitted_names:
             require(name not in output_info, f"omitted entry still exists: {name}")
 
+    require(raw_compressed_copy_bytes == int(result.get("raw_compressed_copy_bytes", 0)),
+        "raw compressed-copy byte count mismatch")
     return {
         "copied_uncompressed_bytes": copied_uncompressed,
         "copied_source_compressed_bytes": copied_source_compressed,
         "copied_output_compressed_bytes": copied_output_compressed,
+        "raw_compressed_copy_bytes": raw_compressed_copy_bytes,
         "rewritten_uncompressed_bytes": rewritten_uncompressed,
         "rewritten_compressed_bytes": rewritten_compressed,
     }
+
+
+def raw_entry_payload(path: Path, entry: zipfile.ZipInfo) -> bytes:
+    with path.open("rb") as stream:
+        stream.seek(entry.header_offset)
+        header = stream.read(30)
+        require(len(header) == 30 and header[:4] == b"PK\x03\x04",
+            f"invalid local ZIP header for raw payload: {entry.filename}")
+        name_size = int.from_bytes(header[26:28], "little")
+        extra_size = int.from_bytes(header[28:30], "little")
+        stream.seek(name_size + extra_size, 1)
+        payload = stream.read(entry.compress_size)
+    require(len(payload) == entry.compress_size,
+        f"truncated raw ZIP payload: {entry.filename}")
+    return payload
 
 
 def inspect_archive(path: Path, compression_level: int, purpose: str) -> dict[str, Any]:
@@ -526,6 +561,7 @@ def run_self_test() -> None:
                 "copied_uncompressed_bytes": 1000,
                 "copied_source_compressed_bytes": 500,
                 "copied_output_compressed_bytes": 450,
+                "raw_compressed_copy_bytes": 0,
                 "rewritten_uncompressed_bytes": 100 + index,
                 "rewritten_compressed_bytes": 50 + index,
             },

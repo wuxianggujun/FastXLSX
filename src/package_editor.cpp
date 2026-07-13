@@ -5240,6 +5240,17 @@ PackageEntry materialize_planned_output_entry(const PackageReader& reader,
             if (source_entry == nullptr) {
                 throw FastXlsxError("planned output source entry is missing");
             }
+            if (plan.raw_compressed_source_copy) {
+                return PackageEntry::raw_compressed_copy(plan.entry_name,
+                    PackageRawCompressedEntrySource {
+                        reader.path(),
+                        source_entry->data_offset,
+                        source_entry->compressed_size,
+                        source_entry->uncompressed_size,
+                        source_entry->crc32,
+                        source_entry->compression_method,
+                    });
+            }
             bool use_stored_direct_range =
                 source_entry->compression_method == stored_compression_method;
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
@@ -8110,6 +8121,12 @@ void PackageEditor::set_document_properties(const DocumentProperties& properties
 
 PackageEditorOutputPlan PackageEditor::planned_output() const
 {
+    return planned_output(
+        PackageWriterOptions {PackageWriterBackend::StoredZipBootstrap});
+}
+
+PackageEditorOutputPlan PackageEditor::planned_output(PackageWriterOptions options) const
+{
     PackageEditorOutputPlan plan;
     plan.full_calculation_on_load = edit_plan_.full_calculation_on_load();
     plan.calc_chain_action = edit_plan_.calc_chain_action();
@@ -8130,6 +8147,15 @@ PackageEditorOutputPlan PackageEditor::planned_output() const
     for (const PackageReaderEntry& entry : reader_.entries()) {
         entries.push_back(make_output_entry_plan(reader_, edit_plan_, replacements_,
             entry_replacements_, omitted_entries_, entry.name, true));
+        PackageEditorOutputEntryPlan& output_entry = entries.back();
+        if (output_entry.copied_from_source && !output_entry.omitted) {
+            output_entry.source_compression_method = entry.compression_method;
+            output_entry.raw_compressed_source_copy =
+                package_writer_can_raw_copy_compression_method(
+                    options, entry.compression_method);
+            output_entry.raw_compressed_source_bytes =
+                output_entry.raw_compressed_source_copy ? entry.compressed_size : 0;
+        }
     }
 
     for (const PackageEntryReplacement& replacement : entry_replacements_) {
@@ -8161,6 +8187,12 @@ std::vector<PackageEditorOutputEntryPlan> PackageEditor::planned_output_entries(
     return planned_output().entries;
 }
 
+std::vector<PackageEditorOutputEntryPlan> PackageEditor::planned_output_entries(
+    PackageWriterOptions options) const
+{
+    return planned_output(options).entries;
+}
+
 void PackageEditor::save_as(
     const std::filesystem::path& path, PackageWriterOptions options) const
 {
@@ -8182,7 +8214,7 @@ void PackageEditor::save_as(
 
     try {
         {
-            const PackageEditorOutputPlan plan = planned_output();
+            const PackageEditorOutputPlan plan = planned_output(options);
             std::vector<PackageEntry> output_entries;
             output_entries.reserve(plan.entries.size());
             for (const PackageEditorOutputEntryPlan& entry_plan : plan.entries) {

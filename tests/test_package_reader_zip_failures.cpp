@@ -2,6 +2,17 @@
 
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
 
+std::string raw_compressed_payload(const std::filesystem::path& path,
+    const fastxlsx::detail::PackageReaderEntry& entry)
+{
+    const std::string package = fastxlsx::test::read_file(path);
+    check(entry.data_offset <= package.size()
+            && entry.compressed_size <= package.size() - entry.data_offset,
+        "raw compressed payload range should stay within the ZIP package");
+    return package.substr(static_cast<std::size_t>(entry.data_offset),
+        static_cast<std::size_t>(entry.compressed_size));
+}
+
 void test_package_reader_reads_deflated_entries_with_minizip()
 {
     const std::filesystem::path path =
@@ -312,6 +323,89 @@ void test_package_writer_applies_explicit_minizip_compression_levels()
         "compression level 0 central directory should record stored size");
     check(fastest_entry.compressed_size > smallest_entry.compressed_size,
         "higher compression level should shrink a repetitive workbook payload");
+}
+
+void test_package_writer_raw_copies_matching_compressed_entries()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-writer-raw-copy-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-writer-raw-copy-output.xlsx");
+    std::string workbook = "<workbook><payload>";
+    for (int index = 0; index < 8192; ++index) {
+        workbook += "raw-copy-repetitive-payload-" + std::to_string(index % 17);
+    }
+    workbook += "</payload></workbook>";
+    const std::string content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(</Types>)";
+
+    fastxlsx::detail::PackageWriterOptions options;
+    options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    options.compression_level = 6;
+    fastxlsx::detail::write_package(source_path,
+        {{"[Content_Types].xml", content_types}, {"xl/workbook.xml", workbook}},
+        options);
+
+    const fastxlsx::detail::PackageReader source =
+        fastxlsx::detail::PackageReader::open(source_path);
+    const fastxlsx::detail::PackageReaderEntry* source_workbook =
+        source.find_entry("xl/workbook.xml");
+    check(source_workbook != nullptr && source_workbook->compression_method == 8,
+        "raw-copy source workbook should be DEFLATE");
+    if (source_workbook == nullptr) {
+        return;
+    }
+
+    fastxlsx::detail::PackageRawCompressedEntrySource raw_source {
+        source_path,
+        source_workbook->data_offset,
+        source_workbook->compressed_size,
+        source_workbook->uncompressed_size,
+        source_workbook->crc32,
+        source_workbook->compression_method,
+    };
+    fastxlsx::detail::write_package(output,
+        {
+            {"[Content_Types].xml", content_types},
+            fastxlsx::detail::PackageEntry::raw_compressed_copy(
+                "xl/workbook.xml", raw_source),
+        },
+        options);
+
+    const fastxlsx::detail::PackageReader written =
+        fastxlsx::detail::PackageReader::open(output);
+    const fastxlsx::detail::PackageReaderEntry* written_workbook =
+        written.find_entry("xl/workbook.xml");
+    check(written_workbook != nullptr,
+        "raw-copy output should contain the workbook entry");
+    if (written_workbook == nullptr) {
+        return;
+    }
+    check(written.read_entry("xl/workbook.xml") == workbook,
+        "raw-copy output should preserve the logical workbook payload");
+    check(written_workbook->crc32 == source_workbook->crc32
+            && written_workbook->compressed_size == source_workbook->compressed_size,
+        "raw-copy output should preserve source CRC and compressed size");
+    check(raw_compressed_payload(output, *written_workbook)
+            == raw_compressed_payload(source_path, *source_workbook),
+        "raw-copy output should preserve exact compressed payload bytes");
+
+    fastxlsx::detail::PackageWriterOptions stored_options;
+    stored_options.backend = fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap;
+    bool rejected_stored_raw_source = false;
+    try {
+        fastxlsx::detail::write_package(output,
+            {fastxlsx::detail::PackageEntry::raw_compressed_copy(
+                "xl/workbook.xml", raw_source)},
+            stored_options);
+    } catch (const fastxlsx::FastXlsxError&) {
+        rejected_stored_raw_source = true;
+    }
+    check(rejected_stored_raw_source,
+        "stored bootstrap should reject raw compressed entry sources");
 }
 
 void test_package_reader_rejects_corrupt_deflated_entry_crc_on_read()
@@ -1515,6 +1609,7 @@ int main()
         test_package_reader_closes_abandoned_deflated_entry_chunk_source();
         test_package_reader_extracts_deflated_entry_to_file_with_minizip();
         test_package_writer_applies_explicit_minizip_compression_levels();
+        test_package_writer_raw_copies_matching_compressed_entries();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_read();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_extract();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_chunk_source();

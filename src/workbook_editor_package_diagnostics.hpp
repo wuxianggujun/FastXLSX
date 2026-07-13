@@ -9,12 +9,13 @@ namespace fastxlsx::detail {
 // public API surface and should not be used by library callers.
 struct WorkbookEditorPackagePlanAccessor {
     [[nodiscard]] static PackageEditorOutputPlan planned_output(
-        const WorkbookEditor& editor)
+        const WorkbookEditor& editor,
+        PackageWriterOptions options = {PackageWriterBackend::StoredZipBootstrap})
     {
         if (editor.impl_ == nullptr) {
             throw FastXlsxError("WorkbookEditor is not open");
         }
-        return editor.impl_->editor.planned_output();
+        return editor.impl_->editor.planned_output(options);
     }
 };
 

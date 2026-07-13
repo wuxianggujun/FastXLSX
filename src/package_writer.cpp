@@ -31,6 +31,8 @@ constexpr std::size_t io_buffer_size = 1024 * 1024;
 constexpr std::uint64_t max_forward_gap_discard_bytes = 64 * 1024;
 constexpr std::uint64_t zip32_max_u16 = std::numeric_limits<std::uint16_t>::max();
 constexpr std::uint64_t zip32_max_u32 = std::numeric_limits<std::uint32_t>::max();
+constexpr std::uint16_t stored_compression_method = 0;
+constexpr std::uint16_t deflate_compression_method = 8;
 
 PackageWriterBackend resolve_backend(PackageWriterBackend backend)
 {
@@ -254,6 +256,9 @@ void wrap_zip_entry_chunk_error(
 std::uint64_t entry_uncompressed_size(
     const PackageEntry& entry, FileChunkStatCache& stat_cache)
 {
+    if (entry.raw_compressed_source.has_value()) {
+        return entry.raw_compressed_source->uncompressed_size;
+    }
     if (entry.chunks.empty()) {
         return entry.data.size();
     }
@@ -281,6 +286,39 @@ std::uint64_t entry_uncompressed_size(
         }
     }
     return size;
+}
+
+void validate_raw_compressed_source(
+    const PackageEntry& entry, FileChunkStatCache& stat_cache)
+{
+    if (!entry.raw_compressed_source.has_value()) {
+        return;
+    }
+    if (!entry.data.empty() || !entry.chunks.empty()) {
+        throw FastXlsxError(
+            "ZIP entry cannot mix raw compressed source and logical payload");
+    }
+
+    const PackageRawCompressedEntrySource& source = *entry.raw_compressed_source;
+    if (source.path.empty()) {
+        throw FastXlsxError("raw compressed ZIP entry source path cannot be empty");
+    }
+    if (source.compression_method != stored_compression_method
+        && source.compression_method != deflate_compression_method) {
+        throw FastXlsxError("unsupported raw compressed ZIP entry method");
+    }
+    if (source.compression_method == stored_compression_method
+        && source.compressed_size != source.uncompressed_size) {
+        throw FastXlsxError(
+            "stored raw compressed ZIP entry has mismatched compressed/uncompressed sizes");
+    }
+    if (source.compressed_size > zip32_max_u32) {
+        throw FastXlsxError("raw compressed ZIP entry size requires Zip64 support");
+    }
+
+    PackageEntryChunk range = PackageEntryChunk::file_range(
+        source.path, source.data_offset, source.compressed_size);
+    (void)file_chunk_data_size_from_stat(range, stat_cache);
 }
 
 void validate_entry_chunk_sources(const PackageEntry& entry, FileChunkStatCache& stat_cache)
@@ -341,6 +379,7 @@ void validate_package_entries_zip32(const std::vector<PackageEntry>& entries)
         if (!entry.data.empty() && !entry.chunks.empty()) {
             throw FastXlsxError("ZIP entry cannot mix legacy data and chunked payload");
         }
+        validate_raw_compressed_source(entry, stat_cache);
         validate_entry_chunk_sources(entry, stat_cache);
         if (entry_uncompressed_size(entry, stat_cache) > zip32_max_u32) {
             throw FastXlsxError("ZIP entry uncompressed size requires Zip64 support");
@@ -533,7 +572,10 @@ void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cach
         if (written != chunk_size) {
             throw FastXlsxError("minizip-ng failed to write file-backed ZIP entry data");
         }
-        chunk_crc.update(std::string_view(buffer.data(), static_cast<std::size_t>(read_size)));
+        if (chunk.has_expected_crc32) {
+            chunk_crc.update(
+                std::string_view(buffer.data(), static_cast<std::size_t>(read_size)));
+        }
         written_size += static_cast<std::uint64_t>(read_size);
     }
     file_cache.note_payload_bytes_read(written_size);
@@ -572,6 +614,18 @@ void write_minizip_entry_chunks(
     }
 }
 
+void write_minizip_raw_compressed_entry(void* writer,
+    const PackageRawCompressedEntrySource& source,
+    MinizipFileChunkReadCache& file_cache, std::vector<char>& file_buffer)
+{
+    if (file_buffer.empty()) {
+        file_buffer.resize(io_buffer_size);
+    }
+    PackageEntryChunk chunk = PackageEntryChunk::file_range(
+        source.path, source.data_offset, source.compressed_size);
+    write_minizip_file_chunk(writer, file_cache, chunk, file_buffer);
+}
+
 void write_minizip_package(
     const std::filesystem::path& path, const std::vector<PackageEntry>& entries,
     int compression_level)
@@ -604,6 +658,7 @@ void write_minizip_package(
 
     try {
         FileChunkStatCache stat_cache;
+        MinizipFileChunkReadCache raw_file_cache;
         std::vector<char> file_buffer;
         for (const PackageEntry& entry : entries) {
             if (entry.name.empty()) {
@@ -613,15 +668,28 @@ void write_minizip_package(
             mz_zip_file file_info {};
             file_info.filename = entry.name.c_str();
             file_info.flag = MZ_ZIP_FLAG_UTF8;
-            file_info.compression_method = MZ_COMPRESS_METHOD_DEFLATE;
+            file_info.compression_method = entry.raw_compressed_source.has_value()
+                ? entry.raw_compressed_source->compression_method
+                : MZ_COMPRESS_METHOD_DEFLATE;
             file_info.modified_date = 0;
-            file_info.uncompressed_size =
-                static_cast<std::int64_t>(entry_uncompressed_size(entry, stat_cache));
+            file_info.uncompressed_size = static_cast<std::int64_t>(
+                entry_uncompressed_size(entry, stat_cache));
+            if (entry.raw_compressed_source.has_value()) {
+                file_info.crc = entry.raw_compressed_source->crc32;
+                mz_zip_writer_set_raw(writer.get(), 1);
+            } else {
+                mz_zip_writer_set_raw(writer.get(), 0);
+            }
 
             check_minizip_result(mz_zip_writer_entry_open(writer.get(), &file_info),
                 "open ZIP entry");
 
-            write_minizip_entry_chunks(writer.get(), entry, file_buffer);
+            if (entry.raw_compressed_source.has_value()) {
+                write_minizip_raw_compressed_entry(writer.get(),
+                    *entry.raw_compressed_source, raw_file_cache, file_buffer);
+            } else {
+                write_minizip_entry_chunks(writer.get(), entry, file_buffer);
+            }
 
             check_minizip_result(mz_zip_writer_entry_close(writer.get()), "close ZIP entry");
         }
@@ -637,6 +705,25 @@ void write_minizip_package(
 
 } // namespace
 
+bool package_writer_can_raw_copy_compression_method(
+    PackageWriterOptions options, std::uint16_t compression_method) noexcept
+{
+#ifdef FASTXLSX_HAS_MINIZIP_NG
+    if (resolve_backend(options.backend) != PackageWriterBackend::MinizipNg) {
+        return false;
+    }
+    const std::uint16_t output_method =
+        options.compression_level == package_writer_min_compression_level
+        ? stored_compression_method
+        : deflate_compression_method;
+    return compression_method == output_method;
+#else
+    (void)options;
+    (void)compression_method;
+    return false;
+#endif
+}
+
 void write_package(const std::filesystem::path& path, const std::vector<PackageEntry>& entries,
     PackageWriterOptions options)
 {
@@ -645,6 +732,12 @@ void write_package(const std::filesystem::path& path, const std::vector<PackageE
 
     switch (resolve_backend(options.backend)) {
     case PackageWriterBackend::StoredZipBootstrap:
+        if (std::any_of(entries.begin(), entries.end(), [](const PackageEntry& entry) {
+                return entry.raw_compressed_source.has_value();
+            })) {
+            throw FastXlsxError(
+                "raw compressed ZIP entry copy requires the minizip-ng backend");
+        }
         write_stored_zip(path, entries);
         return;
     case PackageWriterBackend::MinizipNg:

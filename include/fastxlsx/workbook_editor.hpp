@@ -968,8 +968,9 @@ public:
     /// same-sized target footprint. Only sparse records represented inside the
     /// source range are copied; source gaps do not erase existing target cells.
     /// Overlapping copies read from a stable pre-edit snapshot. Copying to the
-    /// source top-left cell, or copying a source range with no represented
-    /// records, is a successful no-op that does not dirty the session.
+    /// source top-left cell, copying a source range with no represented
+    /// records, or producing only mapped records already equal to their targets
+    /// is a successful no-op that does not dirty the session.
     ///
     /// Cell values and materialized workbook-local StyleId handles are copied
     /// with each represented record. Formula text uses the existing narrow
@@ -1017,9 +1018,10 @@ public:
     /// workbook-local StyleId handles are copied. Formula text is translated by
     /// the source-to-destination row/column delta using the same narrow A1
     /// translator as copy_cells(); formulas are not evaluated and cached values
-    /// are not generated. Copying between different worksheets at the same
-    /// coordinates is still an effective copy when represented source records
-    /// differ from the target.
+    /// are not generated. A projection whose represented mapped records all
+    /// equal their targets is a clean no-op. Copying between different
+    /// worksheets at the same coordinates is still an effective copy when
+    /// represented source records differ from the target.
     ///
     /// Owner identity, handle/session validity, source/destination bounds,
     /// target footprint, max_cells, and memory_budget_bytes are checked before
@@ -1057,7 +1059,8 @@ public:
     /// targets keep their current workbook-local StyleId, while copied values at
     /// missing target coordinates are inserted unstyled. Source styles are not
     /// copied. Overlapping copies use stable pre-edit source values and target
-    /// styles.
+    /// styles. If every represented mapped value already equals its target
+    /// under those destination-style rules, the call is a clean no-op.
     ///
     /// Formula text is translated by the source-to-destination row/column delta
     /// using the same narrow A1 translator as copy_cells(); formulas are not
@@ -1088,7 +1091,9 @@ public:
     /// live sparse values are mapped to the destination while each represented
     /// destination keeps its pre-edit StyleId; missing mapped targets are
     /// inserted unstyled. The source session remains unchanged and only an
-    /// effective destination copy becomes dirty.
+    /// effective destination copy becomes dirty. If all mapped payloads already
+    /// equal their targets after preserving destination styles, the call is a
+    /// clean no-op.
     ///
     /// Owner/session identity, bounds, target footprint, formula translation,
     /// target guardrails, failure-before-state-change, and sparse source-gap

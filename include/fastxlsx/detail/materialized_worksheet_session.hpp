@@ -427,6 +427,20 @@ public:
             return;
         }
 
+        bool changes_destination = false;
+        for (const ValueTransfer& transferred : transferred_records) {
+            const CellRecord* destination_record = store_.try_cell(
+                transferred.destination.row, transferred.destination.column);
+            if (destination_record == nullptr
+                || !same_record(*destination_record, transferred.record)) {
+                changes_destination = true;
+                break;
+            }
+        }
+        if (!changes_destination) {
+            return;
+        }
+
         std::map<CellPosition, CellRecord> next_records = store_.records();
         for (ValueTransfer& transferred : transferred_records) {
             next_records[transferred.destination] = std::move(transferred.record);
@@ -909,6 +923,27 @@ private:
         return !left.has_value() || left->value() == right->value();
     }
 
+    static bool same_record(const CellRecord& left, const CellRecord& right) noexcept
+    {
+        if (left.kind != right.kind || !same_style(left.style_id, right.style_id)) {
+            return false;
+        }
+
+        switch (left.kind) {
+        case CellValueKind::Blank:
+            return true;
+        case CellValueKind::Number:
+            return left.number_value == right.number_value;
+        case CellValueKind::Boolean:
+            return left.boolean_value == right.boolean_value;
+        case CellValueKind::Text:
+        case CellValueKind::Formula:
+        case CellValueKind::Error:
+            return left.text_value == right.text_value;
+        }
+        return false;
+    }
+
     static void validate_style_move(
         const CellRange& source, CellPosition destination, std::string_view operation)
     {
@@ -1219,6 +1254,22 @@ private:
         if (transferred_records.empty()) {
             return;
         }
+        if (!erase_source) {
+            bool changes_destination = false;
+            for (const TransferredRecord& transferred : transferred_records) {
+                const CellRecord* destination_record = store_.try_cell(
+                    transferred.destination.row, transferred.destination.column);
+                if (destination_record == nullptr
+                    || !same_record(*destination_record, transferred.record)) {
+                    changes_destination = true;
+                    break;
+                }
+            }
+            if (!changes_destination) {
+                return;
+            }
+        }
+
         std::map<CellPosition, CellRecord> next_records = store_.records();
         if (erase_source) {
             for (const TransferredRecord& transferred : transferred_records) {

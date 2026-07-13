@@ -333,6 +333,100 @@ void test_cross_sheet_copy_live_source_and_failures()
         "different-owner copy rejection should preserve destination cell state");
 }
 
+void test_equal_copy_results_are_clean_noops()
+{
+    const CopyCellsSource source = write_cross_sheet_copy_source(
+        "fastxlsx-workbook-editor-equal-copy-noop-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-equal-copy-noop-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-equal-copy-noop-repeat-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+    fastxlsx::WorksheetEditor destination_sheet = editor.worksheet("Destination");
+    destination_sheet.copy_cells_from(source_sheet, "A1:B2", "B2");
+    editor.save_as(output);
+
+    const std::size_t pending_change_count = editor.pending_change_count();
+    const std::size_t source_cell_count = source_sheet.cell_count();
+    const std::size_t source_memory = source_sheet.estimated_memory_usage();
+    const std::size_t destination_cell_count = destination_sheet.cell_count();
+    const std::size_t destination_memory =
+        destination_sheet.estimated_memory_usage();
+    const auto check_clean_copy_state = [&] {
+        check(!source_sheet.has_pending_changes()
+                && !destination_sheet.has_pending_changes()
+                && !editor.has_unsaved_changes()
+                && editor.pending_change_count() == pending_change_count
+                && editor.pending_materialized_worksheet_names().empty()
+                && editor.pending_materialized_cell_count() == 0
+                && source_sheet.cell_count() == source_cell_count
+                && source_sheet.estimated_memory_usage() == source_memory
+                && destination_sheet.cell_count() == destination_cell_count
+                && destination_sheet.estimated_memory_usage()
+                    == destination_memory,
+            "equal copy result should preserve clean editor and sparse session state");
+        check(source_sheet.get_cell("A1").number_value() == 10.0
+                && source_sheet.get_cell("A2").text_value() == "source-a2",
+            "equal copy result should preserve the source session");
+        check(destination_sheet.get_cell("B2").number_value() == 10.0
+                && destination_sheet.get_cell("B3").text_value() == "source-a2"
+                && destination_sheet.get_cell("C3").text_value() == "gap-c3",
+            "equal copy result should preserve the destination sparse overlay");
+        check_formula(destination_sheet.get_cell("C2"),
+            "B2+$A$1+B$1+$A2", source.formula_style,
+            "equal copy result should preserve the translated styled formula");
+    };
+
+    check(throws_fastxlsx_error([&] {
+        destination_sheet.copy_cells_from(source_sheet, "A1:B2", "XFD1048576");
+    }), "equal full-copy no-op setup should record a target-footprint diagnostic");
+    check(editor.last_edit_error().has_value(),
+        "rejected full copy should expose a diagnostic before no-op recovery");
+    check_clean_copy_state();
+
+    destination_sheet.copy_cells_from(source_sheet, "A1:B2", "B2");
+    check_clean_copy_state();
+    check(!editor.last_edit_error().has_value(),
+        "equal full copy should clear diagnostics without dirtying the destination");
+
+    check(throws_fastxlsx_error([&] {
+        destination_sheet.copy_cell_values_from(
+            source_sheet, "A1:B2", "XFD1048576");
+    }), "equal value-copy no-op setup should record a target-footprint diagnostic");
+    check(editor.last_edit_error().has_value(),
+        "rejected value copy should expose a diagnostic before no-op recovery");
+    check_clean_copy_state();
+
+    destination_sheet.copy_cell_values_from(source_sheet, "A1:B2", "B2");
+    check_clean_copy_state();
+    check(!editor.last_edit_error().has_value(),
+        "equal value copy should clear diagnostics without dirtying the destination");
+
+    editor.save_as(noop_output);
+    check(editor.pending_change_count() == pending_change_count
+            && !editor.has_unsaved_changes(),
+        "save after equal copies should not record another materialized handoff");
+    check(fastxlsx::test::read_zip_entries(noop_output)
+            == fastxlsx::test::read_zip_entries(output),
+        "save after equal copies should reproduce the prior materialized output");
+    check(fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "equal copy no-op workflow should leave the source package unchanged");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor reopened_destination =
+        reopened.worksheet("Destination");
+    check(reopened_destination.get_cell("B2").number_value() == 10.0
+            && reopened_destination.get_cell("B3").text_value() == "source-a2"
+            && reopened_destination.get_cell("C3").text_value() == "gap-c3",
+        "reopened equal-copy output should preserve the sparse destination state");
+    check_formula(reopened_destination.get_cell("C2"),
+        "B2+$A$1+B$1+$A2", source.formula_style,
+        "reopened equal-copy output should preserve the translated styled formula");
+}
+
 void test_value_only_copy_preserves_destination_styles()
 {
     const CopyCellsSource source = write_copy_cells_source(
@@ -1398,6 +1492,7 @@ int main()
         test_copy_cells_failures_preserve_clean_state();
         test_cross_sheet_copy_sparse_overlay_save_retry_and_reopen();
         test_cross_sheet_copy_live_source_and_failures();
+        test_equal_copy_results_are_clean_noops();
         test_value_only_copy_preserves_destination_styles();
         test_cross_sheet_value_only_copy_save_retry_and_reopen();
         test_cross_sheet_value_only_copy_failures_preserve_state();

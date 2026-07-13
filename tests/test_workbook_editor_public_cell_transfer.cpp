@@ -921,6 +921,74 @@ void test_move_cells_failures_preserve_clean_state()
         "same-location move_cells should be a clean no-op and clear diagnostics");
 }
 
+void test_same_session_from_aliases_are_clean_noops()
+{
+    const CopyCellsSource source =
+        write_copy_cells_source("fastxlsx-workbook-editor-same-session-transfer-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-same-session-transfer-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::size_t baseline_cell_count = sheet.cell_count();
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+    const auto check_clean_source_state = [&] {
+        check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
+                && !editor.last_edit_error().has_value()
+                && editor.pending_change_count() == 0
+                && editor.pending_materialized_worksheet_names().empty()
+                && sheet.cell_count() == baseline_cell_count
+                && sheet.estimated_memory_usage() == baseline_memory,
+            "same-session from alias should preserve clean editor/session state");
+        check(sheet.get_cell("A1").number_value() == 10.0
+                && sheet.get_cell("A2").text_value() == "source-a2"
+                && sheet.get_cell("D4").text_value() == "target-d4",
+            "same-session from alias should preserve source sparse values");
+        check_formula(sheet.get_cell("B1"), "A1+$A$1+A$1+$A1",
+            source.formula_style,
+            "same-session from alias should preserve formula text and style");
+    };
+    const auto seed_recoverable_diagnostic = [&] {
+        check(throws_fastxlsx_error(
+                  [&] { sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid")); }),
+            "same-session alias setup should reject invalid mutation");
+        check(editor.last_edit_error().has_value(),
+            "same-session alias setup should retain mutation diagnostic");
+    };
+
+    seed_recoverable_diagnostic();
+    sheet.copy_cells_from(sheet, "A1:B2", "A1");
+    check_clean_source_state();
+
+    seed_recoverable_diagnostic();
+    sheet.copy_cell_values_from(sheet, "A1:B2", "A1");
+    check_clean_source_state();
+
+    seed_recoverable_diagnostic();
+    sheet.move_cell_values_from(sheet, "A1:B2", "A1");
+    check_clean_source_state();
+
+    seed_recoverable_diagnostic();
+    sheet.move_cells_from(sheet, "A1:B2", "A1");
+    check_clean_source_state();
+
+    editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(output) == source_entries
+            && fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "same-session aliases should preserve exact source entries on no-op save");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    check(!reopened.has_unsaved_changes() && !reopened_sheet.has_pending_changes()
+            && reopened_sheet.cell_count() == baseline_cell_count,
+        "same-session alias output should reopen cleanly");
+    check_formula(reopened_sheet.get_cell("B1"), "A1+$A$1+A$1+$A1",
+        source.formula_style,
+        "same-session alias output should preserve formula text and style");
+}
+
 } // namespace
 
 int main()
@@ -943,6 +1011,7 @@ int main()
         test_move_cells_sparse_transfer_save_retry_and_reopen();
         test_move_cells_overlap_reads_snapshot();
         test_move_cells_failures_preserve_clean_state();
+        test_same_session_from_aliases_are_clean_noops();
         std::cout << "WorkbookEditor public cell transfer tests passed\n";
         return 0;
     } catch (const std::exception& error) {

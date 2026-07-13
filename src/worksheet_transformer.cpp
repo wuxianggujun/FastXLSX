@@ -566,7 +566,9 @@ void validate_replacement_cell_payload(
     validate_replacement_cell_xml_structure(materialized_replacement_cell_xml);
 }
 
-void emit_pass_through(const WorksheetTransformActionCallback& callback, const WorksheetEvent& event)
+void emit_pass_through(const WorksheetTransformActionCallback& callback,
+    const WorksheetEvent& event,
+    std::optional<WorksheetCellReplacementCoordinate> source_coordinate = std::nullopt)
 {
     callback(WorksheetTransformAction { WorksheetTransformActionKind::PassThrough,
         event.kind,
@@ -576,7 +578,9 @@ void emit_pass_through(const WorksheetTransformActionCallback& callback, const W
         event.cell_reference,
         {},
         event.self_closing,
-        event.raw_xml_offset });
+        event.raw_xml_offset,
+        source_coordinate.has_value() ? source_coordinate->row : 0,
+        source_coordinate.has_value() ? source_coordinate->column : 0 });
 }
 
 void emit_synthetic_pass_through(const WorksheetTransformActionCallback& callback,
@@ -825,7 +829,9 @@ private:
             target.cell_reference,
             target.replacement_payload,
             false,
-            0 });
+            0,
+            target.coordinate.row,
+            target.coordinate.column });
         inserted_replacements_.insert(target.cell_reference);
         advance_emitted_targets();
     }
@@ -1022,7 +1028,9 @@ private:
                     event.cell_reference,
                     replacement->second,
                     event.self_closing,
-                    event.raw_xml_offset });
+                    event.raw_xml_offset,
+                    source_coordinate.has_value() ? source_coordinate->row : 0,
+                    source_coordinate.has_value() ? source_coordinate->column : 0 });
                 matched_replacements_.insert(replacement->first);
                 advance_emitted_targets();
                 replacing_current_cell_ = true;
@@ -1030,7 +1038,7 @@ private:
             }
         }
 
-        emit_pass_through(callback_, event);
+        emit_pass_through(callback_, event, source_coordinate);
     }
 
     const WorksheetCellReplacementPlan& replacement_plan_;

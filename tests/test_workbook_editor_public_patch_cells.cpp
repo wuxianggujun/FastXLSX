@@ -625,6 +625,20 @@ void test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells
             "replace_cells Insert policy single-pass inserted count mismatch");
         check(data_sheet_plan->single_pass_staged_output_bytes > 0,
             "replace_cells Insert policy should expose staged output bytes");
+        check(data_sheet_plan->single_pass_transform_us > 0,
+            "replace_cells Insert policy should expose microsecond transform telemetry");
+        check(data_sheet_plan->single_pass_output_append_call_count
+                > data_sheet_plan->single_pass_output_flush_count,
+            "replace_cells Insert policy should coalesce output event fragments");
+        check(data_sheet_plan->single_pass_output_flush_count > 0,
+            "replace_cells Insert policy should flush bounded output batches");
+        check(data_sheet_plan->single_pass_output_peak_buffer_bytes > 0
+                && data_sheet_plan->single_pass_output_peak_buffer_bytes <= 256U * 1024U,
+            "replace_cells Insert policy output buffer should stay within 256 KiB");
+        check(data_sheet_plan->single_pass_relationship_scan_us
+                    + data_sheet_plan->single_pass_temporary_write_us
+                <= data_sheet_plan->single_pass_transform_us,
+            "replace_cells Insert policy sink timings should fit within transform time");
         check(data_sheet_plan->staged_replacement_file_range_chunk_count == 2,
             "replace_cells Insert policy should stage sequential temporary-file ranges");
         check(data_sheet_plan->staged_replacement_memory_chunk_count == 1,

@@ -17,6 +17,15 @@ struct WorkbookEditorPackagePlanAccessor {
         }
         return editor.impl_->editor.planned_output(options);
     }
+
+    static void set_package_writer_telemetry(
+        WorkbookEditor& editor, PackageWriterTelemetry* telemetry)
+    {
+        if (editor.impl_ == nullptr) {
+            throw FastXlsxError("WorkbookEditor is not open");
+        }
+        editor.impl_->package_writer_telemetry = telemetry;
+    }
 };
 
 } // namespace fastxlsx::detail

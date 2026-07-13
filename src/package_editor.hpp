@@ -67,6 +67,12 @@ struct SinglePassWorksheetTransformStats {
     std::uint64_t inserted_cell_count = 0;
     std::uint64_t staged_output_bytes = 0;
     std::uint64_t transform_ms = 0;
+    std::uint64_t transform_us = 0;
+    std::uint64_t output_append_call_count = 0;
+    std::uint64_t output_flush_count = 0;
+    std::uint64_t output_peak_buffer_bytes = 0;
+    std::uint64_t relationship_scan_us = 0;
+    std::uint64_t temporary_write_us = 0;
 };
 
 struct PackagePartReplacement {
@@ -92,6 +98,12 @@ struct PackagePartReplacement {
     std::uint64_t single_pass_inserted_cell_count = 0;
     std::uint64_t single_pass_staged_output_bytes = 0;
     std::uint64_t single_pass_transform_ms = 0;
+    std::uint64_t single_pass_transform_us = 0;
+    std::uint64_t single_pass_output_append_call_count = 0;
+    std::uint64_t single_pass_output_flush_count = 0;
+    std::uint64_t single_pass_output_peak_buffer_bytes = 0;
+    std::uint64_t single_pass_relationship_scan_us = 0;
+    std::uint64_t single_pass_temporary_write_us = 0;
     std::uint64_t single_pass_commit_ms = 0;
 };
 
@@ -141,6 +153,12 @@ struct PackageEditorOutputEntryPlan {
     std::uint64_t single_pass_inserted_cell_count = 0;
     std::uint64_t single_pass_staged_output_bytes = 0;
     std::uint64_t single_pass_transform_ms = 0;
+    std::uint64_t single_pass_transform_us = 0;
+    std::uint64_t single_pass_output_append_call_count = 0;
+    std::uint64_t single_pass_output_flush_count = 0;
+    std::uint64_t single_pass_output_peak_buffer_bytes = 0;
+    std::uint64_t single_pass_relationship_scan_us = 0;
+    std::uint64_t single_pass_temporary_write_us = 0;
     std::uint64_t single_pass_commit_ms = 0;
     std::string file_backed_source_copy_reason;
     std::string materialized_replacement_reason;

@@ -74,12 +74,22 @@ constexpr std::uint16_t stored_compression_method = 0;
 constexpr std::uint16_t deflate_compression_method = 8;
 constexpr std::size_t package_entry_file_chunk_size = 1024U * 1024U;
 constexpr std::size_t package_entry_reader_chunk_size = 1024U * 1024U;
+constexpr std::size_t worksheet_transform_output_buffer_size = 256U * 1024U;
 
 std::uint64_t steady_clock_elapsed_milliseconds(
     std::chrono::steady_clock::time_point start)
 {
     return static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start)
+            .count());
+}
+
+std::uint64_t steady_clock_elapsed_microseconds(
+    std::chrono::steady_clock::time_point start)
+{
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - start)
             .count());
 }
@@ -1651,22 +1661,21 @@ private:
 
         XmlNamespaceScope current_scope;
         ingest_namespace_declarations(current_scope, xml, tag);
-        std::vector<XmlNamespaceScope> current_namespaces = namespace_stack_;
-        current_namespaces.push_back(current_scope);
-
         const std::string_view local_name = local_xml_name(start_tag_name(xml, tag));
+        const bool self_closing = is_self_closing_tag(xml, tag);
+        namespace_stack_.push_back(std::move(current_scope));
         if (is_worksheet_relationship_reference_element(local_name)) {
             std::size_t value_begin = 0;
             std::size_t value_end = 0;
             if (find_relationship_id_value(
-                    xml, tag, current_namespaces, value_begin, value_end)) {
+                    xml, tag, namespace_stack_, value_begin, value_end)) {
                 add_reference(
                     local_name, xml.substr(value_begin, value_end - value_begin));
             }
         }
 
-        if (!is_self_closing_tag(xml, tag)) {
-            namespace_stack_.push_back(std::move(current_scope));
+        if (self_closing) {
+            namespace_stack_.pop_back();
         }
     }
 
@@ -2910,6 +2919,12 @@ void clear_indexed_source_entry_direct_range_stats(PackagePartReplacement& repla
     replacement.single_pass_inserted_cell_count = 0;
     replacement.single_pass_staged_output_bytes = 0;
     replacement.single_pass_transform_ms = 0;
+    replacement.single_pass_transform_us = 0;
+    replacement.single_pass_output_append_call_count = 0;
+    replacement.single_pass_output_flush_count = 0;
+    replacement.single_pass_output_peak_buffer_bytes = 0;
+    replacement.single_pass_relationship_scan_us = 0;
+    replacement.single_pass_temporary_write_us = 0;
     replacement.single_pass_commit_ms = 0;
 }
 
@@ -3930,14 +3945,23 @@ void consume_worksheet_cell_replacement_analysis_action(
     const PartName& worksheet_part,
     const WorksheetTransformAction& action)
 {
+    const auto action_coordinate = [&]() {
+        if (action.source_cell_row != 0 && action.source_cell_column != 0) {
+            return CellReferenceCoordinate {
+                action.source_cell_row,
+                action.source_cell_column,
+            };
+        }
+        return parse_cell_reference_coordinate(action.cell_reference);
+    };
+
     if (action.kind == WorksheetTransformActionKind::ReplaceCell
         || action.kind == WorksheetTransformActionKind::InsertCell) {
         if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
             ++analysis.scanned_source_cell_count;
         }
         if (!action.cell_reference.empty()) {
-            include_dimension_cell(analysis.dimension_scan,
-                parse_cell_reference_coordinate(action.cell_reference));
+            include_dimension_cell(analysis.dimension_scan, action_coordinate());
         }
         append_payload_audit_result(analysis.payload_audit,
             worksheet_replacement_cell_payload_audit(
@@ -3976,8 +4000,7 @@ void consume_worksheet_cell_replacement_analysis_action(
     if (action.event_kind == WorksheetEventKind::CellStart) {
         ++analysis.scanned_source_cell_count;
         if (!action.cell_reference.empty()) {
-            include_dimension_cell(analysis.dimension_scan,
-                parse_cell_reference_coordinate(action.cell_reference));
+            include_dimension_cell(analysis.dimension_scan, action_coordinate());
         }
         if (cell_start_attribute_equals_for_audit(action.raw_xml, "t", "s")) {
             append_worksheet_replacement_shared_strings_audit(
@@ -4407,21 +4430,148 @@ struct SinglePassWorksheetTransformResult {
     std::uint64_t temporary_output_bytes = 0;
     std::uint64_t dimension_insertion_offset = 0;
     std::string dimension_xml;
+    std::uint64_t output_append_call_count = 0;
+    std::uint64_t output_flush_count = 0;
+    std::uint64_t output_peak_buffer_bytes = 0;
+    std::uint64_t relationship_scan_us = 0;
+    std::uint64_t temporary_write_us = 0;
 };
 
-void write_counted_worksheet_chunk(std::ofstream& output,
-    WorksheetRelationshipReferenceScanner& relationship_scanner,
-    bool& relationship_scan_failed,
-    std::uint64_t& output_bytes,
-    std::string_view chunk)
-{
-    if (chunk.size() > std::numeric_limits<std::uint64_t>::max() - output_bytes) {
-        throw FastXlsxError("single-pass worksheet transform output size overflow");
+class BoundedWorksheetTransformOutput {
+public:
+    explicit BoundedWorksheetTransformOutput(const std::filesystem::path& path)
+        : output_(path, std::ios::binary)
+    {
+        if (!output_) {
+            throw FastXlsxError(
+                "failed to create temporary single-pass worksheet transform XML");
+        }
+        buffer_.reserve(worksheet_transform_output_buffer_size);
     }
-    write_file_chunk_and_scan_relationships(
-        output, &relationship_scanner, relationship_scan_failed, chunk);
-    output_bytes += static_cast<std::uint64_t>(chunk.size());
-}
+
+    void append(std::string_view chunk)
+    {
+        if (chunk.size() > std::numeric_limits<std::uint64_t>::max() - output_bytes_) {
+            throw FastXlsxError("single-pass worksheet transform output size overflow");
+        }
+        output_bytes_ += static_cast<std::uint64_t>(chunk.size());
+        ++append_call_count_;
+        if (chunk.empty()) {
+            return;
+        }
+
+        if (chunk.size() >= worksheet_transform_output_buffer_size) {
+            flush_buffer();
+            process_batch(chunk);
+            return;
+        }
+        if (chunk.size() > worksheet_transform_output_buffer_size - buffer_.size()) {
+            flush_buffer();
+        }
+        buffer_.append(chunk);
+        peak_buffer_bytes_ = std::max<std::uint64_t>(peak_buffer_bytes_, buffer_.size());
+        if (buffer_.size() == worksheet_transform_output_buffer_size) {
+            flush_buffer();
+        }
+    }
+
+    void finish()
+    {
+        flush_buffer();
+        const auto relationship_finish_started = std::chrono::steady_clock::now();
+        finish_xml_relationship_references(relationship_scanner_, relationship_scan_failed_);
+        relationship_scan_us_ +=
+            steady_clock_elapsed_microseconds(relationship_finish_started);
+
+        const auto close_started = std::chrono::steady_clock::now();
+        output_.close();
+        temporary_write_us_ += steady_clock_elapsed_microseconds(close_started);
+        if (!output_) {
+            throw FastXlsxError(
+                "failed to finalize temporary single-pass worksheet transform XML");
+        }
+    }
+
+    [[nodiscard]] std::uint64_t output_bytes() const noexcept
+    {
+        return output_bytes_;
+    }
+
+    [[nodiscard]] std::uint64_t append_call_count() const noexcept
+    {
+        return append_call_count_;
+    }
+
+    [[nodiscard]] std::uint64_t flush_count() const noexcept
+    {
+        return flush_count_;
+    }
+
+    [[nodiscard]] std::uint64_t peak_buffer_bytes() const noexcept
+    {
+        return peak_buffer_bytes_;
+    }
+
+    [[nodiscard]] std::uint64_t relationship_scan_us() const noexcept
+    {
+        return relationship_scan_us_;
+    }
+
+    [[nodiscard]] std::uint64_t temporary_write_us() const noexcept
+    {
+        return temporary_write_us_;
+    }
+
+    [[nodiscard]] bool relationship_scan_failed() const noexcept
+    {
+        return relationship_scan_failed_;
+    }
+
+    [[nodiscard]] const std::vector<WorksheetRelationshipReference>& references() const noexcept
+    {
+        return relationship_scanner_.references();
+    }
+
+private:
+    void flush_buffer()
+    {
+        if (buffer_.empty()) {
+            return;
+        }
+        process_batch(buffer_);
+        buffer_.clear();
+    }
+
+    void process_batch(std::string_view batch)
+    {
+        ++flush_count_;
+        if (!relationship_scan_failed_) {
+            const auto relationship_scan_started = std::chrono::steady_clock::now();
+            try {
+                scan_xml_relationship_references(relationship_scanner_, batch);
+            } catch (const std::exception&) {
+                relationship_scan_failed_ = true;
+            }
+            relationship_scan_us_ +=
+                steady_clock_elapsed_microseconds(relationship_scan_started);
+        }
+
+        const auto write_started = std::chrono::steady_clock::now();
+        write_file_chunk(output_, batch);
+        temporary_write_us_ += steady_clock_elapsed_microseconds(write_started);
+    }
+
+    std::ofstream output_;
+    std::string buffer_;
+    WorksheetRelationshipReferenceScanner relationship_scanner_;
+    bool relationship_scan_failed_ = false;
+    std::uint64_t output_bytes_ = 0;
+    std::uint64_t append_call_count_ = 0;
+    std::uint64_t flush_count_ = 0;
+    std::uint64_t peak_buffer_bytes_ = 0;
+    std::uint64_t relationship_scan_us_ = 0;
+    std::uint64_t temporary_write_us_ = 0;
+};
 
 SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
     const std::filesystem::path& path,
@@ -4431,14 +4581,9 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
     const WorksheetCellReplacementPlan& replacement_plan,
     WorksheetCellReplacementMode mode)
 {
-    std::ofstream output(path, std::ios::binary);
-    if (!output) {
-        throw FastXlsxError("failed to create temporary single-pass worksheet transform XML");
-    }
+    BoundedWorksheetTransformOutput output(path);
 
     SinglePassWorksheetTransformResult result;
-    WorksheetRelationshipReferenceScanner relationship_scanner;
-    bool relationship_scan_failed = false;
     bool skipping_dimension = false;
     std::optional<std::uint64_t> worksheet_root_end;
     std::optional<std::uint64_t> source_dimension_offset;
@@ -4461,7 +4606,7 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
                 && action.element_name == "dimension") {
                 if (!is_closing_raw_tag(action.raw_xml)) {
                     if (!source_dimension_offset.has_value()) {
-                        source_dimension_offset = result.temporary_output_bytes;
+                        source_dimension_offset = output.output_bytes();
                     }
                     skipping_dimension = !action.self_closing;
                 }
@@ -4471,27 +4616,21 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
             if (action.kind == WorksheetTransformActionKind::ReplaceCell
                 || action.kind == WorksheetTransformActionKind::InsertCell) {
                 action.replacement_payload.for_each_chunk([&](std::string_view chunk) {
-                    write_counted_worksheet_chunk(output, relationship_scanner,
-                        relationship_scan_failed, result.temporary_output_bytes, chunk);
+                    output.append(chunk);
                 });
                 return;
             }
 
-            write_counted_worksheet_chunk(output, relationship_scanner,
-                relationship_scan_failed, result.temporary_output_bytes, action.raw_xml);
+            output.append(action.raw_xml);
             if (action.event_kind == WorksheetEventKind::WorksheetStart
                 && !worksheet_root_end.has_value()) {
-                worksheet_root_end = result.temporary_output_bytes;
+                worksheet_root_end = output.output_bytes();
             }
         },
         package_editor_cell_replacement_reader_options(), mode);
 
     finalize_worksheet_cell_replacement_stream_analysis(result.analysis, worksheet_part);
-    finish_xml_relationship_references(relationship_scanner, relationship_scan_failed);
-    output.close();
-    if (!output) {
-        throw FastXlsxError("failed to finalize temporary single-pass worksheet transform XML");
-    }
+    output.finish();
     if (!worksheet_root_end.has_value()) {
         throw FastXlsxError("single-pass worksheet transform requires a worksheet root");
     }
@@ -4504,10 +4643,16 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
         : std::string_view(result.analysis.worksheet_prefix);
     result.dimension_xml = dimension_tag(
         dimension_prefix, worksheet_dimension_reference(result.analysis.dimension_scan));
-    result.relationship_reference_audit = relationship_scan_failed
+    result.temporary_output_bytes = output.output_bytes();
+    result.output_append_call_count = output.append_call_count();
+    result.output_flush_count = output.flush_count();
+    result.output_peak_buffer_bytes = output.peak_buffer_bytes();
+    result.relationship_scan_us = output.relationship_scan_us();
+    result.temporary_write_us = output.temporary_write_us();
+    result.relationship_reference_audit = output.relationship_scan_failed()
         ? worksheet_relationship_reference_parse_failure_audit()
         : worksheet_relationship_reference_audit_from_references(
-            worksheet_part, relationship_scanner.references(), worksheet_relationships);
+            worksheet_part, output.references(), worksheet_relationships);
     return result;
 }
 
@@ -4883,6 +5028,18 @@ PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
             replacement->single_pass_staged_output_bytes;
         plan.single_pass_transform_ms =
             replacement->single_pass_transform_ms;
+        plan.single_pass_transform_us =
+            replacement->single_pass_transform_us;
+        plan.single_pass_output_append_call_count =
+            replacement->single_pass_output_append_call_count;
+        plan.single_pass_output_flush_count =
+            replacement->single_pass_output_flush_count;
+        plan.single_pass_output_peak_buffer_bytes =
+            replacement->single_pass_output_peak_buffer_bytes;
+        plan.single_pass_relationship_scan_us =
+            replacement->single_pass_relationship_scan_us;
+        plan.single_pass_temporary_write_us =
+            replacement->single_pass_temporary_write_us;
         plan.single_pass_commit_ms =
             replacement->single_pass_commit_ms;
         if (plan.staged_replacement_chunks) {
@@ -7179,6 +7336,17 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
         replacement->single_pass_staged_output_bytes =
             single_pass_stats->staged_output_bytes;
         replacement->single_pass_transform_ms = single_pass_stats->transform_ms;
+        replacement->single_pass_transform_us = single_pass_stats->transform_us;
+        replacement->single_pass_output_append_call_count =
+            single_pass_stats->output_append_call_count;
+        replacement->single_pass_output_flush_count =
+            single_pass_stats->output_flush_count;
+        replacement->single_pass_output_peak_buffer_bytes =
+            single_pass_stats->output_peak_buffer_bytes;
+        replacement->single_pass_relationship_scan_us =
+            single_pass_stats->relationship_scan_us;
+        replacement->single_pass_temporary_write_us =
+            single_pass_stats->temporary_write_us;
         replacement->single_pass_commit_ms =
             steady_clock_elapsed_milliseconds(staged_commit_started);
     }
@@ -7635,6 +7803,8 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
     }
     const std::uint64_t transform_ms =
         steady_clock_elapsed_milliseconds(transform_started);
+    const std::uint64_t transform_us =
+        steady_clock_elapsed_microseconds(transform_started);
 
     if (!replace_or_insert
         && !transform_result.analysis.summary.missing_cell_references.empty()) {
@@ -7691,8 +7861,9 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
     commit_notes.emplace_back(
         "worksheet cell replacement writes transformed XML without the source dimension "
         "to one PackageEditor-owned temporary file, then stages sequential file ranges "
-        "around one bounded in-memory exact dimension tag; memory remains bounded by "
-        "event/chunk buffers rather than worksheet size");
+        "around one bounded in-memory exact dimension tag; a 256 KiB output batch coalesces "
+        "event fragments before relationship scanning and file IO, while memory remains "
+        "bounded by event/chunk buffers rather than worksheet size");
     commit_notes.emplace_back(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "
@@ -7719,6 +7890,14 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
             transform_result.analysis.summary.inserted_cell_count);
     single_pass_stats.staged_output_bytes = staged_output_bytes;
     single_pass_stats.transform_ms = transform_ms;
+    single_pass_stats.transform_us = transform_us;
+    single_pass_stats.output_append_call_count =
+        transform_result.output_append_call_count;
+    single_pass_stats.output_flush_count = transform_result.output_flush_count;
+    single_pass_stats.output_peak_buffer_bytes =
+        transform_result.output_peak_buffer_bytes;
+    single_pass_stats.relationship_scan_us = transform_result.relationship_scan_us;
+    single_pass_stats.temporary_write_us = transform_result.temporary_write_us;
     replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
         std::move(output_chunks), policy,
         std::move(transform_result.analysis.payload_audit.notes),

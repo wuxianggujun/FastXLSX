@@ -98,6 +98,7 @@ struct WorkbookEditor::Impl {
     detail::WorkbookEditorPendingSheetDataPayloads pending_sheet_data_payloads;
     PendingTargetedCellReplacements pending_targeted_cell_replacements;
     std::optional<std::string> last_public_edit_error;
+    detail::PackageWriterTelemetry* package_writer_telemetry = nullptr;
 
     [[nodiscard]] std::vector<std::string> source_worksheet_names() const
     {

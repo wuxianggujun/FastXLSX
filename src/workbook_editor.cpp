@@ -783,8 +783,9 @@ void WorkbookEditor::save_as(
         throw FastXlsxError("WorkbookEditor is not open");
     }
 
-    const detail::PackageWriterOptions package_options =
+    detail::PackageWriterOptions package_options =
         package_writer_options_for_workbook_editor_save(options);
+    package_options.telemetry = impl_->package_writer_telemetry;
     detail::validate_workbook_editor_save_as_path(impl_->editor.reader().path(), path);
     const detail::WorkbookEditorMaterializedStageResult materialized_stage =
         impl_->stage_dirty_materialized_sessions_to_patch_plan();

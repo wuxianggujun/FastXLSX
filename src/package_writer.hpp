@@ -104,6 +104,28 @@ enum class PackageWriterBackend {
     MinizipNg,
 };
 
+struct PackageWriterEntryTelemetry {
+    std::string entry_name;
+    bool raw_compressed_copy = false;
+    std::uint64_t uncompressed_bytes = 0;
+    std::uint64_t input_bytes = 0;
+    std::uint64_t input_read_calls = 0;
+    std::uint64_t writer_write_calls = 0;
+    std::uint64_t total_us = 0;
+    std::uint64_t open_us = 0;
+    std::uint64_t input_read_us = 0;
+    std::uint64_t writer_write_us = 0;
+    std::uint64_t close_us = 0;
+};
+
+struct PackageWriterTelemetry {
+    PackageWriterBackend backend = PackageWriterBackend::Auto;
+    std::uint64_t total_us = 0;
+    std::uint64_t open_us = 0;
+    std::uint64_t close_us = 0;
+    std::vector<PackageWriterEntryTelemetry> entries;
+};
+
 inline constexpr int package_writer_default_compression_level = -1;
 inline constexpr int package_writer_min_compression_level = 0;
 inline constexpr int package_writer_max_compression_level = 9;
@@ -111,6 +133,7 @@ inline constexpr int package_writer_max_compression_level = 9;
 struct PackageWriterOptions {
     PackageWriterBackend backend = PackageWriterBackend::Auto;
     int compression_level = package_writer_default_compression_level;
+    PackageWriterTelemetry* telemetry = nullptr;
 };
 
 [[nodiscard]] bool package_writer_can_raw_copy_compression_method(

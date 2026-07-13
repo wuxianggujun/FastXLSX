@@ -289,6 +289,8 @@ void test_package_writer_applies_explicit_minizip_compression_levels()
     fastxlsx::detail::PackageWriterOptions smallest;
     smallest.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
     smallest.compression_level = fastxlsx::detail::package_writer_max_compression_level;
+    fastxlsx::detail::PackageWriterTelemetry telemetry;
+    smallest.telemetry = &telemetry;
     fastxlsx::detail::write_package(smallest_path,
         {
             {"[Content_Types].xml", content_types},
@@ -323,6 +325,26 @@ void test_package_writer_applies_explicit_minizip_compression_levels()
         "compression level 0 central directory should record stored size");
     check(fastest_entry.compressed_size > smallest_entry.compressed_size,
         "higher compression level should shrink a repetitive workbook payload");
+    check(telemetry.backend == fastxlsx::detail::PackageWriterBackend::MinizipNg,
+        "package writer telemetry should report the resolved minizip backend");
+    check(telemetry.total_us > 0 && telemetry.entries.size() == 2,
+        "package writer telemetry should report package and entry timings");
+    const auto workbook_telemetry = std::find_if(telemetry.entries.begin(), telemetry.entries.end(),
+        [](const fastxlsx::detail::PackageWriterEntryTelemetry& entry) {
+            return entry.entry_name == "xl/workbook.xml";
+        });
+    check(workbook_telemetry != telemetry.entries.end(),
+        "package writer telemetry should include the workbook entry");
+    if (workbook_telemetry != telemetry.entries.end()) {
+        check(!workbook_telemetry->raw_compressed_copy,
+            "ordinary workbook telemetry should not report raw copy");
+        check(workbook_telemetry->uncompressed_bytes == workbook.size()
+                && workbook_telemetry->input_bytes == workbook.size(),
+            "workbook telemetry should account for its complete input payload");
+        check(workbook_telemetry->writer_write_calls > 0
+                && workbook_telemetry->total_us > 0,
+            "workbook telemetry should report minizip write calls and elapsed time");
+    }
 }
 
 void test_package_writer_raw_copies_matching_compressed_entries()
@@ -367,6 +389,8 @@ void test_package_writer_raw_copies_matching_compressed_entries()
         source_workbook->crc32,
         source_workbook->compression_method,
     };
+    fastxlsx::detail::PackageWriterTelemetry raw_copy_telemetry;
+    options.telemetry = &raw_copy_telemetry;
     fastxlsx::detail::write_package(output,
         {
             {"[Content_Types].xml", content_types},
@@ -374,6 +398,23 @@ void test_package_writer_raw_copies_matching_compressed_entries()
                 "xl/workbook.xml", raw_source),
         },
         options);
+
+    const auto raw_workbook_telemetry = std::find_if(raw_copy_telemetry.entries.begin(),
+        raw_copy_telemetry.entries.end(),
+        [](const fastxlsx::detail::PackageWriterEntryTelemetry& entry) {
+            return entry.entry_name == "xl/workbook.xml";
+        });
+    check(raw_workbook_telemetry != raw_copy_telemetry.entries.end(),
+        "raw-copy telemetry should include the workbook entry");
+    if (raw_workbook_telemetry != raw_copy_telemetry.entries.end()) {
+        check(raw_workbook_telemetry->raw_compressed_copy,
+            "raw-copy telemetry should identify compressed payload passthrough");
+        check(raw_workbook_telemetry->input_bytes == source_workbook->compressed_size,
+            "raw-copy telemetry should account for compressed source bytes");
+        check(raw_workbook_telemetry->input_read_calls > 0
+                && raw_workbook_telemetry->writer_write_calls > 0,
+            "raw-copy telemetry should report file reads and writer calls");
+    }
 
     const fastxlsx::detail::PackageReader written =
         fastxlsx::detail::PackageReader::open(output);

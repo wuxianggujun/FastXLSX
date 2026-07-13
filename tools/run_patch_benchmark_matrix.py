@@ -37,6 +37,18 @@ METRICS = [
     "rewritten_uncompressed_bytes",
     "rewritten_compressed_bytes",
     "single_pass_transform_ms",
+    "single_pass_transform_us",
+    "single_pass_source_scan_action_us",
+    "single_pass_relationship_scan_us",
+    "single_pass_temporary_write_us",
+    "single_pass_output_append_call_count",
+    "single_pass_output_flush_count",
+    "single_pass_output_peak_buffer_bytes",
+    "package_writer_total_us",
+    "target_worksheet_entry_total_us",
+    "target_worksheet_entry_input_read_us",
+    "target_worksheet_entry_writer_write_us",
+    "target_worksheet_entry_close_us",
 ]
 
 
@@ -289,6 +301,29 @@ def verify_result(
             "patch-upsert single-pass source scan count mismatch")
         require(int(result.get("single_pass_staged_output_bytes")) > 0,
             "patch-upsert single-pass staged output bytes should be positive")
+        require(int(result.get("single_pass_transform_us")) > 0,
+            "patch-upsert single-pass transform microseconds should be positive")
+        require(int(result.get("single_pass_output_append_call_count")) > 0,
+            "patch-upsert should report output append calls")
+        require(int(result.get("single_pass_output_flush_count")) > 0,
+            "patch-upsert should report bounded output flushes")
+        require(
+            int(result.get("single_pass_output_flush_count"))
+            < int(result.get("single_pass_output_append_call_count")),
+            "patch-upsert output batching should coalesce append calls",
+        )
+        require(
+            0 < int(result.get("single_pass_output_peak_buffer_bytes")) <= 256 * 1024,
+            "patch-upsert output buffer peak should stay within 256 KiB",
+        )
+        measured_sink_us = (
+            int(result.get("single_pass_relationship_scan_us"))
+            + int(result.get("single_pass_temporary_write_us"))
+        )
+        require(
+            measured_sink_us <= int(result.get("single_pass_transform_us")),
+            "patch-upsert measured sink time should not exceed transform time",
+        )
     require(
         result.get("source_fixture_mode")
         == ("reused-existing-source" if expect_reused_source else "generated-source"),
@@ -307,6 +342,19 @@ def verify_result(
     require(result.get("office_open") == "not_run", "Office state must remain not_run")
     require(float(result.get("peak_memory_mb")) >= 0.0, "peak memory must be non-negative")
     require(int(result.get("total_editor_ms")) >= 0, "total editor time must be non-negative")
+    require(int(result.get("package_writer_total_us")) > 0,
+        "package writer telemetry should report positive total time")
+    if output_compression_level > 0:
+        require(result.get("target_worksheet_entry_telemetry") is True,
+            "minizip Patch output should report target worksheet entry telemetry")
+        require(int(result.get("target_worksheet_entry_input_bytes")) > 0,
+            "target worksheet entry input bytes should be positive")
+        require(int(result.get("target_worksheet_entry_input_read_calls")) > 0,
+            "target worksheet entry should report source read calls")
+        require(int(result.get("target_worksheet_entry_writer_write_calls")) > 0,
+            "target worksheet entry should report writer calls")
+        require(int(result.get("target_worksheet_entry_total_us")) > 0,
+            "target worksheet entry should report positive total time")
     require(not result.get("materialized_worksheet"), "Patch case unexpectedly materialized sheet")
 
     copied_names = list(result.get("copied_entry_names", []))
@@ -556,6 +604,18 @@ def run_self_test() -> None:
                 "peak_memory_mb": 10.0 + index,
                 "output_bytes": 100 + index,
                 "single_pass_transform_ms": 1,
+                "single_pass_transform_us": 1000,
+                "single_pass_source_scan_action_us": 700,
+                "single_pass_relationship_scan_us": 200,
+                "single_pass_temporary_write_us": 100,
+                "single_pass_output_append_call_count": 100,
+                "single_pass_output_flush_count": 2,
+                "single_pass_output_peak_buffer_bytes": 262144,
+                "package_writer_total_us": 1000,
+                "target_worksheet_entry_total_us": 500,
+                "target_worksheet_entry_input_read_us": 50,
+                "target_worksheet_entry_writer_write_us": 400,
+                "target_worksheet_entry_close_us": 50,
             },
             "byte_accounting": {
                 "copied_uncompressed_bytes": 1000,

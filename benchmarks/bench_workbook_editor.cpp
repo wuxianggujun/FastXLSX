@@ -98,7 +98,28 @@ struct RunStats {
     std::uint64_t single_pass_inserted_cell_count = 0;
     std::uint64_t single_pass_staged_output_bytes = 0;
     std::uint64_t single_pass_transform_ms = 0;
+    std::uint64_t single_pass_transform_us = 0;
+    std::uint64_t single_pass_source_scan_action_us = 0;
+    std::uint64_t single_pass_output_append_call_count = 0;
+    std::uint64_t single_pass_output_flush_count = 0;
+    std::uint64_t single_pass_output_peak_buffer_bytes = 0;
+    std::uint64_t single_pass_relationship_scan_us = 0;
+    std::uint64_t single_pass_temporary_write_us = 0;
     std::uint64_t single_pass_commit_ms = 0;
+    std::uint64_t package_writer_total_us = 0;
+    std::uint64_t package_writer_open_us = 0;
+    std::uint64_t package_writer_close_us = 0;
+    bool target_worksheet_entry_telemetry = false;
+    bool target_worksheet_entry_raw_compressed_copy = false;
+    std::uint64_t target_worksheet_entry_uncompressed_bytes = 0;
+    std::uint64_t target_worksheet_entry_input_bytes = 0;
+    std::uint64_t target_worksheet_entry_input_read_calls = 0;
+    std::uint64_t target_worksheet_entry_writer_write_calls = 0;
+    std::uint64_t target_worksheet_entry_total_us = 0;
+    std::uint64_t target_worksheet_entry_open_us = 0;
+    std::uint64_t target_worksheet_entry_input_read_us = 0;
+    std::uint64_t target_worksheet_entry_writer_write_us = 0;
+    std::uint64_t target_worksheet_entry_close_us = 0;
 };
 
 [[noreturn]] void fail(std::string_view message)
@@ -594,6 +615,24 @@ void observe_output_plan(
             stats.single_pass_staged_output_bytes =
                 entry.single_pass_staged_output_bytes;
             stats.single_pass_transform_ms = entry.single_pass_transform_ms;
+            stats.single_pass_transform_us = entry.single_pass_transform_us;
+            stats.single_pass_output_append_call_count =
+                entry.single_pass_output_append_call_count;
+            stats.single_pass_output_flush_count =
+                entry.single_pass_output_flush_count;
+            stats.single_pass_output_peak_buffer_bytes =
+                entry.single_pass_output_peak_buffer_bytes;
+            stats.single_pass_relationship_scan_us =
+                entry.single_pass_relationship_scan_us;
+            stats.single_pass_temporary_write_us =
+                entry.single_pass_temporary_write_us;
+            const std::uint64_t measured_sink_us =
+                stats.single_pass_relationship_scan_us
+                + stats.single_pass_temporary_write_us;
+            stats.single_pass_source_scan_action_us =
+                stats.single_pass_transform_us > measured_sink_us
+                ? stats.single_pass_transform_us - measured_sink_us
+                : 0;
             stats.single_pass_commit_ms = entry.single_pass_commit_ms;
         }
         if (entry.omitted) {
@@ -620,6 +659,33 @@ void observe_output_plan(
         stats.raw_compressed_copy_entry_names.size();
     stats.rewritten_entry_count = stats.rewritten_entry_names.size();
     stats.omitted_entry_count = stats.omitted_entry_names.size();
+}
+
+void observe_package_writer_telemetry(
+    const fastxlsx::detail::PackageWriterTelemetry& telemetry, RunStats& stats)
+{
+    stats.package_writer_total_us = telemetry.total_us;
+    stats.package_writer_open_us = telemetry.open_us;
+    stats.package_writer_close_us = telemetry.close_us;
+    const auto target = std::find_if(telemetry.entries.begin(), telemetry.entries.end(),
+        [](const fastxlsx::detail::PackageWriterEntryTelemetry& entry) {
+            return entry.entry_name == "xl/worksheets/sheet1.xml";
+        });
+    if (target == telemetry.entries.end()) {
+        return;
+    }
+
+    stats.target_worksheet_entry_telemetry = true;
+    stats.target_worksheet_entry_raw_compressed_copy = target->raw_compressed_copy;
+    stats.target_worksheet_entry_uncompressed_bytes = target->uncompressed_bytes;
+    stats.target_worksheet_entry_input_bytes = target->input_bytes;
+    stats.target_worksheet_entry_input_read_calls = target->input_read_calls;
+    stats.target_worksheet_entry_writer_write_calls = target->writer_write_calls;
+    stats.target_worksheet_entry_total_us = target->total_us;
+    stats.target_worksheet_entry_open_us = target->open_us;
+    stats.target_worksheet_entry_input_read_us = target->input_read_us;
+    stats.target_worksheet_entry_writer_write_us = target->writer_write_us;
+    stats.target_worksheet_entry_close_us = target->close_us;
 }
 
 void write_result_json(const Options& options, const RunStats& stats)
@@ -681,8 +747,47 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.single_pass_staged_output_bytes << ",\n";
     out << "  \"single_pass_transform_ms\": "
         << stats.single_pass_transform_ms << ",\n";
+    out << "  \"single_pass_transform_us\": "
+        << stats.single_pass_transform_us << ",\n";
+    out << "  \"single_pass_source_scan_action_us\": "
+        << stats.single_pass_source_scan_action_us << ",\n";
+    out << "  \"single_pass_output_append_call_count\": "
+        << stats.single_pass_output_append_call_count << ",\n";
+    out << "  \"single_pass_output_flush_count\": "
+        << stats.single_pass_output_flush_count << ",\n";
+    out << "  \"single_pass_output_peak_buffer_bytes\": "
+        << stats.single_pass_output_peak_buffer_bytes << ",\n";
+    out << "  \"single_pass_relationship_scan_us\": "
+        << stats.single_pass_relationship_scan_us << ",\n";
+    out << "  \"single_pass_temporary_write_us\": "
+        << stats.single_pass_temporary_write_us << ",\n";
     out << "  \"single_pass_commit_ms\": "
         << stats.single_pass_commit_ms << ",\n";
+    out << "  \"package_writer_total_us\": " << stats.package_writer_total_us << ",\n";
+    out << "  \"package_writer_open_us\": " << stats.package_writer_open_us << ",\n";
+    out << "  \"package_writer_close_us\": " << stats.package_writer_close_us << ",\n";
+    out << "  \"target_worksheet_entry_telemetry\": "
+        << (stats.target_worksheet_entry_telemetry ? "true" : "false") << ",\n";
+    out << "  \"target_worksheet_entry_raw_compressed_copy\": "
+        << (stats.target_worksheet_entry_raw_compressed_copy ? "true" : "false") << ",\n";
+    out << "  \"target_worksheet_entry_uncompressed_bytes\": "
+        << stats.target_worksheet_entry_uncompressed_bytes << ",\n";
+    out << "  \"target_worksheet_entry_input_bytes\": "
+        << stats.target_worksheet_entry_input_bytes << ",\n";
+    out << "  \"target_worksheet_entry_input_read_calls\": "
+        << stats.target_worksheet_entry_input_read_calls << ",\n";
+    out << "  \"target_worksheet_entry_writer_write_calls\": "
+        << stats.target_worksheet_entry_writer_write_calls << ",\n";
+    out << "  \"target_worksheet_entry_total_us\": "
+        << stats.target_worksheet_entry_total_us << ",\n";
+    out << "  \"target_worksheet_entry_open_us\": "
+        << stats.target_worksheet_entry_open_us << ",\n";
+    out << "  \"target_worksheet_entry_input_read_us\": "
+        << stats.target_worksheet_entry_input_read_us << ",\n";
+    out << "  \"target_worksheet_entry_writer_write_us\": "
+        << stats.target_worksheet_entry_writer_write_us << ",\n";
+    out << "  \"target_worksheet_entry_close_us\": "
+        << stats.target_worksheet_entry_close_us << ",\n";
     write_json_string_array(out, "copied_entry_names", stats.copied_entry_names, true);
     write_json_string_array(out, "raw_compressed_copy_entry_names",
         stats.raw_compressed_copy_entry_names, true);
@@ -757,7 +862,19 @@ RunStats run_benchmark(const Options& options)
     phase_started = std::chrono::steady_clock::now();
     fastxlsx::WorkbookEditorSaveOptions save_options;
     save_options.zip_compression_level = options.output_compression_level;
-    editor.save_as(options.output, save_options);
+    fastxlsx::detail::PackageWriterTelemetry package_writer_telemetry;
+    fastxlsx::detail::WorkbookEditorPackagePlanAccessor::set_package_writer_telemetry(
+        editor, &package_writer_telemetry);
+    try {
+        editor.save_as(options.output, save_options);
+    } catch (...) {
+        fastxlsx::detail::WorkbookEditorPackagePlanAccessor::set_package_writer_telemetry(
+            editor, nullptr);
+        throw;
+    }
+    fastxlsx::detail::WorkbookEditorPackagePlanAccessor::set_package_writer_telemetry(
+        editor, nullptr);
+    observe_package_writer_telemetry(package_writer_telemetry, stats);
     stats.timings.save_ms = milliseconds_since(phase_started);
     stats.output_bytes = static_cast<std::uint64_t>(std::filesystem::file_size(options.output));
     stats.timings.total_ms = milliseconds_since(total_started);

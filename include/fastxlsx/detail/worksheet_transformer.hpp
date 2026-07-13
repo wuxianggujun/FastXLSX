@@ -108,6 +108,10 @@ struct WorksheetTransformAction {
     /// Absolute decompressed worksheet XML byte offset for source-backed
     /// actions. Synthetic insert/pass-through actions use zero.
     std::uint64_t raw_xml_offset = 0;
+    /// Parsed cell coordinate when the transformer already needed it for
+    /// source-order upsert decisions. Zero means the action did not carry one.
+    std::uint32_t source_cell_row = 0;
+    std::uint32_t source_cell_column = 0;
 };
 
 struct WorksheetTransformSummary {

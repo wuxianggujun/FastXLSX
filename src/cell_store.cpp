@@ -63,6 +63,36 @@ std::size_t records_memory_usage(const std::map<CellPosition, CellRecord>& recor
     return total;
 }
 
+bool same_style_id(
+    const std::optional<StyleId>& left, const std::optional<StyleId>& right) noexcept
+{
+    if (left.has_value() != right.has_value()) {
+        return false;
+    }
+    return !left.has_value() || left->value() == right->value();
+}
+
+bool same_cell_record(const CellRecord& left, const CellRecord& right) noexcept
+{
+    if (left.kind != right.kind || !same_style_id(left.style_id, right.style_id)) {
+        return false;
+    }
+
+    switch (left.kind) {
+    case CellValueKind::Blank:
+        return true;
+    case CellValueKind::Number:
+        return left.number_value == right.number_value;
+    case CellValueKind::Boolean:
+        return left.boolean_value == right.boolean_value;
+    case CellValueKind::Text:
+    case CellValueKind::Formula:
+    case CellValueKind::Error:
+        return left.text_value == right.text_value;
+    }
+    return false;
+}
+
 bool is_space(char ch)
 {
     return std::isspace(static_cast<unsigned char>(ch)) != 0;
@@ -3009,13 +3039,9 @@ bool CellStore::apply_cell_edits(
     }
 
     std::set<CellPosition> final_erasures;
-    bool erases_existing_record = false;
     for (const CellPosition& position : erasures) {
         validate_position(position.row, position.column);
         final_erasures.insert(position);
-        if (cells_.find(position) != cells_.end()) {
-            erases_existing_record = true;
-        }
     }
 
     std::map<CellPosition, CellRecord> final_updates;
@@ -3042,6 +3068,28 @@ bool CellStore::apply_cell_edits(
         }
 
         final_updates[update.position] = std::move(record);
+    }
+
+    bool changes_state = false;
+    for (const CellPosition& position : final_erasures) {
+        if (final_updates.find(position) == final_updates.end()
+            && cells_.find(position) != cells_.end()) {
+            changes_state = true;
+            break;
+        }
+    }
+    if (!changes_state) {
+        for (const auto& [position, record] : final_updates) {
+            const auto existing = cells_.find(position);
+            if (existing == cells_.end()
+                || !same_cell_record(existing->second, record)) {
+                changes_state = true;
+                break;
+            }
+        }
+    }
+    if (!changes_state) {
+        return false;
     }
 
     std::size_t next_cell_count = cells_.size();
@@ -3091,7 +3139,7 @@ bool CellStore::apply_cell_edits(
     for (auto& [position, record] : final_updates) {
         cells_[position] = std::move(record);
     }
-    return erases_existing_record || !final_updates.empty();
+    return true;
 }
 
 void CellStore::set_cells(

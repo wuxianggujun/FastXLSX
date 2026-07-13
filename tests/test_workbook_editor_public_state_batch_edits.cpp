@@ -889,12 +889,91 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
         });
 }
 
+void test_public_worksheet_editor_equal_batch_mutations_are_clean_noops()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-equal-batch-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-equal-batch-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::size_t baseline_cell_count = sheet.cell_count();
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+    const auto check_clean_state = [&](std::string_view scenario) {
+        const std::string prefix(scenario);
+        check(!sheet.has_pending_changes()
+                && !editor.has_unsaved_changes()
+                && !editor.has_pending_changes()
+                && editor.pending_change_count() == 0
+                && editor.pending_materialized_worksheet_names().empty()
+                && editor.pending_materialized_cell_count() == 0
+                && editor.estimated_pending_materialized_memory_usage() == 0
+                && editor.pending_worksheet_edits().empty()
+                && !editor.last_edit_error().has_value()
+                && sheet.cell_count() == baseline_cell_count
+                && sheet.estimated_memory_usage() == baseline_memory,
+            prefix + " should preserve clean editor and sparse session state");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1"
+                && sheet.get_cell("B1").number_value() == 1.0
+                && sheet.get_cell("A2").text_value() == "placeholder-a2",
+            prefix + " should preserve source-backed cell values");
+    };
+
+    sheet.set_cells({
+        {{1, 1}, fastxlsx::CellValue::text("temporary-a1")},
+        {{1, 1}, fastxlsx::CellValue::text("placeholder-a1")},
+        {{1, 2}, fastxlsx::CellValue::number(1.0)},
+    });
+    check_clean_state("final-state-equal set_cells");
+
+    sheet.set_cell_values({
+        {{2, 1}, fastxlsx::CellValue::text("temporary-a2")},
+        {{2, 1}, fastxlsx::CellValue::text("placeholder-a2")},
+        {{1, 2}, fastxlsx::CellValue::number(1.0)},
+    });
+    check_clean_state("final-state-equal set_cell_values");
+
+    sheet.set_row(1, {
+        fastxlsx::CellValue::text("placeholder-a1"),
+        fastxlsx::CellValue::number(1.0),
+    });
+    check_clean_state("final-state-equal set_row");
+
+    sheet.set_column(1, {
+        fastxlsx::CellValue::text("placeholder-a1"),
+        fastxlsx::CellValue::text("placeholder-a2"),
+    });
+    check_clean_state("final-state-equal set_column");
+
+    sheet.set_row_values(1, {
+        fastxlsx::CellValue::text("placeholder-a1"),
+        fastxlsx::CellValue::number(1.0),
+    });
+    check_clean_state("final-state-equal set_row_values");
+
+    sheet.set_column_values(1, {
+        fastxlsx::CellValue::text("placeholder-a1"),
+        fastxlsx::CellValue::text("placeholder-a2"),
+    });
+    check_clean_state("final-state-equal set_column_values");
+
+    editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(output) == source_entries,
+        "save after final-state-equal batch mutations should preserve source entries");
+    check_reopened_default_data_sheet_output(
+        output, "final-state-equal batch mutation output");
+}
+
 } // namespace
 
 int main()
 {
     try {
         test_public_worksheet_editor_initializer_list_batch_overloads();
+        test_public_worksheet_editor_equal_batch_mutations_are_clean_noops();
         std::cout << "WorkbookEditor public-state batch edit tests passed\n";
         return 0;
     } catch (const std::exception& error) {

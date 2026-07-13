@@ -658,11 +658,12 @@ public:
     /// API mode: In-memory / existing-workbook small-file mutation. Each update
     /// names one explicit 1-based row/column coordinate. The input order is
     /// respected and duplicate coordinates are allowed; later updates win after
-    /// the whole batch passes validation. Empty input is a successful no-op that
-    /// does not dirty the materialized session and clears prior public edit
-    /// diagnostics. Explicit default StyleId{0} handles are normalized to no
-    /// style handle and do not serialize as `s="0"`. Invalid coordinates,
-    /// caller-supplied non-default StyleId handles, max_cells violations, or
+    /// the whole batch passes validation. Empty input, or a later-wins final
+    /// batch whose normalized records all equal the active sparse records, is a
+    /// successful no-op that does not dirty the materialized session and clears
+    /// prior public edit diagnostics. Explicit default StyleId{0} handles are
+    /// normalized to no style handle and do not serialize as `s="0"`. Invalid
+    /// coordinates, caller-supplied non-default StyleId handles, max_cells violations, or
     /// memory_budget_bytes violations reject the entire batch before the active
     /// sparse store is mutated.
     ///
@@ -721,7 +722,8 @@ public:
     /// order. Passing an empty value list clears the represented row; if the row
     /// has no represented sparse cells, it is a successful no-op that does not
     /// create row metadata, does not dirty the materialized session, and clears
-    /// prior public edit diagnostics.
+    /// prior public edit diagnostics. A non-empty replacement whose final row
+    /// records equal the active sparse row is also a clean no-op.
     ///
     /// The entire replacement is preflighted and staged. Explicit default
     /// StyleId{0} handles are normalized to no style handle and do not serialize
@@ -754,7 +756,9 @@ public:
     /// 1..N in input order. Passing an empty value list clears the represented
     /// column; if the column has no represented sparse cells, it is a successful
     /// no-op that does not create column metadata, does not dirty the
-    /// materialized session, and clears prior public edit diagnostics.
+    /// materialized session, and clears prior public edit diagnostics. A
+    /// non-empty replacement whose final column records equal the active sparse
+    /// column is also a clean no-op.
     ///
     /// The entire replacement is preflighted and staged. Explicit default
     /// StyleId{0} handles are normalized to no style handle and do not serialize
@@ -1544,8 +1548,10 @@ public:
     /// the same batch preserved that handle. Missing target cells are inserted
     /// without a style. Explicit default StyleId{0} handles are accepted as no
     /// caller style and follow the same preserve-existing / insert-unstyled
-    /// behavior. Empty input is a successful no-op that does not dirty the
-    /// materialized session and clears prior public edit diagnostics.
+    /// behavior. Empty input, or a later-wins final batch whose values equal the
+    /// active sparse records after destination-style preservation, is a
+    /// successful no-op that does not dirty the materialized session and clears
+    /// prior public edit diagnostics.
     /// Invalid coordinates, caller-supplied non-default StyleId handles,
     /// max_cells violations, or memory_budget_bytes violations reject the
     /// entire batch before the active sparse store is mutated.
@@ -1573,7 +1579,8 @@ public:
     /// same preserve-existing / insert-unstyled behavior. Cells beyond the input
     /// prefix are left untouched. Empty input is a successful no-op that does
     /// not dirty the materialized session and clears prior public edit
-    /// diagnostics.
+    /// diagnostics. A non-empty prefix whose values equal the active sparse
+    /// records after destination-style preservation is also a clean no-op.
     ///
     /// The entire prefix write is preflighted and staged. Invalid row numbers,
     /// more than 16,384 values, caller-supplied non-default StyleId handles,
@@ -1606,7 +1613,8 @@ public:
     /// follow the same preserve-existing / insert-unstyled behavior. Cells
     /// beyond the input prefix are left untouched. Empty input is a successful
     /// no-op that does not dirty the materialized session and clears prior
-    /// public edit diagnostics.
+    /// public edit diagnostics. A non-empty prefix whose values equal the active
+    /// sparse records after destination-style preservation is also a clean no-op.
     ///
     /// The entire prefix write is preflighted and staged. Invalid column
     /// numbers, more than 1,048,576 values, caller-supplied non-default StyleId

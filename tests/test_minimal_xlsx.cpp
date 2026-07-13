@@ -818,6 +818,29 @@ void test_internal_cell_store_guardrails()
             && patch_store.find_cell(1, 4) == nullptr,
         "CellStore failed apply_cell_edits should not leak rejected inserts");
 
+    const fastxlsx::CellValue patch_temporary_a1 =
+        fastxlsx::CellValue::text("temporary-a1");
+    const fastxlsx::CellValue patch_equal_a1 =
+        fastxlsx::CellValue::text("erase-candidate");
+    const fastxlsx::CellValue patch_equal_b1 = fastxlsx::CellValue::text("kept");
+    const std::vector<fastxlsx::detail::CellPosition> equal_patch_erasures = {
+        fastxlsx::detail::CellPosition {1, 1},
+        fastxlsx::detail::CellPosition {9, 9},
+    };
+    const std::vector<fastxlsx::detail::CellStoreUpdate> equal_patch_updates = {
+        {fastxlsx::detail::CellPosition {1, 1}, &patch_temporary_a1},
+        {fastxlsx::detail::CellPosition {1, 1}, &patch_equal_a1},
+        {fastxlsx::detail::CellPosition {1, 2}, &patch_equal_b1},
+    };
+    const bool equal_patch_changed =
+        patch_store.apply_cell_edits(equal_patch_erasures, equal_patch_updates);
+    check(!equal_patch_changed,
+        "CellStore apply_cell_edits should report a final-state-equal batch as unchanged");
+    check(patch_store.cell_count() == 2
+            && patch_store.find_cell(1, 1)->text_value == "erase-candidate"
+            && patch_store.find_cell(1, 2)->text_value == "kept",
+        "CellStore final-state-equal batch should preserve active sparse records");
+
     const std::vector<fastxlsx::detail::CellStoreUpdate> valid_patch_updates = {
         {fastxlsx::detail::CellPosition {1, 3}, &patch_insert_c1},
     };
@@ -865,6 +888,14 @@ void test_internal_materialized_worksheet_session()
         "materialized worksheet session should preserve materialization options");
     check(session.cell_count() == 2,
         "materialized worksheet session should expose source-loaded cell count");
+
+    const fastxlsx::CellValue equal_number = fastxlsx::CellValue::number(1.0);
+    const std::vector<fastxlsx::detail::CellStoreUpdate> equal_updates = {
+        {fastxlsx::detail::CellPosition {1, 1}, &equal_number},
+    };
+    session.set_cells(equal_updates);
+    check(!session.dirty(),
+        "final-state-equal materialized batch should remain a clean no-op");
 
     session.erase_cell(3, 1);
     check(!session.dirty(),

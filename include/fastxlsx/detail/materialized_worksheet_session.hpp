@@ -73,8 +73,9 @@ public:
         std::span<const CellStoreUpdate> updates,
         CellStoreBatchStylePolicy style_policy = CellStoreBatchStylePolicy::Replace)
     {
-        store_.set_cells(updates, style_policy);
-        dirty_ = dirty_ || !updates.empty();
+        dirty_ = store_.apply_cell_edits(
+                     std::span<const CellPosition>(), updates, style_policy)
+            || dirty_;
     }
 
     void apply_cell_edits(

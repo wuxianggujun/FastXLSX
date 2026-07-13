@@ -558,6 +558,75 @@ void test_cross_sheet_transfer_memory_failures_preserve_both_sessions()
     check_clean_transfer_state();
 }
 
+void test_cross_sheet_formula_boundary_translation_save_and_reopen()
+{
+    const CopyCellsSource source = write_cross_sheet_copy_source(
+        "fastxlsx-workbook-editor-cross-sheet-formula-boundary-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-cross-sheet-formula-boundary-output.xlsx");
+    constexpr std::string_view boundary_formula =
+        "XFD1048576+$XFD$1048576+XFD:XFD+1048576:1048576+$XFD:XFD+$1048576:1048576";
+    constexpr std::string_view translated_formula =
+        "#REF!+$XFD$1048576+#REF!+#REF!+#REF!+#REF!";
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+    fastxlsx::WorksheetEditor destination_sheet = editor.worksheet("Destination");
+    source_sheet.set_cell_value(
+        "B1", fastxlsx::CellValue::formula(std::string(boundary_formula)));
+
+    destination_sheet.copy_cells_from(source_sheet, "B1", "C2");
+    destination_sheet.move_cell_values_from(source_sheet, "B1", "C3");
+
+    const fastxlsx::CellValue cleared_source = source_sheet.get_cell("B1");
+    check(cleared_source.kind() == fastxlsx::CellValueKind::Blank
+            && cleared_source.has_style()
+            && cleared_source.style_id().value() == source.formula_style.value(),
+        "value-only boundary move should clear the source formula and preserve its style");
+    check_formula(destination_sheet.get_cell("C2"), translated_formula,
+        source.formula_style,
+        "full cross-sheet copy should translate boundary references and preserve style");
+    const fastxlsx::CellValue moved_formula = destination_sheet.get_cell("C3");
+    check(moved_formula.kind() == fastxlsx::CellValueKind::Formula
+            && moved_formula.text_value() == translated_formula
+            && !moved_formula.has_style(),
+        "value-only cross-sheet move should translate boundary references and preserve target style ownership");
+    check(source_sheet.has_pending_changes()
+            && destination_sheet.has_pending_changes()
+            && editor.has_unsaved_changes(),
+        "boundary formula copy and move should dirty both materialized sessions");
+
+    editor.save_as(output);
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.has_unsaved_changes(),
+        "successful boundary formula save should clear both dirty sessions");
+    check(fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "boundary formula save_as should leave the source package unchanged");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_source = reopened.worksheet("Source");
+    fastxlsx::WorksheetEditor reopened_destination =
+        reopened.worksheet("Destination");
+    const fastxlsx::CellValue reopened_source_formula =
+        reopened_source.get_cell("B1");
+    check(reopened_source_formula.kind() == fastxlsx::CellValueKind::Blank
+            && reopened_source_formula.has_style()
+            && reopened_source_formula.style_id().value()
+                == source.formula_style.value(),
+        "reopened boundary output should preserve the styled source blank");
+    check_formula(reopened_destination.get_cell("C2"), translated_formula,
+        source.formula_style,
+        "reopened boundary output should preserve the styled copied formula");
+    const fastxlsx::CellValue reopened_moved_formula =
+        reopened_destination.get_cell("C3");
+    check(reopened_moved_formula.kind() == fastxlsx::CellValueKind::Formula
+            && reopened_moved_formula.text_value() == translated_formula
+            && !reopened_moved_formula.has_style(),
+        "reopened boundary output should preserve the unstyled value-moved formula");
+}
+
 void test_cross_sheet_copies_survive_owner_moves()
 {
     const CopyCellsSource source = write_cross_sheet_copy_source(
@@ -1333,6 +1402,7 @@ int main()
         test_cross_sheet_value_only_copy_save_retry_and_reopen();
         test_cross_sheet_value_only_copy_failures_preserve_state();
         test_cross_sheet_transfer_memory_failures_preserve_both_sessions();
+        test_cross_sheet_formula_boundary_translation_save_and_reopen();
         test_cross_sheet_copies_survive_owner_moves();
         test_value_only_move_preserves_both_style_snapshots();
         test_value_only_move_guard_failure_preserves_source_values();

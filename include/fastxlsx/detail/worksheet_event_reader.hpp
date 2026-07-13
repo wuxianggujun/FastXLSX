@@ -54,6 +54,14 @@ struct WorksheetEvent {
 };
 
 using WorksheetEventCallback = std::function<void(const WorksheetEvent&)>;
+using WorksheetEventWindowCallback = std::function<void()>;
+
+struct WorksheetEventReaderTelemetry {
+    std::uint64_t parsed_event_count = 0;
+    std::uint64_t callback_event_count = 0;
+    std::uint64_t coalesced_input_event_count = 0;
+    std::uint64_t coalesced_output_event_count = 0;
+};
 
 /// Internal pull-based worksheet XML chunk source.
 ///
@@ -78,6 +86,17 @@ struct WorksheetEventReaderOptions {
     /// on the start tag event and track active cell state themselves.
     bool copy_context_attributes = true;
 
+    /// Coalesces adjacent non-formula cell value wrapper/text events before
+    /// invoking the callback.
+    ///
+    /// This preserves exact source bytes and parser validation while reducing
+    /// callback traffic for Patch rewrite hot paths. The default remains false
+    /// so general event consumers keep the detailed event contract.
+    bool coalesce_cell_value_events = false;
+
+    /// Optional internal counters for profiling parser/callback traffic.
+    WorksheetEventReaderTelemetry* telemetry = nullptr;
+
 };
 
 /// Scans worksheet XML from a pull-based chunk source.
@@ -97,6 +116,7 @@ struct WorksheetEventReaderOptions {
 void scan_worksheet_events_from_chunk_source(
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetEventCallback& callback,
-    WorksheetEventReaderOptions options = {});
+    WorksheetEventReaderOptions options = {},
+    const WorksheetEventWindowCallback& window_consumed_callback = {});
 
 } // namespace fastxlsx::detail

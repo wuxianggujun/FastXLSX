@@ -354,6 +354,41 @@ void test_event_reader_can_skip_context_attribute_copies()
         "no-copy event reader should not retain cell reference for cell end");
 }
 
+void test_event_reader_coalesces_patch_value_events_with_telemetry()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1"><v>alpha</v></c>)"
+        R"(<c r="B1"><f>A1+1</f><v>2</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+
+    fastxlsx::detail::WorksheetEventReaderTelemetry telemetry;
+    fastxlsx::detail::WorksheetEventReaderOptions options;
+    options.copy_context_attributes = false;
+    options.coalesce_cell_value_events = true;
+    options.max_window_bytes = 32;
+    options.telemetry = &telemetry;
+    const std::vector<CopiedWorksheetEvent> events =
+        read_source_events(xml, 7, options);
+
+    std::string reconstructed;
+    for (const CopiedWorksheetEvent& event : events) {
+        reconstructed += event.raw_xml;
+    }
+    check(reconstructed == xml,
+        "coalesced event reader should preserve exact worksheet bytes");
+    check(count_kind(events, WorksheetEventKind::CellValue) == 0,
+        "coalesced event reader should replace cell value callbacks with raw byte spans");
+    check(count_kind(events, WorksheetEventKind::CellValueMarkup) == 2,
+        "coalesced event reader should keep formula boundaries visible");
+    check(telemetry.parsed_event_count > telemetry.callback_event_count,
+        "coalesced event reader should reduce callback traffic");
+    check(telemetry.coalesced_input_event_count > telemetry.coalesced_output_event_count,
+        "coalesced event reader should merge multiple value events per output event");
+    check(telemetry.callback_event_count == events.size(),
+        "event telemetry callback count should match observed events");
+}
+
 void test_event_reader_rejects_xml_declaration_after_root_start()
 {
     const std::string xml =
@@ -633,6 +668,7 @@ int main()
         test_event_reader_distinguishes_xml_stylesheet_processing_instruction();
         test_event_reader_exposes_absolute_source_offsets_across_chunks();
         test_event_reader_can_skip_context_attribute_copies();
+        test_event_reader_coalesces_patch_value_events_with_telemetry();
         test_event_reader_rejects_xml_declaration_after_root_start();
         test_event_reader_rejects_mismatched_cell_value_boundaries();
         test_event_reader_rejects_invalid_core_element_nesting();

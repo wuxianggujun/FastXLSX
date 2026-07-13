@@ -68,6 +68,11 @@ struct SinglePassWorksheetTransformStats {
     std::uint64_t staged_output_bytes = 0;
     std::uint64_t transform_ms = 0;
     std::uint64_t transform_us = 0;
+    std::uint64_t source_parsed_event_count = 0;
+    std::uint64_t source_callback_event_count = 0;
+    std::uint64_t source_coalesced_input_event_count = 0;
+    std::uint64_t source_coalesced_output_event_count = 0;
+    std::uint64_t transform_action_callback_count = 0;
     std::uint64_t output_append_call_count = 0;
     std::uint64_t output_flush_count = 0;
     std::uint64_t output_peak_buffer_bytes = 0;
@@ -99,6 +104,11 @@ struct PackagePartReplacement {
     std::uint64_t single_pass_staged_output_bytes = 0;
     std::uint64_t single_pass_transform_ms = 0;
     std::uint64_t single_pass_transform_us = 0;
+    std::uint64_t single_pass_source_parsed_event_count = 0;
+    std::uint64_t single_pass_source_callback_event_count = 0;
+    std::uint64_t single_pass_source_coalesced_input_event_count = 0;
+    std::uint64_t single_pass_source_coalesced_output_event_count = 0;
+    std::uint64_t single_pass_transform_action_callback_count = 0;
     std::uint64_t single_pass_output_append_call_count = 0;
     std::uint64_t single_pass_output_flush_count = 0;
     std::uint64_t single_pass_output_peak_buffer_bytes = 0;
@@ -154,6 +164,11 @@ struct PackageEditorOutputEntryPlan {
     std::uint64_t single_pass_staged_output_bytes = 0;
     std::uint64_t single_pass_transform_ms = 0;
     std::uint64_t single_pass_transform_us = 0;
+    std::uint64_t single_pass_source_parsed_event_count = 0;
+    std::uint64_t single_pass_source_callback_event_count = 0;
+    std::uint64_t single_pass_source_coalesced_input_event_count = 0;
+    std::uint64_t single_pass_source_coalesced_output_event_count = 0;
+    std::uint64_t single_pass_transform_action_callback_count = 0;
     std::uint64_t single_pass_output_append_call_count = 0;
     std::uint64_t single_pass_output_flush_count = 0;
     std::uint64_t single_pass_output_peak_buffer_bytes = 0;

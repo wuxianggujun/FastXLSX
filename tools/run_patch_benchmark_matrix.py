@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+import xml.etree.ElementTree as element_tree
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,11 @@ METRICS = [
     "single_pass_transform_ms",
     "single_pass_transform_us",
     "single_pass_source_scan_action_us",
+    "single_pass_source_parsed_event_count",
+    "single_pass_source_callback_event_count",
+    "single_pass_source_coalesced_input_event_count",
+    "single_pass_source_coalesced_output_event_count",
+    "single_pass_transform_action_callback_count",
     "single_pass_relationship_scan_us",
     "single_pass_temporary_write_us",
     "single_pass_output_append_call_count",
@@ -255,14 +261,32 @@ def expected_inserted(case: PatchCase) -> int:
     return case.edits - case.edits // 2 if case.scenario == "patch-upsert" else 0
 
 
-def expected_source_tail(case: PatchCase, rows: int, cols: int) -> int:
+def excel_column_name(column: int) -> str:
+    name = ""
+    while column > 0:
+        column, remainder = divmod(column - 1, 26)
+        name = chr(ord("A") + remainder) + name
+    return name
+
+
+def expected_unedited_source_value(row: int, col: int, source_pattern: str) -> Any:
+    if source_pattern in {"mixed-inline", "mixed-shared"} and (row + col) % 3 == 0:
+        return f"group-{(row + col) % 32}"
+    if source_pattern == "formula" and col % 4 == 0:
+        return f"={excel_column_name(col - 1)}{row}*2"
+    return row * 1000 + col
+
+
+def expected_source_tail(
+    case: PatchCase, rows: int, cols: int, source_pattern: str
+) -> Any:
     source_cells = rows * cols
     existing_edits = case.edits
     if case.scenario == "patch-upsert":
         existing_edits = case.edits // 2
     if case.scenario in {"patch-replace", "patch-upsert"} and existing_edits >= source_cells:
         return 900000000 + source_cells - 1
-    return rows * 1000 + cols
+    return expected_unedited_source_value(rows, cols, source_pattern)
 
 
 def verify_result(
@@ -275,6 +299,8 @@ def verify_result(
     source_path: Path,
     output_path: Path,
     expect_reused_source: bool,
+    source_pattern: str,
+    source_external_hyperlink: bool,
 ) -> tuple[dict[str, Any], dict[str, int], dict[str, Any]]:
     result = load_json(path)
     require(
@@ -303,6 +329,19 @@ def verify_result(
             "patch-upsert single-pass staged output bytes should be positive")
         require(int(result.get("single_pass_transform_us")) > 0,
             "patch-upsert single-pass transform microseconds should be positive")
+        parsed_events = int(result.get("single_pass_source_parsed_event_count"))
+        callback_events = int(result.get("single_pass_source_callback_event_count"))
+        coalesced_input_events = int(
+            result.get("single_pass_source_coalesced_input_event_count")
+        )
+        coalesced_output_events = int(
+            result.get("single_pass_source_coalesced_output_event_count")
+        )
+        action_callbacks = int(result.get("single_pass_transform_action_callback_count"))
+        require(parsed_events > callback_events > action_callbacks > 0,
+            "patch-upsert should reduce parser events before transform actions")
+        require(coalesced_input_events > coalesced_output_events > 0,
+            "patch-upsert should report value-event coalescing")
         require(int(result.get("single_pass_output_append_call_count")) > 0,
             "patch-upsert should report output append calls")
         require(int(result.get("single_pass_output_flush_count")) > 0,
@@ -329,6 +368,10 @@ def verify_result(
         == ("reused-existing-source" if expect_reused_source else "generated-source"),
         f"{case.name} source fixture mode mismatch",
     )
+    require(result.get("source_pattern") == source_pattern,
+        f"{case.name} source pattern mismatch")
+    require(result.get("source_external_hyperlink") is source_external_hyperlink,
+        f"{case.name} source hyperlink mode mismatch")
     require(
         result.get("source_compression_level") == source_compression_level,
         f"{case.name} source compression mismatch",
@@ -405,6 +448,8 @@ def run_single_case(
     cols: int,
     source_compression_level: int,
     output_compression_level: int,
+    source_pattern: str,
+    source_external_hyperlink: bool,
     run_name: str,
     reuse_source: bool,
 ) -> dict[str, Any]:
@@ -424,6 +469,8 @@ def run_single_case(
         str(source_compression_level),
         "--output-compression-level",
         str(output_compression_level),
+        "--source-pattern",
+        source_pattern,
         "--source",
         str(source_path),
         "--output",
@@ -431,6 +478,8 @@ def run_single_case(
         "--result",
         str(result_path),
     ]
+    if source_external_hyperlink:
+        command.append("--source-external-hyperlink")
     if reuse_source:
         command.append("--reuse-source")
     completed = run_process(command)
@@ -444,6 +493,8 @@ def run_single_case(
         source_path,
         output_path,
         reuse_source,
+        source_pattern,
+        source_external_hyperlink,
     )
     return {
         "name": run_name,
@@ -459,8 +510,57 @@ def run_single_case(
     }
 
 
+def verify_external_hyperlink_archive(path: Path) -> str:
+    relationship_part = "xl/worksheets/_rels/sheet1.xml.rels"
+    worksheet_part = "xl/worksheets/sheet1.xml"
+    expected_target = "https://example.com/fastxlsx-benchmark"
+    with zipfile.ZipFile(path) as archive:
+        relationship_root = element_tree.fromstring(archive.read(relationship_part))
+        relationship_id = None
+        for relationship in relationship_root:
+            if (
+                relationship.attrib.get("Type", "").endswith("/hyperlink")
+                and relationship.attrib.get("Target") == expected_target
+                and relationship.attrib.get("TargetMode") == "External"
+            ):
+                relationship_id = relationship.attrib.get("Id")
+                break
+        require(relationship_id is not None, "source hyperlink relationship was removed")
+
+        relationship_marker = f'r:id="{relationship_id}"'.encode("utf-8")
+        reference_marker = b'ref="A1"'
+        carry = b""
+        hyperlink_tag_found = False
+        with archive.open(worksheet_part) as worksheet_xml:
+            while chunk := worksheet_xml.read(64 * 1024):
+                window = carry + chunk
+                search_offset = 0
+                while True:
+                    tag_begin = window.find(b"<hyperlink", search_offset)
+                    if tag_begin < 0:
+                        break
+                    tag_end = window.find(b">", tag_begin)
+                    if tag_end < 0:
+                        break
+                    tag = window[tag_begin : tag_end + 1]
+                    if relationship_marker in tag and reference_marker in tag:
+                        hyperlink_tag_found = True
+                        break
+                    search_offset = tag_end + 1
+                if hyperlink_tag_found:
+                    break
+                carry = window[-4096:]
+        require(hyperlink_tag_found, "source hyperlink worksheet binding was removed")
+    return expected_target
+
+
 def verify_workbook_with_openpyxl(
-    path: Path, case: PatchCase, rows: int, cols: int
+    path: Path,
+    case: PatchCase,
+    rows: int,
+    cols: int,
+    source_pattern: str,
+    source_external_hyperlink: bool,
 ) -> dict[str, Any]:
     try:
         import openpyxl
@@ -477,8 +577,14 @@ def verify_workbook_with_openpyxl(
         expected_first = 900000000 if case.scenario in {"patch-replace", "patch-upsert"} else 1001
         require(worksheet["A1"].value == expected_first, f"{case.name} first cell mismatch")
         require(
-            worksheet.cell(rows, cols).value == expected_source_tail(case, rows, cols),
+            worksheet.cell(rows, cols).value
+            == expected_source_tail(case, rows, cols, source_pattern),
             f"{case.name} source tail cell mismatch",
+        )
+        hyperlink_target = (
+            verify_external_hyperlink_archive(path)
+            if source_external_hyperlink
+            else None
         )
         if case.scenario == "patch-upsert":
             require(
@@ -500,6 +606,7 @@ def verify_workbook_with_openpyxl(
             "sheet1_first_cell": worksheet["A1"].value,
             "sheet1_source_tail_cell": worksheet.cell(rows, cols).value,
             "document_title": workbook.properties.title,
+            "source_hyperlink_target": hyperlink_target,
         }
     finally:
         workbook.close()
@@ -514,6 +621,8 @@ def run_case(
     cols: int,
     source_compression_level: int,
     output_compression_level: int,
+    source_pattern: str,
+    source_external_hyperlink: bool,
     warmup_runs: int,
     measured_runs: int,
     verify_openpyxl: bool,
@@ -528,6 +637,8 @@ def run_case(
             cols,
             source_compression_level,
             output_compression_level,
+            source_pattern,
+            source_external_hyperlink,
             indexed_run_name(case.name, "warmup", run_index, warmup_runs),
             True,
         )
@@ -542,6 +653,8 @@ def run_case(
             cols,
             source_compression_level,
             output_compression_level,
+            source_pattern,
+            source_external_hyperlink,
             indexed_run_name(case.name, "run", run_index, measured_runs),
             True,
         )
@@ -550,7 +663,14 @@ def run_case(
     representative_index, statistics_report = measured_run_summary(measured)
     representative = measured[representative_index]
     openpyxl_report = (
-        verify_workbook_with_openpyxl(Path(representative["output"]), case, rows, cols)
+        verify_workbook_with_openpyxl(
+            Path(representative["output"]),
+            case,
+            rows,
+            cols,
+            source_pattern,
+            source_external_hyperlink,
+        )
         if verify_openpyxl
         else {"status": "not_requested"}
     )
@@ -606,6 +726,11 @@ def run_self_test() -> None:
                 "single_pass_transform_ms": 1,
                 "single_pass_transform_us": 1000,
                 "single_pass_source_scan_action_us": 700,
+                "single_pass_source_parsed_event_count": 500,
+                "single_pass_source_callback_event_count": 300,
+                "single_pass_source_coalesced_input_event_count": 300,
+                "single_pass_source_coalesced_output_event_count": 100,
+                "single_pass_transform_action_callback_count": 200,
                 "single_pass_relationship_scan_us": 200,
                 "single_pass_temporary_write_us": 100,
                 "single_pass_output_append_call_count": 100,
@@ -674,6 +799,12 @@ def main() -> int:
     parser.add_argument("--cols", type=int, default=10)
     parser.add_argument("--source-compression-level", type=int, default=6)
     parser.add_argument("--output-compression-level", type=int, default=6)
+    parser.add_argument(
+        "--source-pattern",
+        choices=["numeric", "mixed-inline", "mixed-shared", "formula"],
+        default="numeric",
+    )
+    parser.add_argument("--source-external-hyperlink", action="store_true")
     parser.add_argument("--case", action="append", dest="cases")
     parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument("--measured-runs", "--repeat", type=int, default=3)
@@ -711,6 +842,8 @@ def main() -> int:
         args.cols,
         args.source_compression_level,
         args.output_compression_level,
+        args.source_pattern,
+        args.source_external_hyperlink,
         "source-preparation",
         False,
     )
@@ -727,6 +860,8 @@ def main() -> int:
             args.cols,
             args.source_compression_level,
             args.output_compression_level,
+            args.source_pattern,
+            args.source_external_hyperlink,
             args.warmup_runs,
             args.measured_runs,
             args.verify_openpyxl,
@@ -749,6 +884,8 @@ def main() -> int:
         "source_cells": args.rows * args.cols,
         "source_compression_level": args.source_compression_level,
         "output_compression_level": args.output_compression_level,
+        "source_pattern": args.source_pattern,
+        "source_external_hyperlink": args.source_external_hyperlink,
         "source": str(source_path),
         "source_bytes": source_path.stat().st_size,
         "source_archive": source_archive,

@@ -49,8 +49,9 @@ bool is_ascii_digit(char ch)
 
 std::uint32_t uppercase_column_value(char ch)
 {
-    const char upper =
-        static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    const char upper = ch >= 'a' && ch <= 'z'
+        ? static_cast<char>(ch - ('a' - 'A'))
+        : ch;
     return static_cast<std::uint32_t>(upper - 'A' + 1);
 }
 
@@ -602,6 +603,102 @@ void emit_synthetic_pass_through(const WorksheetTransformActionCallback& callbac
         0 });
 }
 
+bool can_coalesce_pass_through_event(const WorksheetEvent& event) noexcept
+{
+    if (event.self_closing) {
+        return false;
+    }
+    if (event.kind == WorksheetEventKind::RawText
+        || event.kind == WorksheetEventKind::CellValue
+        || event.kind == WorksheetEventKind::CellEnd) {
+        return true;
+    }
+    return event.kind == WorksheetEventKind::CellValueMarkup
+        && event.element_name != "f";
+}
+
+class WorksheetPassThroughActionEmitter {
+public:
+    WorksheetPassThroughActionEmitter(const WorksheetTransformActionCallback& callback,
+        bool coalesce_cell_value_events)
+        : callback_(callback)
+        , coalesce_cell_value_events_(coalesce_cell_value_events)
+    {
+    }
+
+    void emit_pass_through(const WorksheetEvent& event,
+        std::optional<WorksheetCellReplacementCoordinate> source_coordinate = std::nullopt)
+    {
+        if (coalesce_cell_value_events_ && can_coalesce_pass_through_event(event)) {
+            append_coalesced(event);
+            return;
+        }
+        flush();
+        ::emit_pass_through(callback_, event, source_coordinate);
+    }
+
+    void emit_action(WorksheetTransformAction action)
+    {
+        flush();
+        callback_(action);
+    }
+
+    void emit_synthetic_pass_through(WorksheetEventKind event_kind,
+        std::string_view raw_xml,
+        std::string_view element_name,
+        std::string_view row_number = {},
+        std::string_view cell_reference = {},
+        bool self_closing = false)
+    {
+        flush();
+        ::emit_synthetic_pass_through(callback_, event_kind, raw_xml, element_name,
+            row_number, cell_reference, self_closing);
+    }
+
+    void flush()
+    {
+        if (coalesced_raw_xml_.empty()) {
+            return;
+        }
+        callback_(WorksheetTransformAction { WorksheetTransformActionKind::PassThrough,
+            WorksheetEventKind::RawText,
+            coalesced_raw_xml_,
+            {},
+            {},
+            {},
+            {},
+            false,
+            coalesced_raw_xml_offset_ });
+        coalesced_raw_xml_ = {};
+        coalesced_raw_xml_offset_ = 0;
+    }
+
+private:
+    void append_coalesced(const WorksheetEvent& event)
+    {
+        if (!coalesced_raw_xml_.empty()) {
+            const char* expected = coalesced_raw_xml_.data() + coalesced_raw_xml_.size();
+            if (event.raw_xml.data() != expected
+                || event.raw_xml_offset
+                    != coalesced_raw_xml_offset_ + coalesced_raw_xml_.size()) {
+                flush();
+            }
+        }
+        if (coalesced_raw_xml_.empty()) {
+            coalesced_raw_xml_ = event.raw_xml;
+            coalesced_raw_xml_offset_ = event.raw_xml_offset;
+        } else {
+            coalesced_raw_xml_ = std::string_view(coalesced_raw_xml_.data(),
+                coalesced_raw_xml_.size() + event.raw_xml.size());
+        }
+    }
+
+    const WorksheetTransformActionCallback& callback_;
+    bool coalesce_cell_value_events_ = false;
+    std::string_view coalesced_raw_xml_;
+    std::uint64_t coalesced_raw_xml_offset_ = 0;
+};
+
 bool all_replacements_matched(const WorksheetCellReplacementPlan& replacement_plan,
     const std::set<std::string_view, std::less<>>& matched_replacements) noexcept
 {
@@ -613,6 +710,12 @@ bool coordinate_after(WorksheetCellReplacementCoordinate lhs,
     WorksheetCellReplacementCoordinate rhs) noexcept
 {
     return lhs.row > rhs.row || (lhs.row == rhs.row && lhs.column > rhs.column);
+}
+
+bool same_coordinate(WorksheetCellReplacementCoordinate lhs,
+    WorksheetCellReplacementCoordinate rhs) noexcept
+{
+    return lhs.row == rhs.row && lhs.column == rhs.column;
 }
 
 std::optional<WorksheetCellReplacementCoordinate> try_parse_source_cell_coordinate(
@@ -665,14 +768,14 @@ void consume_replacement_event(const WorksheetEvent& event,
     const WorksheetCellReplacementPlan& replacement_plan,
     ReplacementScanState& scan_state,
     bool& replacing_current_cell,
-    const WorksheetTransformActionCallback& callback)
+    WorksheetPassThroughActionEmitter& action_emitter)
 {
     if (event.kind == WorksheetEventKind::CellStart
         && !should_skip_completed_replacement_lookup(event, replacement_plan, scan_state)) {
         const auto replacement =
             replacement_plan.replacement_payloads_by_reference.find(event.cell_reference);
         if (replacement != replacement_plan.replacement_payloads_by_reference.end()) {
-            callback(WorksheetTransformAction { WorksheetTransformActionKind::ReplaceCell,
+            action_emitter.emit_action(WorksheetTransformAction { WorksheetTransformActionKind::ReplaceCell,
                 event.kind,
                 event.raw_xml,
                 event.element_name,
@@ -694,7 +797,7 @@ void consume_replacement_event(const WorksheetEvent& event,
         return;
     }
 
-    emit_pass_through(callback, event);
+    action_emitter.emit_pass_through(event);
 }
 
 WorksheetTransformSummary build_summary(const WorksheetCellReplacementPlan& replacement_plan,
@@ -705,9 +808,10 @@ WorksheetTransformSummary build_summary(const WorksheetCellReplacementPlan& repl
 class WorksheetCellUpsertActionEmitter {
 public:
     WorksheetCellUpsertActionEmitter(const WorksheetCellReplacementPlan& replacement_plan,
-        const WorksheetTransformActionCallback& callback)
+        const WorksheetTransformActionCallback& callback,
+        bool coalesce_cell_value_events)
         : replacement_plan_(replacement_plan)
-        , callback_(callback)
+        , action_emitter_(callback, coalesce_cell_value_events)
     {
     }
 
@@ -743,7 +847,7 @@ public:
             consume_cell_start(event);
             return;
         default:
-            emit_pass_through(callback_, event);
+            action_emitter_.emit_pass_through(event);
             return;
         }
     }
@@ -752,6 +856,11 @@ public:
     {
         return build_summary(replacement_plan_, matched_replacements_,
             inserted_replacements_, WorksheetCellReplacementMode::ReplaceOrInsert);
+    }
+
+    void flush_window()
+    {
+        action_emitter_.flush();
     }
 
 private:
@@ -821,7 +930,7 @@ private:
     void emit_insert_cell(const WorksheetCellReplacementTarget& target)
     {
         const std::string row_number = std::to_string(target.coordinate.row);
-        callback_(WorksheetTransformAction { WorksheetTransformActionKind::InsertCell,
+        action_emitter_.emit_action(WorksheetTransformAction { WorksheetTransformActionKind::InsertCell,
             WorksheetEventKind::CellStart,
             {},
             "c",
@@ -860,12 +969,12 @@ private:
     {
         const std::string row_number = std::to_string(row);
         const std::string start = synthetic_row_start_tag(synthetic_row_prefix(), row);
-        emit_synthetic_pass_through(
-            callback_, WorksheetEventKind::RowStart, start, "row", row_number);
+        action_emitter_.emit_synthetic_pass_through(
+            WorksheetEventKind::RowStart, start, "row", row_number);
         emit_pending_cells_for_row(row);
         const std::string end = synthetic_end_tag(synthetic_row_prefix(), "row");
-        emit_synthetic_pass_through(
-            callback_, WorksheetEventKind::RowEnd, end, "row", row_number);
+        action_emitter_.emit_synthetic_pass_through(
+            WorksheetEventKind::RowEnd, end, "row", row_number);
     }
 
     void emit_pending_rows_before(std::uint32_t row)
@@ -891,12 +1000,12 @@ private:
             return;
         }
         const std::string start = synthetic_start_tag(synthetic_sheet_data_prefix(), "sheetData");
-        emit_synthetic_pass_through(
-            callback_, WorksheetEventKind::SheetDataStart, start, "sheetData");
+        action_emitter_.emit_synthetic_pass_through(
+            WorksheetEventKind::SheetDataStart, start, "sheetData");
         emit_all_remaining_rows();
         const std::string end = synthetic_end_tag(synthetic_sheet_data_prefix(), "sheetData");
-        emit_synthetic_pass_through(
-            callback_, WorksheetEventKind::SheetDataEnd, end, "sheetData");
+        action_emitter_.emit_synthetic_pass_through(
+            WorksheetEventKind::SheetDataEnd, end, "sheetData");
     }
 
     void consume_worksheet_start(const WorksheetEvent& event)
@@ -904,16 +1013,16 @@ private:
         worksheet_prefix_ = element_prefix(event.raw_xml);
         if (event.self_closing && has_remaining_targets()) {
             const std::string start = self_closing_tag_as_open_tag(event.raw_xml);
-            emit_synthetic_pass_through(callback_, WorksheetEventKind::WorksheetStart,
+            action_emitter_.emit_synthetic_pass_through(WorksheetEventKind::WorksheetStart,
                 start, event.element_name);
             emit_synthetic_sheet_data_with_remaining_rows();
             const std::string end = closing_tag_from_start_tag(event.raw_xml);
-            emit_synthetic_pass_through(callback_, WorksheetEventKind::WorksheetEnd,
+            action_emitter_.emit_synthetic_pass_through(WorksheetEventKind::WorksheetEnd,
                 end, event.element_name);
             suppress_self_closing_worksheet_end_ = true;
             return;
         }
-        emit_pass_through(callback_, event);
+        action_emitter_.emit_pass_through(event);
     }
 
     void consume_worksheet_end(const WorksheetEvent& event)
@@ -925,7 +1034,7 @@ private:
         if (!seen_sheet_data_) {
             emit_synthetic_sheet_data_with_remaining_rows();
         }
-        emit_pass_through(callback_, event);
+        action_emitter_.emit_pass_through(event);
     }
 
     void consume_sheet_data_start(const WorksheetEvent& event)
@@ -934,16 +1043,16 @@ private:
         sheet_data_prefix_ = element_prefix(event.raw_xml);
         if (event.self_closing && has_remaining_targets()) {
             const std::string start = self_closing_tag_as_open_tag(event.raw_xml);
-            emit_synthetic_pass_through(callback_, WorksheetEventKind::SheetDataStart,
+            action_emitter_.emit_synthetic_pass_through(WorksheetEventKind::SheetDataStart,
                 start, event.element_name);
             emit_all_remaining_rows();
             const std::string end = closing_tag_from_start_tag(event.raw_xml);
-            emit_synthetic_pass_through(callback_, WorksheetEventKind::SheetDataEnd,
+            action_emitter_.emit_synthetic_pass_through(WorksheetEventKind::SheetDataEnd,
                 end, event.element_name);
             suppress_self_closing_sheet_data_end_ = true;
             return;
         }
-        emit_pass_through(callback_, event);
+        action_emitter_.emit_pass_through(event);
     }
 
     void consume_sheet_data_end(const WorksheetEvent& event)
@@ -955,7 +1064,7 @@ private:
         if (!event.self_closing) {
             emit_all_remaining_rows();
         }
-        emit_pass_through(callback_, event);
+        action_emitter_.emit_pass_through(event);
     }
 
     void consume_row_start(const WorksheetEvent& event)
@@ -972,11 +1081,11 @@ private:
         if (event.self_closing && current_row_.has_value()
             && has_pending_targets_in_row(*current_row_)) {
             const std::string start = self_closing_tag_as_open_tag(event.raw_xml);
-            emit_synthetic_pass_through(callback_, WorksheetEventKind::RowStart,
+            action_emitter_.emit_synthetic_pass_through(WorksheetEventKind::RowStart,
                 start, event.element_name, event.row_number);
             emit_pending_cells_for_row(*current_row_);
             const std::string end = closing_tag_from_start_tag(event.raw_xml);
-            emit_synthetic_pass_through(callback_, WorksheetEventKind::RowEnd,
+            action_emitter_.emit_synthetic_pass_through(WorksheetEventKind::RowEnd,
                 end, event.element_name, event.row_number);
             suppress_self_closing_row_end_ = true;
             current_row_.reset();
@@ -984,7 +1093,7 @@ private:
             return;
         }
 
-        emit_pass_through(callback_, event);
+        action_emitter_.emit_pass_through(event);
     }
 
     void consume_row_end(const WorksheetEvent& event)
@@ -996,7 +1105,7 @@ private:
         if (current_row_.has_value()) {
             emit_pending_cells_for_row(*current_row_);
         }
-        emit_pass_through(callback_, event);
+        action_emitter_.emit_pass_through(event);
         current_row_.reset();
         current_row_prefix_.clear();
     }
@@ -1008,41 +1117,59 @@ private:
             source_coordinate = parse_cell_reference_coordinate(event.cell_reference,
                 "worksheet transformer upsert source cell");
         }
-        if (source_coordinate.has_value()) {
-            const std::uint32_t row = current_row_.value_or(source_coordinate->row);
-            if (row == source_coordinate->row && has_unemitted_targets()) {
-                emit_pending_cells_before_column(row, source_coordinate->column);
+        const bool ordered_source_coordinate = source_coordinate.has_value()
+            && current_row_.has_value()
+            && *current_row_ == source_coordinate->row;
+        if (ordered_source_coordinate && has_unemitted_targets()) {
+            emit_pending_cells_before_column(
+                source_coordinate->row, source_coordinate->column);
+            const WorksheetCellReplacementTarget* target = next_pending_target();
+            if (target != nullptr
+                && same_coordinate(target->coordinate, *source_coordinate)
+                && target->cell_reference == event.cell_reference) {
+                emit_replace_cell(event, *source_coordinate, target->cell_reference,
+                    target->replacement_payload);
+                return;
             }
-        }
-
-        if (has_unemitted_targets()) {
+        } else if (has_unemitted_targets()) {
             const auto replacement =
                 replacement_plan_.replacement_payloads_by_reference.find(event.cell_reference);
             if (replacement != replacement_plan_.replacement_payloads_by_reference.end()
                 && !target_was_emitted(replacement->first)) {
-                callback_(WorksheetTransformAction { WorksheetTransformActionKind::ReplaceCell,
-                    event.kind,
-                    event.raw_xml,
-                    event.element_name,
-                    event.row_number,
-                    event.cell_reference,
-                    replacement->second,
-                    event.self_closing,
-                    event.raw_xml_offset,
-                    source_coordinate.has_value() ? source_coordinate->row : 0,
-                    source_coordinate.has_value() ? source_coordinate->column : 0 });
-                matched_replacements_.insert(replacement->first);
-                advance_emitted_targets();
-                replacing_current_cell_ = true;
+                emit_replace_cell(event, source_coordinate.value_or(
+                    WorksheetCellReplacementCoordinate {}), replacement->first,
+                    replacement->second);
                 return;
             }
         }
 
-        emit_pass_through(callback_, event, source_coordinate);
+        action_emitter_.emit_pass_through(event, source_coordinate);
+    }
+
+    void emit_replace_cell(const WorksheetEvent& event,
+        WorksheetCellReplacementCoordinate source_coordinate,
+        std::string_view matched_reference,
+        const WorksheetCellReplacementPayload& replacement_payload)
+    {
+        action_emitter_.emit_action(WorksheetTransformAction {
+            WorksheetTransformActionKind::ReplaceCell,
+            event.kind,
+            event.raw_xml,
+            event.element_name,
+            event.row_number,
+            event.cell_reference,
+            replacement_payload,
+            event.self_closing,
+            event.raw_xml_offset,
+            source_coordinate.row,
+            source_coordinate.column });
+        matched_replacements_.insert(matched_reference);
+        advance_emitted_targets();
+        replacing_current_cell_ = true;
     }
 
     const WorksheetCellReplacementPlan& replacement_plan_;
-    const WorksheetTransformActionCallback& callback_;
+    WorksheetPassThroughActionEmitter action_emitter_;
     std::set<std::string_view, std::less<>> matched_replacements_;
     std::set<std::string_view, std::less<>> inserted_replacements_;
     std::size_t next_target_index_ = 0;
@@ -1202,27 +1329,34 @@ WorksheetTransformSummary scan_cell_replacement_actions_from_chunk_source(
     }
 
     if (mode == WorksheetCellReplacementMode::ReplaceOrInsert) {
-        WorksheetCellUpsertActionEmitter emitter(replacement_plan, callback);
+        WorksheetCellUpsertActionEmitter emitter(
+            replacement_plan, callback, reader_options.coalesce_cell_value_events);
         scan_worksheet_events_from_chunk_source(
             read_next_chunk,
             [&](const WorksheetEvent& event) {
                 emitter.consume_event(event);
             },
-            reader_options);
+            reader_options,
+            [&]() { emitter.flush_window(); });
+        emitter.flush_window();
         return emitter.summary();
     }
 
     ReplacementScanState scan_state;
     std::set<std::string_view, std::less<>> inserted_replacements;
     bool replacing_current_cell = false;
+    WorksheetPassThroughActionEmitter action_emitter(
+        callback, reader_options.coalesce_cell_value_events);
 
     scan_worksheet_events_from_chunk_source(
         read_next_chunk,
         [&](const WorksheetEvent& event) {
             consume_replacement_event(
-                event, replacement_plan, scan_state, replacing_current_cell, callback);
+                event, replacement_plan, scan_state, replacing_current_cell, action_emitter);
         },
-        reader_options);
+        reader_options,
+        [&]() { action_emitter.flush(); });
+    action_emitter.flush();
 
     return build_summary(
         replacement_plan, scan_state.matched_replacements, inserted_replacements, mode);

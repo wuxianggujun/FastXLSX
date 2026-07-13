@@ -1746,7 +1746,8 @@ void finish_xml_relationship_references(
     }
 }
 
-WorksheetEventReaderOptions package_editor_cell_replacement_reader_options();
+WorksheetEventReaderOptions package_editor_cell_replacement_reader_options(
+    WorksheetEventReaderTelemetry* telemetry = nullptr);
 
 void scan_worksheet_relationship_references_from_chunk_source(
     WorksheetRelationshipReferenceScanner& scanner,
@@ -2920,6 +2921,11 @@ void clear_indexed_source_entry_direct_range_stats(PackagePartReplacement& repla
     replacement.single_pass_staged_output_bytes = 0;
     replacement.single_pass_transform_ms = 0;
     replacement.single_pass_transform_us = 0;
+    replacement.single_pass_source_parsed_event_count = 0;
+    replacement.single_pass_source_callback_event_count = 0;
+    replacement.single_pass_source_coalesced_input_event_count = 0;
+    replacement.single_pass_source_coalesced_output_event_count = 0;
+    replacement.single_pass_transform_action_callback_count = 0;
     replacement.single_pass_output_append_call_count = 0;
     replacement.single_pass_output_flush_count = 0;
     replacement.single_pass_output_peak_buffer_bytes = 0;
@@ -3896,10 +3902,14 @@ std::string dimension_tag(std::string_view prefix, std::string_view reference)
     return tag;
 }
 
-WorksheetEventReaderOptions package_editor_cell_replacement_reader_options()
+WorksheetEventReaderOptions package_editor_cell_replacement_reader_options(
+    WorksheetEventReaderTelemetry* telemetry)
 {
     WorksheetEventReaderOptions options;
     options.max_window_bytes = package_editor_cell_replacement_event_window_byte_limit;
+    options.copy_context_attributes = false;
+    options.coalesce_cell_value_events = true;
+    options.telemetry = telemetry;
     return options;
 }
 
@@ -4433,6 +4443,8 @@ struct SinglePassWorksheetTransformResult {
     std::uint64_t output_append_call_count = 0;
     std::uint64_t output_flush_count = 0;
     std::uint64_t output_peak_buffer_bytes = 0;
+    WorksheetEventReaderTelemetry source_event_telemetry;
+    std::uint64_t transform_action_callback_count = 0;
     std::uint64_t relationship_scan_us = 0;
     std::uint64_t temporary_write_us = 0;
 };
@@ -4590,6 +4602,7 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
 
     result.analysis.summary = scan_cell_replacement_actions_from_chunk_source(
         read_next_chunk, replacement_plan, [&](const WorksheetTransformAction& action) {
+            ++result.transform_action_callback_count;
             consume_worksheet_cell_replacement_analysis_action(
                 result.analysis, worksheet_part, action);
 
@@ -4627,7 +4640,7 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
                 worksheet_root_end = output.output_bytes();
             }
         },
-        package_editor_cell_replacement_reader_options(), mode);
+        package_editor_cell_replacement_reader_options(&result.source_event_telemetry), mode);
 
     finalize_worksheet_cell_replacement_stream_analysis(result.analysis, worksheet_part);
     output.finish();
@@ -5030,6 +5043,16 @@ PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
             replacement->single_pass_transform_ms;
         plan.single_pass_transform_us =
             replacement->single_pass_transform_us;
+        plan.single_pass_source_parsed_event_count =
+            replacement->single_pass_source_parsed_event_count;
+        plan.single_pass_source_callback_event_count =
+            replacement->single_pass_source_callback_event_count;
+        plan.single_pass_source_coalesced_input_event_count =
+            replacement->single_pass_source_coalesced_input_event_count;
+        plan.single_pass_source_coalesced_output_event_count =
+            replacement->single_pass_source_coalesced_output_event_count;
+        plan.single_pass_transform_action_callback_count =
+            replacement->single_pass_transform_action_callback_count;
         plan.single_pass_output_append_call_count =
             replacement->single_pass_output_append_call_count;
         plan.single_pass_output_flush_count =
@@ -7337,6 +7360,16 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             single_pass_stats->staged_output_bytes;
         replacement->single_pass_transform_ms = single_pass_stats->transform_ms;
         replacement->single_pass_transform_us = single_pass_stats->transform_us;
+        replacement->single_pass_source_parsed_event_count =
+            single_pass_stats->source_parsed_event_count;
+        replacement->single_pass_source_callback_event_count =
+            single_pass_stats->source_callback_event_count;
+        replacement->single_pass_source_coalesced_input_event_count =
+            single_pass_stats->source_coalesced_input_event_count;
+        replacement->single_pass_source_coalesced_output_event_count =
+            single_pass_stats->source_coalesced_output_event_count;
+        replacement->single_pass_transform_action_callback_count =
+            single_pass_stats->transform_action_callback_count;
         replacement->single_pass_output_append_call_count =
             single_pass_stats->output_append_call_count;
         replacement->single_pass_output_flush_count =
@@ -7891,6 +7924,16 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
     single_pass_stats.staged_output_bytes = staged_output_bytes;
     single_pass_stats.transform_ms = transform_ms;
     single_pass_stats.transform_us = transform_us;
+    single_pass_stats.source_parsed_event_count =
+        transform_result.source_event_telemetry.parsed_event_count;
+    single_pass_stats.source_callback_event_count =
+        transform_result.source_event_telemetry.callback_event_count;
+    single_pass_stats.source_coalesced_input_event_count =
+        transform_result.source_event_telemetry.coalesced_input_event_count;
+    single_pass_stats.source_coalesced_output_event_count =
+        transform_result.source_event_telemetry.coalesced_output_event_count;
+    single_pass_stats.transform_action_callback_count =
+        transform_result.transform_action_callback_count;
     single_pass_stats.output_append_call_count =
         transform_result.output_append_call_count;
     single_pass_stats.output_flush_count = transform_result.output_flush_count;

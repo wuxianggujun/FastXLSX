@@ -117,7 +117,8 @@ CapturedTransform collect_actions(
 }
 
 CapturedTransform collect_upsert_actions(
-    const std::string& xml, std::span<const WorksheetCellReplacement> replacements)
+    const std::string& xml, std::span<const WorksheetCellReplacement> replacements,
+    fastxlsx::detail::WorksheetEventReaderOptions reader_options = {})
 {
     CapturedTransform captured;
     const WorksheetCellReplacementPlan replacement_plan =
@@ -137,7 +138,7 @@ CapturedTransform collect_upsert_actions(
                 action.raw_xml_offset,
             });
         },
-        {},
+        reader_options,
         fastxlsx::detail::WorksheetCellReplacementMode::ReplaceOrInsert);
     return captured;
 }
@@ -190,7 +191,8 @@ EmittedWorksheet emit_source_worksheet(const std::string& xml,
 
 EmittedWorksheet emit_upsert_worksheet(const std::string& xml,
     std::span<const WorksheetCellReplacement> replacements,
-    std::size_t chunk_width)
+    std::size_t chunk_width,
+    fastxlsx::detail::WorksheetEventReaderOptions reader_options = {})
 {
     EmittedWorksheet emitted;
     const WorksheetCellReplacementPlan replacement_plan =
@@ -201,7 +203,7 @@ EmittedWorksheet emit_upsert_worksheet(const std::string& xml,
         source,
         replacement_plan,
         [&](std::string_view chunk) { emitted.xml += chunk; },
-        {},
+        reader_options,
         fastxlsx::detail::WorksheetCellReplacementMode::ReplaceOrInsert);
     return emitted;
 }
@@ -1036,6 +1038,36 @@ void test_transformer_upsert_expands_self_closing_sheet_data_and_rows()
         "self-closing row upsert should report one inserted cell");
 }
 
+void test_transformer_patch_coalescing_reduces_actions_without_changing_output()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1"><v>old-a</v></c><c r="C1"><v>old-c</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    const std::array replacements {
+        cell_replacement("B1", R"(<c r="B1"><v>new-b</v></c>)"),
+    };
+
+    const CapturedTransform detailed = collect_upsert_actions(xml, replacements);
+    fastxlsx::detail::WorksheetEventReaderTelemetry telemetry;
+    fastxlsx::detail::WorksheetEventReaderOptions options;
+    options.copy_context_attributes = false;
+    options.coalesce_cell_value_events = true;
+    options.max_window_bytes = 32;
+    options.telemetry = &telemetry;
+    const CapturedTransform coalesced = collect_upsert_actions(xml, replacements, options);
+    const EmittedWorksheet emitted =
+        emit_upsert_worksheet(xml, replacements, 7, options);
+
+    check(coalesced.actions.size() < detailed.actions.size(),
+        "Patch coalescing should reduce transform action callbacks");
+    check(telemetry.parsed_event_count > telemetry.callback_event_count,
+        "Patch coalescing should reduce event-reader callbacks");
+    check(emitted.xml
+            == R"(<worksheet><sheetData><row r="1"><c r="A1"><v>old-a</v></c><c r="B1"><v>new-b</v></c><c r="C1"><v>old-c</v></c></row></sheetData></worksheet>)",
+        "Patch coalescing should preserve source bytes around inserted cells");
+}
+
 void test_transformer_chunked_emitter_uses_bounded_window_not_full_document()
 {
     std::string xml = R"(<worksheet><sheetData>)";
@@ -1176,6 +1208,7 @@ int main()
         test_transformer_replace_preserves_duplicate_source_target_behavior();
         test_transformer_upsert_replaces_existing_and_inserts_missing_cells_and_rows();
         test_transformer_upsert_expands_self_closing_sheet_data_and_rows();
+        test_transformer_patch_coalescing_reduces_actions_without_changing_output();
         test_transformer_chunked_emitter_uses_bounded_window_not_full_document();
         test_transformer_chunked_emitter_reports_missing_and_rejects_oversized_input();
         test_transformer_rejects_mismatched_source_cell_value_boundaries();

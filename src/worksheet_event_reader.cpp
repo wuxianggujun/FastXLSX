@@ -15,6 +15,7 @@ using fastxlsx::detail::WorksheetEvent;
 using fastxlsx::detail::WorksheetEventCallback;
 using fastxlsx::detail::WorksheetEventKind;
 using fastxlsx::detail::WorksheetEventReaderOptions;
+using fastxlsx::detail::WorksheetEventWindowCallback;
 
 bool starts_with_at(std::string_view text, std::size_t position, std::string_view prefix)
 {
@@ -203,11 +204,35 @@ bool is_value_element(std::string_view name)
     return name == "v" || name == "t" || name == "f";
 }
 
+enum class CellValueElementKind {
+    None,
+    Value,
+    Text,
+    Formula,
+};
+
+CellValueElementKind cell_value_element_kind(std::string_view name) noexcept
+{
+    if (name == "v") {
+        return CellValueElementKind::Value;
+    }
+    if (name == "t") {
+        return CellValueElementKind::Text;
+    }
+    if (name == "f") {
+        return CellValueElementKind::Formula;
+    }
+    return CellValueElementKind::None;
+}
+
 class WorksheetEventState {
 public:
-    WorksheetEventState(const WorksheetEventCallback& callback, bool copy_context_attributes)
+    WorksheetEventState(const WorksheetEventCallback& callback,
+        WorksheetEventReaderOptions options)
         : callback_(callback)
-        , copy_context_attributes_(copy_context_attributes)
+        , copy_context_attributes_(options.copy_context_attributes)
+        , coalesce_cell_value_events_(options.coalesce_cell_value_events)
+        , telemetry_(options.telemetry)
     {
     }
 
@@ -290,6 +315,26 @@ public:
         emit_opening_tag(raw, name, self_closing, offset);
     }
 
+    void flush_coalesced_event()
+    {
+        if (coalesced_raw_xml_.empty()) {
+            return;
+        }
+
+        WorksheetEvent event {
+            WorksheetEventKind::RawText,
+            coalesced_raw_xml_,
+        };
+        event.raw_xml_offset = coalesced_raw_xml_offset_;
+        callback_(event);
+        if (telemetry_ != nullptr) {
+            ++telemetry_->callback_event_count;
+            ++telemetry_->coalesced_output_event_count;
+        }
+        coalesced_raw_xml_ = {};
+        coalesced_raw_xml_offset_ = 0;
+    }
+
     void finish() const
     {
         if (!seen_worksheet_start_) {
@@ -306,10 +351,54 @@ public:
     }
 
 private:
-    void emit(WorksheetEvent event, std::uint64_t offset) const
+    [[nodiscard]] bool should_coalesce(const WorksheetEvent& event) const noexcept
     {
+        if (!coalesce_cell_value_events_) {
+            return false;
+        }
+        if (event.kind == WorksheetEventKind::CellValue) {
+            return true;
+        }
+        return event.kind == WorksheetEventKind::CellValueMarkup
+            && event.element_name != "f";
+    }
+
+    void append_coalesced_event(const WorksheetEvent& event, std::uint64_t offset)
+    {
+        if (!coalesced_raw_xml_.empty()) {
+            const char* expected = coalesced_raw_xml_.data() + coalesced_raw_xml_.size();
+            if (event.raw_xml.data() != expected
+                || offset != coalesced_raw_xml_offset_ + coalesced_raw_xml_.size()) {
+                flush_coalesced_event();
+            }
+        }
+        if (coalesced_raw_xml_.empty()) {
+            coalesced_raw_xml_ = event.raw_xml;
+            coalesced_raw_xml_offset_ = offset;
+        } else {
+            coalesced_raw_xml_ = std::string_view(
+                coalesced_raw_xml_.data(), coalesced_raw_xml_.size() + event.raw_xml.size());
+        }
+        if (telemetry_ != nullptr) {
+            ++telemetry_->coalesced_input_event_count;
+        }
+    }
+
+    void emit(WorksheetEvent event, std::uint64_t offset)
+    {
+        if (telemetry_ != nullptr) {
+            ++telemetry_->parsed_event_count;
+        }
+        if (should_coalesce(event)) {
+            append_coalesced_event(event, offset);
+            return;
+        }
+        flush_coalesced_event();
         event.raw_xml_offset = offset;
         callback_(event);
+        if (telemetry_ != nullptr) {
+            ++telemetry_->callback_event_count;
+        }
     }
 
     void reject_markup_after_root() const
@@ -378,14 +467,15 @@ private:
     void clear_current_cell_value()
     {
         in_cell_value_ = false;
-        current_cell_value_element_.clear();
+        current_cell_value_element_ = CellValueElementKind::None;
     }
 
     void emit_closing_tag(
         std::string_view raw, std::string_view name, std::uint64_t offset)
     {
         if (is_value_element(name) && in_cell_) {
-            if (!in_cell_value_ || current_cell_value_element_ != name) {
+            if (!in_cell_value_
+                || current_cell_value_element_ != cell_value_element_kind(name)) {
                 throw fastxlsx::FastXlsxError(
                     "worksheet event reader found a mismatched cell value boundary");
             }
@@ -585,7 +675,7 @@ private:
                 offset);
             if (!self_closing) {
                 in_cell_value_ = true;
-                current_cell_value_element_ = std::string(name);
+                current_cell_value_element_ = cell_value_element_kind(name);
             }
         } else if (in_cell_) {
             emit(WorksheetEvent { WorksheetEventKind::Metadata,
@@ -619,9 +709,13 @@ private:
     bool in_cell_value_ = false;
     std::string current_row_storage_;
     std::string current_cell_storage_;
-    std::string current_cell_value_element_;
+    CellValueElementKind current_cell_value_element_ = CellValueElementKind::None;
     std::string_view current_row_;
     std::string_view current_cell_;
+    bool coalesce_cell_value_events_ = false;
+    fastxlsx::detail::WorksheetEventReaderTelemetry* telemetry_ = nullptr;
+    std::string_view coalesced_raw_xml_;
+    std::uint64_t coalesced_raw_xml_offset_ = 0;
 };
 
 std::uint64_t add_source_offset(std::uint64_t base, std::size_t relative)
@@ -728,10 +822,15 @@ void process_window(
     std::string& window,
     bool final_chunk,
     WorksheetEventState& state,
-    std::uint64_t& window_begin_offset)
+    std::uint64_t& window_begin_offset,
+    const WorksheetEventWindowCallback& window_consumed_callback)
 {
     const std::size_t consumed =
         consume_available_events(window, final_chunk, state, window_begin_offset);
+    state.flush_coalesced_event();
+    if (window_consumed_callback) {
+        window_consumed_callback();
+    }
     erase_consumed_prefix(window, consumed);
     window_begin_offset = add_source_offset(window_begin_offset, consumed);
 }
@@ -740,11 +839,13 @@ void process_source_chunk(std::string_view chunk,
     WorksheetEventReaderOptions options,
     std::string& window,
     WorksheetEventState& state,
-    std::uint64_t& window_begin_offset)
+    std::uint64_t& window_begin_offset,
+    const WorksheetEventWindowCallback& window_consumed_callback)
 {
     std::size_t chunk_offset = 0;
     while (chunk_offset < chunk.size()) {
-        process_window(window, false, state, window_begin_offset);
+        process_window(
+            window, false, state, window_begin_offset, window_consumed_callback);
         if (window.size() >= options.max_window_bytes) {
             throw fastxlsx::FastXlsxError(
                 "worksheet event reader exceeded bounded input window");
@@ -755,7 +856,8 @@ void process_source_chunk(std::string_view chunk,
         const std::size_t bytes_to_append = std::min(available, remaining);
         window.append(chunk.data() + chunk_offset, bytes_to_append);
         chunk_offset += bytes_to_append;
-        process_window(window, false, state, window_begin_offset);
+        process_window(
+            window, false, state, window_begin_offset, window_consumed_callback);
 
         if (bytes_to_append == 0 && !window.empty()) {
             throw fastxlsx::FastXlsxError(
@@ -771,7 +873,8 @@ namespace fastxlsx::detail {
 void scan_worksheet_events_from_chunk_source(
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetEventCallback& callback,
-    WorksheetEventReaderOptions options)
+    WorksheetEventReaderOptions options,
+    const WorksheetEventWindowCallback& window_consumed_callback)
 {
     if (!read_next_chunk) {
         throw FastXlsxError("worksheet event reader requires a chunk source");
@@ -783,17 +886,18 @@ void scan_worksheet_events_from_chunk_source(
         throw FastXlsxError("worksheet event reader requires a nonzero input window limit");
     }
 
-    WorksheetEventState state(callback, options.copy_context_attributes);
+    WorksheetEventState state(callback, options);
     std::string window;
     window.reserve(std::min<std::size_t>(options.max_window_bytes, 4096U));
     std::uint64_t window_begin_offset = 0;
 
     std::string chunk;
     while (read_next_chunk(chunk)) {
-        process_source_chunk(chunk, options, window, state, window_begin_offset);
+        process_source_chunk(chunk, options, window, state, window_begin_offset,
+            window_consumed_callback);
     }
 
-    process_window(window, true, state, window_begin_offset);
+    process_window(window, true, state, window_begin_offset, window_consumed_callback);
     state.finish();
 }
 

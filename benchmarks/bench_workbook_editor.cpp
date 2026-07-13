@@ -51,8 +51,10 @@ struct Options {
     std::uint32_t cols = 10;
     std::uint32_t edits = 1000;
     std::string scenario = "batch-set";
+    std::string source_pattern = "numeric";
     int source_compression_level = fastxlsx::min_zip_compression_level;
     int output_compression_level = 0;
+    bool source_external_hyperlink = false;
     bool reuse_source = false;
     std::filesystem::path source = default_output_dir() / "fastxlsx-editor-source.xlsx";
     std::filesystem::path output = default_output_dir() / "fastxlsx-editor-edited.xlsx";
@@ -100,6 +102,11 @@ struct RunStats {
     std::uint64_t single_pass_transform_ms = 0;
     std::uint64_t single_pass_transform_us = 0;
     std::uint64_t single_pass_source_scan_action_us = 0;
+    std::uint64_t single_pass_source_parsed_event_count = 0;
+    std::uint64_t single_pass_source_callback_event_count = 0;
+    std::uint64_t single_pass_source_coalesced_input_event_count = 0;
+    std::uint64_t single_pass_source_coalesced_output_event_count = 0;
+    std::uint64_t single_pass_transform_action_callback_count = 0;
     std::uint64_t single_pass_output_append_call_count = 0;
     std::uint64_t single_pass_output_flush_count = 0;
     std::uint64_t single_pass_output_peak_buffer_bytes = 0;
@@ -248,6 +255,12 @@ void validate_options(const Options& options)
     if (options.cols > kExcelColumnLimit) {
         fail("--cols exceeds Excel's column limit");
     }
+    if (options.source_pattern != "numeric"
+        && options.source_pattern != "mixed-inline"
+        && options.source_pattern != "mixed-shared"
+        && options.source_pattern != "formula") {
+        fail("--source-pattern must be numeric, mixed-inline, mixed-shared, or formula");
+    }
     const std::uint64_t cells = checked_cell_count(options);
     if (options.scenario == "noop-copy" && options.edits != 0) {
         fail("noop-copy requires --edits 0");
@@ -295,6 +308,10 @@ Options parse_args(int argc, char** argv)
             options.edits = parse_nonnegative_u32(next_value(), "--edits");
         } else if (arg == "--scenario") {
             options.scenario = std::string(next_value());
+        } else if (arg == "--source-pattern") {
+            options.source_pattern = std::string(next_value());
+        } else if (arg == "--source-external-hyperlink") {
+            options.source_external_hyperlink = true;
         } else if (arg == "--source") {
             options.source = std::filesystem::path(std::string(next_value()));
         } else if (arg == "--output") {
@@ -313,6 +330,8 @@ Options parse_args(int argc, char** argv)
                 << "--scenario point-set|batch-set|a1-range-clear|a1-range-erase|"
                    "noop-copy|document-properties|patch-replace|patch-upsert "
                 << "--rows N --cols N --edits N "
+                << "[--source-pattern numeric|mixed-inline|mixed-shared|formula] "
+                   "[--source-external-hyperlink] "
                 << "--source source.xlsx --output edited.xlsx --result result.json "
                 << "[--source-compression-level 0..9] "
                    "[--output-compression-level -1..9] [--reuse-source]\n"
@@ -469,18 +488,38 @@ void write_source_workbook(const Options& options)
     ensure_parent_directory(options.source);
     fastxlsx::WorkbookWriterOptions writer_options;
     writer_options.zip_compression_level = options.source_compression_level;
+    if (options.source_pattern == "mixed-shared") {
+        writer_options.string_strategy = fastxlsx::StringStrategy::SharedString;
+    }
 
     auto workbook = fastxlsx::WorkbookWriter::create(options.source, writer_options);
     auto sheet = workbook.add_worksheet("Data");
     std::vector<fastxlsx::CellView> cells;
     cells.reserve(options.cols);
+    std::vector<std::string> text_storage;
+    text_storage.reserve(options.cols);
 
     for (std::uint32_t row = 1; row <= options.rows; ++row) {
         cells.clear();
+        text_storage.clear();
         for (std::uint32_t col = 1; col <= options.cols; ++col) {
-            cells.push_back(fastxlsx::CellView::number(make_source_number(row, col)));
+            if ((options.source_pattern == "mixed-inline"
+                    || options.source_pattern == "mixed-shared")
+                && (row + col) % 3U == 0) {
+                text_storage.push_back("group-" + std::to_string((row + col) % 32U));
+                cells.push_back(fastxlsx::CellView::text(text_storage.back()));
+            } else if (options.source_pattern == "formula" && col % 4U == 0) {
+                text_storage.push_back(cell_reference(row, col - 1U) + "*2");
+                cells.push_back(fastxlsx::CellView::formula(text_storage.back()));
+            } else {
+                cells.push_back(fastxlsx::CellView::number(make_source_number(row, col)));
+            }
         }
         sheet.append_row(cells);
+    }
+    if (options.source_external_hyperlink) {
+        sheet.add_external_hyperlink(
+            1, 1, "https://example.com/fastxlsx-benchmark");
     }
     workbook.close();
 }
@@ -616,6 +655,16 @@ void observe_output_plan(
                 entry.single_pass_staged_output_bytes;
             stats.single_pass_transform_ms = entry.single_pass_transform_ms;
             stats.single_pass_transform_us = entry.single_pass_transform_us;
+            stats.single_pass_source_parsed_event_count =
+                entry.single_pass_source_parsed_event_count;
+            stats.single_pass_source_callback_event_count =
+                entry.single_pass_source_callback_event_count;
+            stats.single_pass_source_coalesced_input_event_count =
+                entry.single_pass_source_coalesced_input_event_count;
+            stats.single_pass_source_coalesced_output_event_count =
+                entry.single_pass_source_coalesced_output_event_count;
+            stats.single_pass_transform_action_callback_count =
+                entry.single_pass_transform_action_callback_count;
             stats.single_pass_output_append_call_count =
                 entry.single_pass_output_append_call_count;
             stats.single_pass_output_flush_count =
@@ -725,6 +774,9 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"source_fixture_mode\": \""
         << (options.reuse_source ? "reused-existing-source" : "generated-source")
         << "\",\n";
+    out << "  \"source_pattern\": \"" << options.source_pattern << "\",\n";
+    out << "  \"source_external_hyperlink\": "
+        << (options.source_external_hyperlink ? "true" : "false") << ",\n";
     out << "  \"source_compression_level\": " << options.source_compression_level << ",\n";
     out << "  \"output_compression_level\": " << options.output_compression_level << ",\n";
     out << "  \"output_plan_entry_count\": " << stats.output_plan_entry_count << ",\n";
@@ -751,6 +803,16 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.single_pass_transform_us << ",\n";
     out << "  \"single_pass_source_scan_action_us\": "
         << stats.single_pass_source_scan_action_us << ",\n";
+    out << "  \"single_pass_source_parsed_event_count\": "
+        << stats.single_pass_source_parsed_event_count << ",\n";
+    out << "  \"single_pass_source_callback_event_count\": "
+        << stats.single_pass_source_callback_event_count << ",\n";
+    out << "  \"single_pass_source_coalesced_input_event_count\": "
+        << stats.single_pass_source_coalesced_input_event_count << ",\n";
+    out << "  \"single_pass_source_coalesced_output_event_count\": "
+        << stats.single_pass_source_coalesced_output_event_count << ",\n";
+    out << "  \"single_pass_transform_action_callback_count\": "
+        << stats.single_pass_transform_action_callback_count << ",\n";
     out << "  \"single_pass_output_append_call_count\": "
         << stats.single_pass_output_append_call_count << ",\n";
     out << "  \"single_pass_output_flush_count\": "

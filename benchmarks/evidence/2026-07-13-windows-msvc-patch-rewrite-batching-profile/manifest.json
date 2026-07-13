@@ -1,0 +1,63 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-13-windows-msvc-patch-rewrite-batching-profile",
+  "created_utc": "2026-07-13T09:06:00Z",
+  "git_revision": "f19cd4b95c19e23e38310fc0802fb42ff9b3c314",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "summary.json",
+      "sha256": "0366ba076164955c0dcd939804353afff666b7d2bf44330c2a0b2fe3d63a9328",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "ff229950ce928be00fe7bca010f9d710bd14db03b800329485e44eaa2ad4aa5d",
+      "role": "summary"
+    },
+    {
+      "path": "upsert-1m-level-1-report.json",
+      "sha256": "895f98358470e25ab0bd73de1ceff3015cb9f8cb784ff96583a3b43898a8a5f6",
+      "role": "matrix-report"
+    },
+    {
+      "path": "upsert-1m-level-6-report.json",
+      "sha256": "71ad76e496c612d5c93f6fead252c26e355f0853d9b541e999da99a201df417b",
+      "role": "matrix-report"
+    },
+    {
+      "path": "upsert-5m-level-1-report.json",
+      "sha256": "ebd269e350264dfae7df0fe561b0b45e128ab860940ab82a3f315d5f406568d1",
+      "role": "matrix-report"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "On this machine and the recorded one-million-cell level 1 targeted-upsert workload, the single-pass transform coalesced 5199505 output fragments into 134 batches with a 262144-byte peak owned buffer; median transform time was 767186 us and median process peak working set was 8.80078 MB.",
+      "artifact_paths": ["summary.json", "upsert-1m-level-1-report.json"]
+    },
+    {
+      "statement": "Against the same-machine, same-protocol level 1 profile in the recorded raw-copy bundle, median total editor, mutation and transform time decreased by 41.33%, 47.07% and 52.11% respectively; process timing remains system-sensitive and this is not a cross-machine guarantee.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    },
+    {
+      "statement": "For the recorded one-million-cell level 6 upsert, median package-writer time was 933636 us versus 865366 us for the transform, making DEFLATE package output the larger measured stage in that profile.",
+      "artifact_paths": ["summary.json", "upsert-1m-level-6-report.json"]
+    },
+    {
+      "statement": "For the recorded five-million-cell level 1 upsert, 183697902 logical worksheet bytes were rewritten while the batching buffer stayed at 262144 bytes and median process peak working set was 8.80859 MB; median total and transform time were 8494 ms and 5855255 us.",
+      "artifact_paths": ["summary.json", "upsert-5m-level-1-report.json"]
+    },
+    {
+      "statement": "The runner verified plan byte accounting and exact compressed payload equality for every raw-copy entry in all warm-up and measured outputs; the median representative from each profile opened with openpyxl. Microsoft Office was not run.",
+      "artifact_paths": ["run-context.json", "upsert-1m-level-1-report.json", "upsert-1m-level-6-report.json", "upsert-5m-level-1-report.json"]
+    }
+  ]
+}

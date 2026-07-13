@@ -1,0 +1,155 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "5",
+  "git_revision": "f19cd4b95c19e23e38310fc0802fb42ff9b3c314",
+  "workload": {
+    "columns": 10,
+    "requested_patch_cells": 1000,
+    "matched_existing_cells": 500,
+    "inserted_cells": 500,
+    "source_compression_level": 6,
+    "warmup_runs_per_profile": 2,
+    "measured_runs_per_profile": 5
+  },
+  "profiles": [
+    {
+      "name": "upsert-1m-level-1",
+      "source_rows": 100000,
+      "source_cells": 1000000,
+      "output_compression_level": 1,
+      "total_editor_ms": [1125, 1236, 1205, 1139, 1249],
+      "mutation_ms": [871, 967, 931, 883, 971],
+      "save_ms": [250, 266, 270, 253, 274],
+      "single_pass_transform_us": [718019, 828521, 767186, 732723, 815064],
+      "peak_memory_mb": [8.82031, 8.81641, 8.80078, 8.79297, 8.79688],
+      "median": {
+        "total_editor_ms": 1205,
+        "mutation_ms": 931,
+        "save_ms": 266,
+        "single_pass_transform_us": 767186,
+        "source_scan_action_residual_us": 615803,
+        "relationship_scan_us": 135974,
+        "temporary_write_us": 17601,
+        "package_writer_total_us": 264265,
+        "target_worksheet_entry_total_us": 262055,
+        "peak_memory_mb": 8.80078
+      },
+      "output_batching": {
+        "append_calls": 5199505,
+        "flushes": 134,
+        "peak_owned_buffer_bytes": 262144
+      },
+      "target_worksheet_entry_io": {
+        "input_read_calls": 35,
+        "writer_write_calls": 36
+      },
+      "staged_worksheet_bytes": 34897577,
+      "rewritten_logical_bytes": 34897902,
+      "output_bytes": 3438241,
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "upsert-1m-level-6",
+      "source_rows": 100000,
+      "source_cells": 1000000,
+      "output_compression_level": 6,
+      "total_editor_ms": [2000, 1888, 1856, 2468, 2204],
+      "mutation_ms": [1030, 950, 936, 1303, 1270],
+      "save_ms": [964, 934, 916, 1157, 929],
+      "single_pass_transform_us": [865366, 804934, 773015, 1092930, 1119508],
+      "peak_memory_mb": [8.80469, 8.81641, 8.8125, 8.80469, 8.80859],
+      "median": {
+        "total_editor_ms": 2000,
+        "mutation_ms": 1030,
+        "save_ms": 934,
+        "single_pass_transform_us": 865366,
+        "source_scan_action_residual_us": 695318,
+        "relationship_scan_us": 151006,
+        "temporary_write_us": 19042,
+        "package_writer_total_us": 933636,
+        "target_worksheet_entry_total_us": 931944,
+        "peak_memory_mb": 8.80859
+      },
+      "output_batching": {
+        "append_calls": 5199505,
+        "flushes": 134,
+        "peak_owned_buffer_bytes": 262144
+      },
+      "target_worksheet_entry_io": {
+        "input_read_calls": 35,
+        "writer_write_calls": 36
+      },
+      "staged_worksheet_bytes": 34897577,
+      "rewritten_logical_bytes": 34897902,
+      "output_bytes": 3133360,
+      "representative_openpyxl": "opened"
+    },
+    {
+      "name": "upsert-5m-level-1",
+      "source_rows": 500000,
+      "source_cells": 5000000,
+      "output_compression_level": 1,
+      "total_editor_ms": [8207, 9000, 9328, 7242, 8494],
+      "mutation_ms": [6734, 6998, 7100, 5705, 6923],
+      "save_ms": [1467, 1995, 2221, 1531, 1564],
+      "single_pass_transform_us": [5851405, 5969337, 5914960, 4838405, 5855255],
+      "peak_memory_mb": [8.80469, 8.79688, 8.82031, 8.80859, 8.80859],
+      "median": {
+        "total_editor_ms": 8494,
+        "mutation_ms": 6923,
+        "save_ms": 1564,
+        "single_pass_transform_us": 5855255,
+        "source_scan_action_residual_us": 4732286,
+        "relationship_scan_us": 1001129,
+        "temporary_write_us": 127964,
+        "package_writer_total_us": 1562777,
+        "target_worksheet_entry_total_us": 1560874,
+        "peak_memory_mb": 8.80859
+      },
+      "output_batching": {
+        "append_calls": 25999505,
+        "flushes": 701,
+        "peak_owned_buffer_bytes": 262144
+      },
+      "target_worksheet_entry_io": {
+        "input_read_calls": 177,
+        "writer_write_calls": 178
+      },
+      "staged_worksheet_bytes": 183697577,
+      "rewritten_logical_bytes": 183697902,
+      "output_bytes": 17432167,
+      "representative_openpyxl": "opened"
+    }
+  ],
+  "same_machine_historical_comparison": {
+    "baseline_artifact": "../2026-07-13-windows-msvc-patch-raw-copy-profile/summary.json",
+    "baseline_profile": "one-million-cell upsert, output DEFLATE level 1, two warm-ups and five measured runs",
+    "baseline_median": {
+      "total_editor_ms": 2054,
+      "mutation_ms": 1759,
+      "single_pass_transform_ms": 1602,
+      "peak_memory_mb": 7.98828
+    },
+    "current_median": {
+      "total_editor_ms": 1205,
+      "mutation_ms": 931,
+      "single_pass_transform_ms": 767.186,
+      "peak_memory_mb": 8.80078
+    },
+    "decrease_percent": {
+      "total_editor_ms": 41.33,
+      "mutation_ms": 47.07,
+      "single_pass_transform_ms": 52.11
+    },
+    "peak_memory_increase_mb": 0.8125,
+    "qualification": "Same machine and recorded protocol, but process timing remains system-sensitive and is not a cross-machine guarantee."
+  },
+  "observations": {
+    "bounded_output_buffer": "The one-million-cell transform coalesced 5199505 output fragments into 134 batches; the five-million-cell transform coalesced 25999505 fragments into 701 batches. Peak owned output buffer remained 262144 bytes.",
+    "bounded_process_memory": "Median benchmark-process peak working set was 8.80078 MB for one million source cells and 8.80859 MB for five million source cells. Source fixture generation ran in a separate process.",
+    "level_6_bottleneck": "At one million cells and output level 6, package writing took a 933636 us median versus 865366 us for the single-pass transform; DEFLATE output is the larger measured stage for this profile.",
+    "residual_definition": "source_scan_action_residual_us is transform time minus measured relationship scanning and temporary-file writing; it includes source read, XML event parsing, action analysis and remaining batching overhead."
+  },
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine, numeric worksheets with 10 columns, 1,000 targeted upserts, and the recorded compression profiles only. Representative outputs opened with openpyxl; Microsoft Office was not run."
+}

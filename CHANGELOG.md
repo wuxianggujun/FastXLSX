@@ -11,6 +11,8 @@
 - 新增 3 个 validated evidence bundle：schema-v5 Streaming、Patch single-pass 与 OpenXLSX 0.4.1 reference。限定在同机 1,000,000-cell numeric/mixed public writer workload，FastXLSX 吞吐约为 OpenXLSX 的 2.01×/2.64×，同时保留输出大小、peak working set、协议差异与非泛化边界。
 - Production minizip-ng Patch save 对 compression method 匹配的 unchanged entries 使用 raw compressed-payload copy；rewritten、method-changing 与 stored-bootstrap 路径保持原有编码语义。Public/internal 文档明确该能力不复制 local header、central directory、extra fields 或整包布局。
 - Patch schema-v5 telemetry 增加 raw-copy entry names/count/bytes，矩阵逐 entry 验证 exact source/output compressed payload；新增 Streaming compression 与 Patch raw-copy 两个 validated evidence bundle，记录 level 1/3/6 的吞吐、输出大小、peak working set 和 openpyxl 结果。
+- Patch single-pass rewrite 使用 256 KiB 有界 output batching 合并事件碎片，复用 transformer 已解析 cell coordinate，并减少 relationship scanner 的 namespace-scope 复制；事务、精确 dimension、relationship audit、retry 与 temporary ownership 契约保持不变。
+- Patch benchmark telemetry 增加 transform residual、append/flush/peak buffer、relationship/temporary IO 与 package writer target-entry 分解；新增 1,000,000/5,000,000-cell validated rewrite batching bundle。记录 workload 中 level 1 的 1,000,000-cell transform median 降至 0.767 秒，5,000,000-cell process peak working set 为 8.80859 MB；结论不跨机器或泛化到任意 XLSX。
 
 ## [0.1.0] - 2026-07-13
 

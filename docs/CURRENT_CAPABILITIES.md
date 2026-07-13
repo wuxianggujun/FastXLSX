@@ -83,15 +83,15 @@
 - Internal non-worksheet `PackageEditor::replace_part_chunks()` 对 stream-rewrite chunks、part restore、edit plan、part/entry replacements、omitted entries 和 manifest 使用事务式 staging；它是 package writer 的 internal handoff，不是 public arbitrary-part streaming API。
 - Internal worksheet chunk replacement 对 worksheet/workbook rewrite、calc metadata、relationship/content-type side effects、edit plan、part/entry replacements、omitted entries、manifest 和 file-backed 临时文件所有权使用统一 staging，并在提交前完成 routing notes 与 dependency audits；完整 worksheet chunk-source wrapper 只在 `noexcept` commit 时发布临时文件所有权，提交前失败由 RAII 删除未发布 staged file。失败保留既有计划、输出语义和 retry 能力。它仍是 internal worksheet rewrite foundation，不是 public arbitrary worksheet XML API。
 - Internal bounded sheetData replacement 会把最终 `LocalDomRewrite` mode、file-backed staged output ownership、preservation/dependency audits 与 direct/by-name notes 纳入同一 worksheet transaction；提交前失败删除临时输出并保留调用前 package state。它仍不是 large-file transformer、任意 cell random editing 或 linked metadata repair。
-- Internal worksheet cell replacement 的 single-pass fallback 会把 file-backed output ownership、精确 dimension、relationship audit、scan/match/insert telemetry 与 transform notes 纳入同一 staged transaction；indexed direct-range fast path 支持 stored source package ranges，以及 DEFLATE source 的单次 inflate + owned temporary-file ranges。两条路径的提交前失败都保留调用前状态与 retry 能力；事务提交会删除已被新 replacement 取代且不再引用的旧临时文件，但这不改变 bounded payload、relationship policy 和非语义修复边界。
+- Internal worksheet cell replacement 的 single-pass fallback 会把 file-backed output ownership、精确 dimension、relationship audit、scan/match/insert telemetry 与 transform notes 纳入同一 staged transaction；事件输出先进入 256 KiB 有界 batch，再按 batch 做 relationship scan 与 temporary-file write，transformer 已解析的 source coordinate 直接传给 dimension/audit，避免重复解析。Indexed direct-range fast path 支持 stored source package ranges，以及 DEFLATE source 的单次 inflate + owned temporary-file ranges。两条路径的提交前失败都保留调用前状态与 retry 能力；事务提交会删除已被新 replacement 取代且不再引用的旧临时文件。
 
 文档只能在明确的 internal/architecture 语境提及它们。
 
 ## Performance Evidence
 
-- tracked benchmark evidence 机制已建立；当前有 4 个 production Streaming bundle、4 个 production Patch bundle 与 1 个 OpenXLSX reference bundle。每个 bundle 只支持 manifest 限定的单机同数据集结论，warm-up/measured 次数以各自 run context 为准。
+- tracked benchmark evidence 机制已建立；当前有 4 个 production Streaming bundle、5 个 production Patch bundle 与 1 个 OpenXLSX reference bundle。每个 bundle 只支持 manifest 限定的单机同数据集结论，warm-up/measured 次数以各自 run context 为准。
 - 最新 compression profile 在同机 1,000,000-cell numeric/mixed InlineString workload 中，Streaming level 1 median 为 322/406 ms、level 6 为 955/981 ms；level 1 输出增大 9.62%/21.63%，全部 measured process peak working set 为 6.28125–6.32812 MB。该结论不泛化到其他数据分布。
-- 最新 Patch raw-copy profile 中，no-op save raw-copy 7 个 entry / 3,128,791 compressed bytes，level 1/3/6 median save 为 19/21/25 ms；document-properties save raw-copy 5 个 entry / 3,128,295 bytes 并重写 1,039 logical bytes，median save 为 15/24/41 ms。Targeted replace/upsert 仍重写约 34.9 MB logical worksheet XML；level 1/6 median save 为 221/1157 ms 与 302/1128 ms，不是大文件任意随机编辑承诺。
+- 最新 Patch rewrite batching profile 中，1,000,000-cell upsert、level 1 的 total/mutation/transform median 为 1205/931/767.186 ms，process peak working set 为 8.80078 MB；5,000,000-cell、183,697,902 logical-byte rewrite 的 total/transform median 为 8494/5855.255 ms，peak 为 8.80859 MB，owned output buffer 保持 262,144 bytes。Level 6 的 package writer median 933.636 ms 高于 transform 865.366 ms；这些数据只覆盖记录的顺序 upsert workload，不是大文件任意随机编辑承诺。
 - 同机 1,000,000-cell numeric/mixed public writer workload 中，FastXLSX Streaming median 为 1583/1248 ms 与 6.87109/6.88672 MB peak working set，OpenXLSX 0.4.1 workbook API 为 3180/3292 ms 与 395.258/403.957 MB。该证据只说明两个已记录 workload 的 2.01×/2.64×吞吐比，不形成全功能或跨机器“总体超越”承诺。
 
 ## Planned

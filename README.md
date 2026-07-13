@@ -95,7 +95,7 @@ int main()
 
 `has_pending_changes()` 表示当前仍保留 staged Patch/dirty session 状态；`has_unsaved_changes()` 和 `unsaved_change_count()` 表示相对最近一次成功 `save_as()` 的保存水位。`save_as()` 对 dirty In-memory session 使用 stage → package write → state commit；失败的 edit/save 不推进水位，也不清除 dirty session 诊断。
 
-`save_as(path)` 为兼容既有行为写 stored ZIP；需要 production DEFLATE 时使用 `WorkbookEditorSaveOptions`。`zip_compression_level=-1` 选择 active backend 默认值，`1..9` 请求 DEFLATE，`0` 明确请求 stored output。压缩只影响新输出包的 CPU、IO 和大小，不改变 Patch preservation 语义。
+`save_as(path)` 为兼容既有行为写 stored ZIP；需要 production DEFLATE 时使用 `WorkbookEditorSaveOptions`。`zip_compression_level=-1` 选择 active backend 默认值，`1..9` 请求 DEFLATE，`0` 明确请求 stored output。Production minizip-ng 输出会对 compression method 匹配的未修改 entry 直接复制 source compressed payload；不同 DEFLATE level 仍属于同一 method，因此请求 level 只作用于 rewritten/generated entries。Stored 或 method-changing 输出走 logical copy。该优化不改变 Patch preservation 语义。
 
 `WorksheetEditor` 默认使用 `WorksheetMaterializationPolicy::RejectKnownLosses`。遇到 rich text、phonetic/extension metadata、formula metadata 或 cached formula result 等当前模型不能无损表示的 source cell 时，materialization 会在注册 session 前失败。
 
@@ -123,7 +123,7 @@ auto sheet = editor.worksheet("Data", options);
 
 ## 能力边界
 
-- `save_as()` 写到新路径，不是 atomic in-place save；压缩输出可能重新压缩逻辑未修改的 entries，不承诺 ZIP-local compressed bytes 原样复制。
+- `save_as()` 写到新路径，不是 atomic in-place save。Production minizip-ng 对 method 匹配的未修改 entry 保留 exact compressed payload bytes；它不保留 source local header、central-directory record、extra fields 或整包布局。Rewritten entry、stored bootstrap 和 method-changing save 正常重新编码。
 - 当前 reader/writer 不支持 Zip64 或 multi-disk ZIP；单 entry 超过 ZIP32 size、entry count 超过 ZIP32 上限或 source 使用 Zip64 时会拒绝，不承诺接近/超过 4 GiB 的 XLSX。
 - `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、`RelationshipGraph` 是 internal。
 - 公式支持文本、审计、窄重写和请求重算；不求值、不生成 cached value、不完整重建 `calcChain.xml`。
@@ -134,15 +134,15 @@ auto sheet = editor.worksheet("Data", options);
 
 ## 性能现状
 
-- **创建**：production Streaming 使用 256 KiB 有界 body batching、file-backed worksheet body、chunked package entry 和 minizip-ng DEFLATE；成功关闭后释放 worksheet 临时文件和构建期缓存。最新 tracked Windows/MSVC schema-v5 矩阵中，每个场景写入 1,000,000 cells；numeric/mixed-inline median 为 1.583/1.248 秒，process peak working set median 为 6.87109/6.88672 MB。Numeric/mixed 的 generation median 仅为 0.138/0.175 秒，package close 为 1.379/1.048 秒，当前主要瓶颈是 ZIP/DEFLATE close，而不是 cell XML encoding。
+- **创建**：production Streaming 使用 256 KiB 有界 body batching、file-backed worksheet body、chunked package entry 和 minizip-ng DEFLATE；成功关闭后释放 worksheet 临时文件和构建期缓存。最新同机 warmed compression profile 每个场景写入 1,000,000 cells：numeric/mixed-inline 的 level 1 median 为 0.322/0.406 秒，level 6 为 0.955/0.981 秒；level 1 输出分别增大 9.62%/21.63%，全部 measured process peak working set 位于 6.28–6.33 MB。吞吐优先的这两个 workload 推荐先评估 level 1，文件大小优先再提高 level。
 - **字符串选型**：在最新矩阵中，20% mixed workload 的 `InlineString`/`SharedString` median 为 1.248/1.359 秒；1,000,000 个字符串全部唯一时，`InlineString` 为 1.498 秒与 6.92578 MB，`SharedString` 为 3.356 秒与 123.039 MB。因此默认保持 `InlineString`，只有调用方已知文本高度重复时才评估 `SharedString`。
-- **已有文件编辑**：Patch 按 part-level rewrite 工作，未修改 part 默认 copy-original；public save 可显式选择 stored 或 production DEFLATE。最新 schema-v5、1,000,000 numeric cells、level 6 矩阵中，1,000-cell targeted replace 的 total/mutation median 为 1.844/0.596 秒、peak 为 8.41406 MB；single-pass targeted upsert 为 3.821/2.327 秒、peak 为 8.55078 MB，相对同协议旧 upsert 的 total/mutation 降低约 12.2%/21.6%。
+- **已有文件编辑**：Patch 按 part-level rewrite 工作，未修改 part 默认 copy-original。最新同机 raw-copy profile 中，1,000,000-cell source 的 no-op save raw-copy 7 个 entry / 3,128,791 compressed bytes，level 1/3/6 median save 为 19/21/25 ms；仅改 document properties 时 raw-copy 5 个 entry / 3,128,295 bytes，median save 为 15/24/41 ms。Exact compressed-payload equality 和 12 个代表输出的 openpyxl reopen 均由矩阵验证。
 - **OpenXLSX 对比**：同机、同 1,000,000-cell numeric/mixed 数据分布与 public writer API 协议下，FastXLSX Streaming median 为 1.583/1.248 秒，OpenXLSX 0.4.1 workbook API 为 3.180/3.292 秒，即该两个 workload 的吞吐约为 2.01×/2.64×；FastXLSX peak working set 为 6.87/6.89 MB，OpenXLSX 为 395.26/403.96 MB。OpenXLSX 使用 `document.save()` 默认设置，FastXLSX 使用 DEFLATE level 6，输出大小同时记录，因此这不是所有功能、机器或 backend 的泛化胜出声明。
 - **有界高吞吐 Patch**：对 DEFLATE source、无 worksheet relationships、目标已存在且具有 top-level dimension 的 strict targeted replace，路径只 inflate 一次到事务式临时文件，再做 target-only scan 和 file-range staging。Missing-cell upsert、relationship-bearing worksheet 与其他 fallback 场景使用单次 source-order scan，同步完成 cell transform、精确 dimension 与 relationship audit；两条路径都不构建 worksheet DOM/dense matrix，内存由 chunk buffers、replacement payload 和临时文件控制。
-- **Patch 缺口**：Copy-original 当前保证 logical payload/CRC 保留，但 output writer 仍会重新封装并可能重新压缩 entry；raw compressed-entry passthrough 尚未实现。Single-pass fallback 仍会重写并重新压缩完整 worksheet part，也不证明任意 XLSX 的高性能随机编辑。
+- **Patch 剩余瓶颈**：raw-copy 只优化 unchanged entries。Targeted replace/upsert 仍重写约 34.9 MB logical worksheet XML；同机 level 1 versus level 6 的 median save 为 221/1157 ms 与 302/1128 ms，level 1 输出约增大 9.7%。下一阶段应优化完整 worksheet transform/recompression，而不是扩大 In-memory guardrail；这些结果也不证明任意 XLSX 的高性能随机编辑。
 - **随机编辑/处理**：`WorksheetEditor` 有意限定为 small-file sparse editing。大型 worksheet 的顺序 Patch 可以使用上述 file-backed bounded path；任意 random editing 仍需要独立设计，不能通过放宽 In-memory guardrail 冒充高性能。
 
-精确环境、三次 measured run、min/median/max 和验证结果见 [性能目标与证据](docs/PERFORMANCE_TARGETS.md)。
+精确环境、重复测量协议、min/median/max 和验证结果见 [性能目标与证据](docs/PERFORMANCE_TARGETS.md)。
 
 ## 构建与测试
 

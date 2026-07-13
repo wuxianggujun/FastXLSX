@@ -1,0 +1,40 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-13-windows-msvc-streaming-compression-profile",
+  "created_utc": "2026-07-13T06:10:00Z",
+  "git_revision": "fbf569b5d2e72fec7aed5c3b517ce91d17c7a320",
+  "benchmark_kind": "streaming-writer",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "summary.json",
+      "sha256": "4ac4231781fd8998d2407e1271af8a81b8a0d550c58938b4771621d00b106e4f",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "d9d416701d003ee565169b0235701fcc8468e27c523dfc4dc49f8a508e70f0ae",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "On this machine and the recorded one-million-cell workloads, DEFLATE level 1 median elapsed time was 322 ms numeric and 406 ms mixed versus 955 ms and 981 ms at level 6; level 1 output was 9.62% and 21.63% larger respectively.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    },
+    {
+      "statement": "Across the six warmed compression cases, measured benchmark-process peak working set stayed between 6.28125 MB and 6.32812 MB, so the measured compression-level trade-off changed CPU time and output size without material peak-memory growth on these workloads.",
+      "artifact_paths": ["summary.json"]
+    },
+    {
+      "statement": "All six representative workbooks opened with openpyxl, all runs reported zero active worksheet temporary files after close, and worksheet body buffer peaks stayed below the 262144-byte limit.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    }
+  ]
+}

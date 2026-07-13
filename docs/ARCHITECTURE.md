@@ -31,7 +31,7 @@ In-memory  -> 小文件稀疏随机编辑，再 handoff 给 Patch
 
 - package entry 读取与写入。
 - `[Content_Types].xml`、relationships、part index 和 dependency audit。
-- unchanged part copy-original，changed part rewrite/remove。
+- unchanged part copy-original，changed part rewrite/remove；production minizip-ng 可对 method 匹配的 unchanged entry 从 source file range 复制 exact compressed payload。
 - unknown part 默认保留。
 
 ### 基础设施层
@@ -66,11 +66,13 @@ source XLSX
   -> public edit request
   -> dependency audit + internal EditPlan
   -> compressed strict cell replace: one inflate -> owned temp -> target scan -> file ranges
-  -> copy-original / stream-rewrite / local-DOM-rewrite / remove
+  -> raw compressed-payload copy / logical copy / stream-rewrite / local-DOM-rewrite / remove
   -> save_as(new path)
 ```
 
-`EditPlan` 是 internal traceability，不是 public package mutation surface。Targeted strict replace 的临时文件只保存解压后的 worksheet bytes，再以 direct file ranges replay；fallback 在单次 source-order scan 中完成 cell transform、dimension 与 relationship audit，并以 file ranges + bounded memory dimension chunk staging。两者都不构建 worksheet DOM 或 dense cell map。文件所有权随 staged transaction 发布，失败前由 RAII 清理；后续 rewrite 提交时立即删除不再被 replacement 引用的旧临时文件。Minizip writer 对同路径 ranges 复用输入句柄，file-chunk scratch buffer 也跨 entry 懒分配复用。
+`EditPlan` 是 internal traceability，不是 public package mutation surface。Output plan 只在 production minizip-ng 且 source/output compression method 匹配时为 unchanged entry 选择 raw source descriptor；writer 从 source `data_offset + compressed_size` file range 直接写入 minizip raw entry，并使用 source method/CRC/uncompressed size 完成新 package record。它保留 compressed payload，不复制 local header、central directory、extra fields 或 package layout；rewritten/method-changing/stored 路径仍按 logical payload 编码。
+
+Targeted strict replace 的临时文件只保存解压后的 worksheet bytes，再以 direct file ranges replay；fallback 在单次 source-order scan 中完成 cell transform、dimension 与 relationship audit，并以 file ranges + bounded memory dimension chunk staging。两者都不构建 worksheet DOM 或 dense cell map。文件所有权随 staged transaction 发布，失败前由 RAII 清理；后续 rewrite 提交时立即删除不再被 replacement 引用的旧临时文件。Minizip writer 对同路径 ranges 复用输入句柄，file-chunk scratch buffer 也跨 entry 懒分配复用。
 
 ### In-memory
 

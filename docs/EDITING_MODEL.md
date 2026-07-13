@@ -21,6 +21,7 @@ source package -> part index/relationships -> staged edits -> part-level rewrite
 
 - Public facade 是 `WorkbookEditor`。
 - Unchanged/unknown part 默认 copy-original。
+- Production minizip-ng 且 source/output compression method 匹配时，unchanged entry 直接复制 exact compressed payload；stored bootstrap、method-changing 与 changed entries 走 logical/encoding 路径。该优化不保留完整 ZIP record 或 package layout。
 - Changed part 选择 stream rewrite、small-part rewrite 或 remove。
 - Relationship-free DEFLATE worksheet 的 strict existing-cell replace 可走 one-inflate target-only direct-range：解压后的 worksheet 放在 owned temporary file，未触碰 XML 以 file ranges replay，replacement payload 使用小型 memory chunks。
 - Missing-cell upsert、relationship-bearing worksheet 与其他 direct-range 不适用场景走 single-pass source-order transform：一次扫描完成 replacement/insertion、精确 dimension、relationship audit 和 telemetry，输出由 transformed temporary file ranges 与 bounded dimension memory chunk 组成。该路径同样不物化 DOM/dense matrix，但仍重写完整 worksheet part。

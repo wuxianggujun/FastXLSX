@@ -26,7 +26,7 @@
 - 支持 sheet catalog 查询、`replace_sheet_data()`、targeted cell patch、窄 sheet rename、formula audit/recalculation request、core/app document properties rewrite 和已有 PNG/JPEG media bytes replacement。
 - 未修改和未知 package part 默认 copy-original；修改 part 才 rewrite/remove。
 - `save_as()` 不覆盖 source，也不承诺 atomic in-place save。无 options overload 为兼容保留 stored output；显式 save options 的 `0` 为 stored、`-1` 为 active backend default、`1..9` 为 minizip-ng DEFLATE。无效/不可用配置在 dirty session staging 前失败并保留 retry 状态。
-- Copy-original 保留的是 logical entry payload/CRC；compressed output 可重新压缩未修改 entry，不保证 source/output ZIP-local compressed bytes 相同。
+- Production minizip-ng 输出对 source/output compression method 匹配的未修改 entry 使用 raw compressed-payload copy，并保留 exact source compressed payload bytes、logical size 与 CRC；不同 DEFLATE level 仍是 method 匹配，因此请求 level 只重新编码 rewritten/generated entries。该路径不复制 source local header、central-directory record、extra fields 或整包布局，也不会仅为重新校验 unchanged payload CRC 而 inflate；损坏的未读取 source payload 会按 preservation 语义原样保留。Stored bootstrap、method-changing save 和 rewritten entry 走既有 logical/encoding 路径。
 - `has_pending_changes()` 表示 retained staged state；成功保存后仍可为 true。
 - `has_unsaved_changes()` / `unsaved_change_count()` 表示相对最近一次成功 `save_as()` 的 watermark；成功保存清零，失败 edit/save 不改变。
 - Dirty In-memory session 在 package write 前 stage 到 Patch plan，但只在输出成功后提交 handoff 并清除 dirty；写出失败保留 session diagnostics/counts，retry 会用当前值覆盖失败尝试留下的 stale internal projection。
@@ -89,8 +89,9 @@
 
 ## Performance Evidence
 
-- tracked benchmark evidence 机制已建立；当前有 3 个 production Streaming bundle、3 个 production Patch bundle 与 1 个 OpenXLSX reference bundle。最新 schema-v5 Streaming/Patch 矩阵和 reference numeric/mixed 主场景均使用 1 次 warm-up + 3 次 measured run，并记录 process peak working set、输出大小与 openpyxl 代表输出验证；它们只支持 manifest 限定的单机同数据集结论。
-- 最新 schema-v5 Patch 矩阵的 targeted replace total/mutation median 为 1844/596 ms、peak 为 8.41406 MB；single-pass targeted upsert 为 3821/2327 ms、peak 为 8.55078 MB，相对同协议旧 upsert 的 total/mutation 降低约 12.2%/21.6%。两条路径仍重写约 34.9 MB logical worksheet XML，不是大文件任意随机编辑承诺。
+- tracked benchmark evidence 机制已建立；当前有 4 个 production Streaming bundle、4 个 production Patch bundle 与 1 个 OpenXLSX reference bundle。每个 bundle 只支持 manifest 限定的单机同数据集结论，warm-up/measured 次数以各自 run context 为准。
+- 最新 compression profile 在同机 1,000,000-cell numeric/mixed InlineString workload 中，Streaming level 1 median 为 322/406 ms、level 6 为 955/981 ms；level 1 输出增大 9.62%/21.63%，全部 measured process peak working set 为 6.28125–6.32812 MB。该结论不泛化到其他数据分布。
+- 最新 Patch raw-copy profile 中，no-op save raw-copy 7 个 entry / 3,128,791 compressed bytes，level 1/3/6 median save 为 19/21/25 ms；document-properties save raw-copy 5 个 entry / 3,128,295 bytes 并重写 1,039 logical bytes，median save 为 15/24/41 ms。Targeted replace/upsert 仍重写约 34.9 MB logical worksheet XML；level 1/6 median save 为 221/1157 ms 与 302/1128 ms，不是大文件任意随机编辑承诺。
 - 同机 1,000,000-cell numeric/mixed public writer workload 中，FastXLSX Streaming median 为 1583/1248 ms 与 6.87109/6.88672 MB peak working set，OpenXLSX 0.4.1 workbook API 为 3180/3292 ms 与 395.258/403.957 MB。该证据只说明两个已记录 workload 的 2.01×/2.64×吞吐比，不形成全功能或跨机器“总体超越”承诺。
 
 ## Planned

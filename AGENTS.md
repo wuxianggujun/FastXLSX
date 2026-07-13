@@ -16,7 +16,7 @@ FastXLSX 是 C++20 / MSVC 2026 优先的 XLSX 创建与编辑库，公开 Stream
 ## 当前关键契约
 
 - Production/default profile 启用 minizip-ng，支持 stored + DEFLATE package；`windows-nmake-release-stored` 才是 stored-only bootstrap。
-- `save_as()` 写新路径，不是 atomic in-place save；无 options overload 保留 stored 输出，`WorkbookEditorSaveOptions` 才显式选择 active backend/DEFLATE。Copy-original 保留 logical payload/CRC，不等于 raw compressed-byte passthrough。
+- `save_as()` 写新路径，不是 atomic in-place save；无 options overload 保留 stored 输出，`WorkbookEditorSaveOptions` 才显式选择 active backend/DEFLATE。Production minizip-ng 对 method 匹配的 unchanged entry 复制 exact compressed payload；它不复制 local header、central directory、extra fields 或整包布局。Rewritten/method-changing/stored 路径正常编码。
 - `has_pending_changes()` 表示 retained staged state；`has_unsaved_changes()` 表示最近成功保存后的 watermark delta。
 - Dirty In-memory session 使用 stage → package write → state commit；写出失败必须保留 dirty diagnostics、pending/unsaved count 和 retry 能力。
 - `WorksheetEditorOptions` 默认 `RejectKnownLosses`；rich/phonetic/extension、formula metadata、cached result 等已知损失抛 `WorksheetMaterializationError`，提供稳定 category 与 worksheet/cell/sharedStrings context。只有显式 `AllowLossyProjection` 才能拍平，且 policy 是 session identity 的一部分。
@@ -61,7 +61,7 @@ Stored bootstrap：`windows-nmake-release-stored`。No-images：`windows-nmake-r
 - In-memory：typed strict diagnostics、explicit lossy、generic policy mismatch、guardrail、no-state-pollution、two-phase save handoff、post-stage failure retry、move/handle lifecycle。
 - Streaming：row order、无 DOM/dense matrix、package side effects。
 - CTest 普通上限 60 秒；public-state 测试已全部拆为 standalone targets，不再保留专用 120 秒 legacy shard。
-- Benchmark：只有 `benchmarks/evidence/` 中通过 validator 的 bundle 可用于 release claim；当前有 3 个 production Streaming bundle、3 个 Patch bundle 与 1 个 OpenXLSX reference bundle，均只支持各自 manifest 限定的单机 workload 结论。Patch copy-original 是 logical/CRC preservation，不等于 raw compressed-byte passthrough。Strict targeted replace 使用 one-inflate direct-range；missing-cell upsert、relationship-bearing worksheet 与其他 fallback 使用 single-pass source-order transform。当前 executable schema 为 v5；同机 numeric/mixed reference 只支持所记录 workload 的 2.01×/2.64×吞吐比，不得泛化为全功能胜出。
+- Benchmark：只有 `benchmarks/evidence/` 中通过 validator 的 bundle 可用于 release claim；当前有 4 个 production Streaming bundle、4 个 Patch bundle 与 1 个 OpenXLSX reference bundle，均只支持各自 manifest 限定的单机 workload 结论。Patch matrix 对 planned raw-copy entry 验证 exact compressed payload，并分列 names/count/bytes；不得扩大为完整 ZIP record passthrough。Strict targeted replace 使用 one-inflate direct-range；missing-cell upsert、relationship-bearing worksheet 与其他 fallback 使用 single-pass source-order transform。当前 executable schema 为 v5；同机 numeric/mixed reference 只支持所记录 workload 的 2.01×/2.64×吞吐比，不得泛化为全功能胜出。
 - 文档：Markdown links、UTF-8/LF、deleted-doc refs、high-risk wording、`git diff --check`。
 
 ## 项目 Skills

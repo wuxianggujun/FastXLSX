@@ -6,7 +6,7 @@
 
 ## 默认策略
 
-- 未修改 part：`copy-original`。
+- 未修改 part：`copy-original`；production minizip-ng method 匹配时复制 exact compressed payload，否则复制 logical payload。
 - 未知 part：默认保留。
 - 修改 part：按 internal plan 执行 stream/local-DOM rewrite 或 remove。
 - 受影响但无安全语义编辑能力的对象：audit 或 fail-before-state-change。
@@ -30,7 +30,7 @@
 
 ## 必测不变量
 
-- Source ZIP entry bytes 或语义结构按策略保留。
+- Source logical payload/CRC 必须按策略保留；计划为 raw-copy 的 entry 还必须验证 exact compressed payload bytes，不能把它扩大为 local header、central directory 或整包布局保留。
 - Relationship target、type、target mode 和 content type 没有意外变化。
 - 删除或替换操作不会留下明显 dangling relationship/orphan part；未实现自动清理时应 audit/fail。
 - 跨 edit plan、replacement、omitted entry、content type 和 manifest 的 mutation 必须先 staging；提交前失败保持调用前输出计划并允许 retry。

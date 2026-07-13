@@ -104,6 +104,8 @@ struct WorkbookEditorSaveOptions {
     /// compression method matches the requested output method are copied as raw
     /// compressed payloads. Rewritten entries and method-changing saves are
     /// encoded normally. Stored-bootstrap output keeps the logical copy path.
+    /// Raw copy preserves the compressed payload, not source ZIP headers,
+    /// central-directory records, extra fields, or complete package layout.
     int zip_compression_level = 0;
 };
 

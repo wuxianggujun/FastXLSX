@@ -1,0 +1,44 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-13-windows-msvc-patch-raw-copy-profile",
+  "created_utc": "2026-07-13T06:10:00Z",
+  "git_revision": "fbf569b5d2e72fec7aed5c3b517ce91d17c7a320",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "summary.json",
+      "sha256": "5e425478589b336318f98911727057b9f621d3eaa64db2d78712c49d49348af0",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "c3f4aad07306191961ddb76106bc9f909874a2eb85f9fce2aa251d8016aeea0e",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "On this machine and the recorded no-op Patch workload, seven unchanged entries totaling 3128791 compressed bytes were raw-copied exactly; median save time was 19/21/25 ms for requested DEFLATE levels 1/3/6 and output size remained 3129601 bytes.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    },
+    {
+      "statement": "For document-properties Patch, five unchanged entries totaling 3128295 compressed bytes were raw-copied while 1039 logical bytes were rewritten; median save time was 15/24/41 ms at levels 1/3/6.",
+      "artifact_paths": ["summary.json"]
+    },
+    {
+      "statement": "For full worksheet rewrite, level 1 versus level 6 reduced median save time from 1157 ms to 221 ms for targeted replace and from 1128 ms to 302 ms for upsert, while output grew by 9.68% and 9.73% on these workloads.",
+      "artifact_paths": ["summary.json"]
+    },
+    {
+      "statement": "The matrix runner verified exact compressed-payload equality for every planned raw-copy entry, and all twelve representative level/scenario outputs opened with openpyxl.",
+      "artifact_paths": ["summary.json", "run-context.json"]
+    }
+  ]
+}

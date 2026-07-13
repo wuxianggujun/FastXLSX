@@ -1,0 +1,14 @@
+{
+  "run_context_schema_version": "1",
+  "measured_utc": "2026-07-13T06:10:00Z",
+  "git_revision": "fbf569b5d2e72fec7aed5c3b517ce91d17c7a320",
+  "working_tree": "clean implementation commit during final profiling",
+  "benchmark_build_preset": "windows-nmake-release-benchmark",
+  "performance_command": "py -3 tools/run_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_streaming_writer.exe --output-dir build/qa/zip-raw-copy-compression-profile-final/streaming-warmed-repeat --rows 100000 --cols 10 --case numeric:inline:mixed --case mixed:inline:mixed --compression-level 1 --compression-level 3 --compression-level 6 --warmup-runs 2 --measured-runs 5",
+  "compatibility_command": "py -3 tools/run_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_streaming_writer.exe --output-dir build/qa/zip-raw-copy-compression-profile-final/streaming --rows 100000 --cols 10 --case numeric:inline:mixed --case mixed:inline:mixed --compression-level 1 --compression-level 3 --compression-level 6 --warmup-runs 1 --measured-runs 3 --verify-openpyxl",
+  "protocol": "Performance claims use two warm-up runs followed by five measured process runs per case. A separate same-revision pass verified one representative output per case with openpyxl. A preliminary cold/scan-affected performance pass is excluded from the recorded medians.",
+  "peak_memory_metric": "Windows PROCESS_MEMORY_COUNTERS.PeakWorkingSetSize for each benchmark process",
+  "resource_metrics": "Worksheet body pending-buffer high-water mark, flush count, temporary worksheet-part footprint, and active worksheet temporary-file count after successful close",
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine, two one-million-cell InlineString workloads, and DEFLATE levels 1/3/6. No cross-machine or arbitrary-workload claim."
+}

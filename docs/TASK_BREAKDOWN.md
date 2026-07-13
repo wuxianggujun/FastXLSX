@@ -33,18 +33,19 @@
 
 ## C5 Large Worksheet Rewrite
 
-- 先建立 source-order transform contract、支持/拒绝的 worksheet metadata 清单和 failure-before-state-change 语义，再公开 file-backed/chunked rewrite；不要先承诺任意随机编辑。
-- 用实际大型 worksheet fixture 验证 rewritten bytes、temporary footprint、process peak working set、retry 和 unknown-part preservation。
+- 维护现有 one-inflate direct-range 与 single-pass source-order transform 的支持/拒绝 metadata 清单、failure-before-state-change、dimension 和 relationship audit 契约；新增 worksheet metadata 前先扩展 audit/fail 边界。
+- 下一实现批次聚焦完整 worksheet rewrite 的 scan/chunk/recompression 热路径，要求保持 exact output、retry、unknown-part preservation 和 temporary-file ownership，不把顺序 rewrite 包装成任意随机编辑。
+- 用更大规模和多数据分布 worksheet fixture 验证 rewritten bytes、temporary footprint、process peak working set、retry 和 unknown-part preservation。
 - 不通过完整 worksheet DOM、dense cell map 或扩大 In-memory guardrail 实现。
 
 ## C6 Performance / Release Evidence
 
 - Streaming 重复策略矩阵已形成同机比较基线；继续补不同数据规模/机器证据前，不把 1,000,000-cell Windows/MSVC 结果泛化。
-- 继续评估 no-op/metadata copy-original 的 raw compressed-entry passthrough；当前仍是 logical payload/CRC preservation + output recompression，不得写成 raw ZIP copy。
+- Production minizip-ng 已实现 method-matching unchanged entry 的 raw compressed-payload copy；继续维护 exact compressed bytes、logical payload/CRC、unknown-part preservation、method-changing fallback、stored profile 与失败输出不污染回归。不得写成 local-header/central-directory/整包 byte passthrough。
 - Targeted strict replace 已采用 DEFLATE one-inflate + target-only direct-range staging；missing-cell upsert、relationship-bearing worksheet 与其他 fallback 已改为 single-pass source-order transform，并保持精确 dimension、relationship audit、retry 与 bounded memory 语义。
-- Schema-v5 Streaming/Patch 大型矩阵与同机 OpenXLSX 0.4.1 reference numeric/mixed 对比已形成 validated evidence；当前瓶颈已收敛到 Streaming package close/DEFLATE，以及 Patch 完整 worksheet transform/recompression。
-- 下一阶段优先做可替换 ZIP backend/raw compressed-entry copy feasibility 与 compression-level/throughput 曲线；只有在 CRC、logical payload、unknown-part preservation 和输出兼容性门禁不退化时才进入实现。
-- 后续 raw-copy 或热路径优化必须复跑相同矩阵并验证 CRC/logical preservation、unknown parts、输出压缩方法、openpyxl、失败 retry 与临时资源回收；不以单次局部计时替代 bundle。
+- Compression profile 已验证 level 1 在当前 numeric/mixed Streaming 和完整 worksheet rewrite workload 上以约 9.6%–21.6% 输出增长换取更低 save/close CPU；保持 level 选择由 caller 显式控制，不根据单一数据集静默更改 public 默认值。
+- **下一优先级**：针对仍需重写约 34.9 MB worksheet XML 的 replace/upsert，分别 profile source XML scan、temporary-file IO、chunk assembly 与 DEFLATE encode；先优化占主导的 transform/recompression 热点，再评估替换 compression backend、并行压缩或更大 buffer，禁止无证据并行化。
+- 为 Streaming/Patch 增加至少一个更大规模和一台不同机器的 validated bundle；记录冷热启动差异，release claim 使用 warmed repeated protocol，不以单次局部计时替代 bundle。
 - 新 bundle 继续提交 machine-readable artifacts、environment、hash、验证状态和 claim-to-artifact 映射；Office 未运行必须保持 `not_run`。
 - 性能结论必须满足 `PERFORMANCE_TARGETS.md`。
 

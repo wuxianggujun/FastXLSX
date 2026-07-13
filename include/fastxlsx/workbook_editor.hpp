@@ -719,6 +719,39 @@ public:
     /// behavior, guardrails, diagnostics, and non-goals are identical.
     void append_row(std::initializer_list<CellValue> values);
 
+    /// Appends one sparse column after the current maximum represented column.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The appended
+    /// column is derived from the materialized sparse store, not from worksheet
+    /// column metadata: if the store is empty, values are written to column 1;
+    /// otherwise they are written to `max(represented column) + 1`. Values are
+    /// written to rows 1..N in input order. Empty input is a successful no-op
+    /// that does not create column metadata, does not dirty the materialized
+    /// session, and clears prior public edit diagnostics.
+    ///
+    /// The entire append is preflighted and staged. Explicit default StyleId{0}
+    /// handles are normalized to no style handle and do not serialize as
+    /// `s="0"`. More than 1,048,576 values, appending past Excel column 16,384,
+    /// caller-supplied non-default StyleId handles, max_cells violations, or
+    /// memory_budget_bytes violations reject the append before the active sparse
+    /// store is mutated. Explicit CellValue::blank() values are represented as
+    /// blank cells in the appended column and are subject to the same sparse-store
+    /// guardrails. Appended records are new sparse cells: they do not inherit
+    /// source StyleId handles from prior columns, and no style metadata is
+    /// synthesized.
+    ///
+    /// This is not column insertion, column metadata creation, table/range
+    /// metadata recalculation, style migration/merge, sharedStrings migration,
+    /// or a large-file low-memory random-editing path.
+    void append_column(std::span<const CellValue> values);
+
+    /// Appends one sparse column from a small literal value list.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so column selection, empty-input
+    /// no-op behavior, guardrails, diagnostics, and non-goals are identical.
+    void append_column(std::initializer_list<CellValue> values);
+
     /// Replaces one represented sparse row.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. The row is

@@ -263,6 +263,73 @@ void WorksheetEditor::append_row(std::initializer_list<CellValue> values)
     append_row(std::span<const CellValue>(values.begin(), values.size()));
 }
 
+void WorksheetEditor::append_column(std::span<const CellValue> values)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        if (values.size() > static_cast<std::size_t>(max_excel_rows)) {
+            throw FastXlsxError(
+                "WorksheetEditor::append_column() cannot append more than 1048576 cells");
+        }
+        for (const CellValue& value : values) {
+            if (has_non_default_style(value)) {
+                throw FastXlsxError(
+                    "WorksheetEditor::append_column() does not support non-default StyleId values");
+            }
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+        if (values.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        const detail::CellStore& current_store = session->store();
+        std::uint32_t append_column = 1;
+        if (!current_store.empty()) {
+            std::uint32_t last_column = 0;
+            for (const auto& [position, record] : current_store.records()) {
+                (void)record;
+                if (position.column > last_column) {
+                    last_column = position.column;
+                }
+            }
+            if (last_column >= max_excel_columns) {
+                throw FastXlsxError(
+                    "WorksheetEditor::append_column() cannot append past Excel column 16384");
+            }
+            append_column = last_column + 1U;
+        }
+
+        std::vector<detail::CellStoreUpdate> updates;
+        updates.reserve(values.size());
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            updates.push_back(detail::CellStoreUpdate {
+                detail::CellPosition {
+                    static_cast<std::uint32_t>(index + 1U),
+                    append_column,
+                },
+                &values[index],
+            });
+        }
+
+        session->set_cells(updates);
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::append_column(std::initializer_list<CellValue> values)
+{
+    append_column(std::span<const CellValue>(values.begin(), values.size()));
+}
+
 void WorksheetEditor::set_row(std::uint32_t row, std::span<const CellValue> values)
 {
     WorkbookEditor::Impl& state = *owner().impl_;

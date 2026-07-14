@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "5"
+BENCHMARK_SCHEMA_VERSION = "6"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -46,6 +46,10 @@ METRICS = [
     "single_pass_source_coalesced_output_event_count",
     "single_pass_transform_action_callback_count",
     "single_pass_relationship_scan_us",
+    "single_pass_relationship_scan_input_call_count",
+    "single_pass_relationship_scan_input_bytes",
+    "single_pass_relationship_scan_boundary_carry_count",
+    "single_pass_relationship_scan_slow_path_tag_count",
     "single_pass_temporary_write_us",
     "single_pass_output_append_call_count",
     "single_pass_output_flush_count",
@@ -354,6 +358,26 @@ def verify_result(
         require(
             0 < int(result.get("single_pass_output_peak_buffer_bytes")) <= 256 * 1024,
             "patch-upsert output buffer peak should stay within 256 KiB",
+        )
+        require(
+            int(result.get("single_pass_relationship_scan_input_call_count"))
+            <= int(result.get("single_pass_output_flush_count")),
+            "patch-upsert relationship scanner batches should fit output flushes",
+        )
+        require(
+            0 < int(result.get("single_pass_relationship_scan_input_bytes"))
+            < int(result.get("single_pass_staged_output_bytes")),
+            "patch-upsert relationship scanner should skip cell XML",
+        )
+        require(
+            int(result.get("single_pass_relationship_scan_boundary_carry_count"))
+            <= int(result.get("single_pass_relationship_scan_input_call_count")),
+            "patch-upsert relationship scanner boundary carries should fit input calls",
+        )
+        require(
+            int(result.get("single_pass_relationship_scan_slow_path_tag_count"))
+            < int(result.get("single_pass_scanned_source_cell_count")),
+            "patch-upsert relationship scanner should limit attribute slow paths",
         )
         measured_sink_us = (
             int(result.get("single_pass_relationship_scan_us"))
@@ -732,6 +756,10 @@ def run_self_test() -> None:
                 "single_pass_source_coalesced_output_event_count": 100,
                 "single_pass_transform_action_callback_count": 200,
                 "single_pass_relationship_scan_us": 200,
+                "single_pass_relationship_scan_input_call_count": 1,
+                "single_pass_relationship_scan_input_bytes": 100000,
+                "single_pass_relationship_scan_boundary_carry_count": 1,
+                "single_pass_relationship_scan_slow_path_tag_count": 2,
                 "single_pass_temporary_write_us": 100,
                 "single_pass_output_append_call_count": 100,
                 "single_pass_output_flush_count": 2,

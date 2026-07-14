@@ -686,6 +686,57 @@ public:
     /// non-goals are identical.
     void set_cells(std::initializer_list<WorksheetCellUpdate> cells);
 
+    /// Replaces every cell in one rectangular range from row-major values.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. `range` is
+    /// 1-based and inclusive. The value count must equal
+    /// `range height * range width`; values map left-to-right across each row,
+    /// then top-to-bottom across rows. A single-cell range therefore requires
+    /// exactly one value. The input is consumed synchronously and is not retained.
+    /// Explicit CellValue::blank() values create represented blank records, so
+    /// this dense write is still governed by the materialized sparse store
+    /// max_cells and memory_budget_bytes guardrails.
+    ///
+    /// This is full-cell replacement. Explicit default StyleId{0} handles are
+    /// normalized to no style handle, existing target styles are dropped, and
+    /// caller-supplied non-default StyleId handles are rejected. Formula text is
+    /// stored literally; it is not translated, evaluated, or given a cached
+    /// result. Invalid/reversed ranges, value-count mismatch, unsupported styles,
+    /// or guardrail failures reject the entire write before the active CellStore
+    /// is mutated. A final range whose normalized records all equal the active
+    /// records is a successful clean no-op and clears prior public diagnostics.
+    ///
+    /// This does not edit row/column metadata, tables, merged cells, validations,
+    /// conditional formatting, hyperlinks, drawings, relationships, styles.xml,
+    /// sharedStrings metadata, or calcChain. It is not a streaming or large-file
+    /// low-memory random-editing path.
+    void set_range(CellRange range, std::span<const CellValue> values);
+
+    /// Replaces one rectangular range from a small row-major literal list.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so exact-size validation, full-cell
+    /// style semantics, guardrails, diagnostics, and non-goals are identical.
+    void set_range(CellRange range, std::initializer_list<CellValue> values);
+
+    /// Replaces every cell in a strict uppercase A1 rectangular range.
+    ///
+    /// The reference accepts one cell (`B2`) or one inclusive range (`B2:D4`).
+    /// Lowercase, absolute, sheet-qualified, whole-row/column, reversed,
+    /// multi-area, malformed, and out-of-bounds references are rejected before
+    /// mutation. Row-major mapping, exact-size validation, full-cell style
+    /// replacement, formula, guardrail, diagnostics, and non-goal behavior match
+    /// the CellRange overload.
+    void set_range(
+        std::string_view range_reference, std::span<const CellValue> values);
+
+    /// Replaces one strict uppercase A1 range from a small row-major literal list.
+    ///
+    /// This overload consumes the initializer-list synchronously and delegates
+    /// through the A1/span overload.
+    void set_range(std::string_view range_reference,
+        std::initializer_list<CellValue> values);
+
     /// Appends one sparse row after the current maximum represented row.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. The appended

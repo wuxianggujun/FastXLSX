@@ -8,11 +8,13 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
 #include <iostream>
 #include <map>
+#include <numeric>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -2348,6 +2350,34 @@ void test_relationship_reference_scanner_streams_retained_tag_before_long_ignore
         "relationship scanner should skip fake ids inside following ignored markup");
 }
 
+void test_prevalidated_relationship_reference_scanner_limits_attribute_slow_paths()
+{
+    const std::array<std::string_view, 3> chunks {
+        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><wrapper xmlns:r="urn:not-office-relationships"><hyper)",
+        R"(link ref="A1" r:id="rIdWrong"/></wrapper><hyperlinks><hyperlink ref="B1" r:)",
+        R"(id='rIdGood'/></hyperlinks></worksheet>)",
+    };
+    const auto scan_result = fastxlsx::detail::
+        testing_scan_prevalidated_worksheet_relationship_references_from_chunks(chunks);
+
+    check(scan_result.elements == std::vector<std::string> {"hyperlink"},
+        "prevalidated relationship scanner should preserve namespace shadowing");
+    check(scan_result.relationship_ids == std::vector<std::string> {"rIdGood"},
+        "prevalidated relationship scanner should accept single-quoted relationship ids");
+    check(scan_result.input_call_count == chunks.size(),
+        "prevalidated relationship scanner input call telemetry mismatch");
+    check(scan_result.input_bytes
+            == std::accumulate(chunks.begin(), chunks.end(), std::uint64_t {0},
+                [](std::uint64_t total, std::string_view chunk) {
+                    return total + static_cast<std::uint64_t>(chunk.size());
+                }),
+        "prevalidated relationship scanner input byte telemetry mismatch");
+    check(scan_result.boundary_carry_count == 2,
+        "prevalidated relationship scanner should report both split-tag carries");
+    check(scan_result.slow_path_tag_count == 4,
+        "prevalidated relationship scanner should only parse namespace and relationship tags");
+}
+
 void test_package_entry_chunk_reader_rejects_stale_memory_chunk_size()
 {
     const std::string valid_payload = "memory-staged-payload";
@@ -2585,6 +2615,10 @@ int main(int argc, char* argv[])
             test_package_editor_worksheet_cell_replacement_preserves_linked_object_parts();
             test_package_editor_worksheet_cell_replacement_skips_old_target_cell_payload_audit();
             test_package_editor_worksheet_cell_replacement_audits_replacement_payload_policy();
+            test_replacement_cell_payload_scanner_streams_long_ignored_markup_chunks();
+            test_sheet_data_start_tag_scanner_streams_long_ignored_markup_chunks();
+            test_relationship_reference_scanner_streams_retained_tag_before_long_ignored_markup();
+            test_prevalidated_relationship_reference_scanner_limits_attribute_slow_paths();
         }
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

@@ -35,7 +35,7 @@ namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
-constexpr std::string_view kEditorBenchmarkSchemaVersion = "5";
+constexpr std::string_view kEditorBenchmarkSchemaVersion = "6";
 
 std::filesystem::path default_output_dir()
 {
@@ -111,6 +111,10 @@ struct RunStats {
     std::uint64_t single_pass_output_flush_count = 0;
     std::uint64_t single_pass_output_peak_buffer_bytes = 0;
     std::uint64_t single_pass_relationship_scan_us = 0;
+    std::uint64_t single_pass_relationship_scan_input_call_count = 0;
+    std::uint64_t single_pass_relationship_scan_input_bytes = 0;
+    std::uint64_t single_pass_relationship_scan_boundary_carry_count = 0;
+    std::uint64_t single_pass_relationship_scan_slow_path_tag_count = 0;
     std::uint64_t single_pass_temporary_write_us = 0;
     std::uint64_t single_pass_commit_ms = 0;
     std::uint64_t package_writer_total_us = 0;
@@ -673,6 +677,14 @@ void observe_output_plan(
                 entry.single_pass_output_peak_buffer_bytes;
             stats.single_pass_relationship_scan_us =
                 entry.single_pass_relationship_scan_us;
+            stats.single_pass_relationship_scan_input_call_count =
+                entry.single_pass_relationship_scan_input_call_count;
+            stats.single_pass_relationship_scan_input_bytes =
+                entry.single_pass_relationship_scan_input_bytes;
+            stats.single_pass_relationship_scan_boundary_carry_count =
+                entry.single_pass_relationship_scan_boundary_carry_count;
+            stats.single_pass_relationship_scan_slow_path_tag_count =
+                entry.single_pass_relationship_scan_slow_path_tag_count;
             stats.single_pass_temporary_write_us =
                 entry.single_pass_temporary_write_us;
             const std::uint64_t measured_sink_us =
@@ -821,6 +833,14 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.single_pass_output_peak_buffer_bytes << ",\n";
     out << "  \"single_pass_relationship_scan_us\": "
         << stats.single_pass_relationship_scan_us << ",\n";
+    out << "  \"single_pass_relationship_scan_input_call_count\": "
+        << stats.single_pass_relationship_scan_input_call_count << ",\n";
+    out << "  \"single_pass_relationship_scan_input_bytes\": "
+        << stats.single_pass_relationship_scan_input_bytes << ",\n";
+    out << "  \"single_pass_relationship_scan_boundary_carry_count\": "
+        << stats.single_pass_relationship_scan_boundary_carry_count << ",\n";
+    out << "  \"single_pass_relationship_scan_slow_path_tag_count\": "
+        << stats.single_pass_relationship_scan_slow_path_tag_count << ",\n";
     out << "  \"single_pass_temporary_write_us\": "
         << stats.single_pass_temporary_write_us << ",\n";
     out << "  \"single_pass_commit_ms\": "

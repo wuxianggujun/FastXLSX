@@ -14,6 +14,12 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
 #include <mz.h>
 #include <mz_strm.h>
@@ -23,23 +29,70 @@
 
 namespace fastxlsx::test {
 
-// Directory for all test-generated artifacts (xlsx, png, bin, ...).
-// Routed to a dedicated subdirectory under the system temp path so that
-// running test executables directly (current_path() == repo root) does not
-// litter the project tree. Created on first use.
-inline const std::filesystem::path& artifact_dir()
+inline std::uint64_t artifact_process_id() noexcept
 {
-    static const std::filesystem::path dir = [] {
+#ifdef _WIN32
+    return static_cast<std::uint64_t>(_getpid());
+#else
+    return static_cast<std::uint64_t>(getpid());
+#endif
+}
+
+class TestArtifactDirectory {
+public:
+    TestArtifactDirectory()
+    {
         std::error_code ec;
         std::filesystem::path base = std::filesystem::temp_directory_path(ec);
         if (ec) {
-            base = std::filesystem::current_path();
+            ec.clear();
+            base = std::filesystem::current_path(ec);
         }
-        std::filesystem::path path = base / "fastxlsx-test-artifacts";
-        std::filesystem::create_directories(path, ec);
-        return path;
-    }();
-    return dir;
+
+        root_ = base / "fastxlsx-test-artifacts";
+        path_ = root_ / ("process-" + std::to_string(artifact_process_id()));
+
+        // A crashed process can leave its PID directory behind. PID reuse must
+        // not expose stale workbooks to a later test executable.
+        std::filesystem::remove_all(path_, ec);
+        ec.clear();
+        std::filesystem::create_directories(path_, ec);
+        if (ec) {
+            throw std::runtime_error(
+                "failed to create isolated test artifact directory: "
+                + path_.string() + ": " + ec.message());
+        }
+    }
+
+    ~TestArtifactDirectory() noexcept
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(path_, ec);
+        ec.clear();
+        std::filesystem::remove(root_, ec);
+    }
+
+    TestArtifactDirectory(const TestArtifactDirectory&) = delete;
+    TestArtifactDirectory& operator=(const TestArtifactDirectory&) = delete;
+
+    [[nodiscard]] const std::filesystem::path& path() const noexcept
+    {
+        return path_;
+    }
+
+private:
+    std::filesystem::path root_;
+    std::filesystem::path path_;
+};
+
+// Each test process receives an isolated directory for generated artifacts
+// (xlsx, png, bin, ...). The directory is removed at normal process exit so a
+// full CTest run does not accumulate thousands of files or share names between
+// independently scheduled executables.
+inline const std::filesystem::path& artifact_dir()
+{
+    static const TestArtifactDirectory directory;
+    return directory.path();
 }
 
 // Resolve a test artifact path by file name inside artifact_dir().

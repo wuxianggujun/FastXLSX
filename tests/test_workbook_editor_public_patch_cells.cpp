@@ -431,6 +431,17 @@ void test_replace_cells_keeps_transformer_for_worksheet_relationships()
             "relationship-bearing replace_cells should still use staged rewrite output");
         check(!data_sheet_plan->materialized_replacement,
             "relationship-bearing replace_cells should not materialize the rewritten worksheet");
+        check(data_sheet_plan->single_pass_worksheet_transform,
+            "relationship-bearing replace_cells should expose single-pass telemetry");
+        check(data_sheet_plan->single_pass_relationship_scan_input_call_count
+                <= data_sheet_plan->single_pass_output_flush_count,
+            "relationship-bearing replace_cells scanner batches should fit output flushes");
+        check(data_sheet_plan->single_pass_relationship_scan_input_bytes > 0
+                && data_sheet_plan->single_pass_relationship_scan_input_bytes
+                    < data_sheet_plan->single_pass_staged_output_bytes,
+            "relationship-bearing replace_cells should scan metadata instead of cell XML");
+        check(data_sheet_plan->single_pass_relationship_scan_slow_path_tag_count >= 2,
+            "relationship-bearing replace_cells should inspect root namespace and hyperlink tags");
     }
 
     editor.save_as(output);
@@ -635,6 +646,19 @@ void test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells
         check(data_sheet_plan->single_pass_output_peak_buffer_bytes > 0
                 && data_sheet_plan->single_pass_output_peak_buffer_bytes <= 256U * 1024U,
             "replace_cells Insert policy output buffer should stay within 256 KiB");
+        check(data_sheet_plan->single_pass_relationship_scan_input_call_count
+                <= data_sheet_plan->single_pass_output_flush_count,
+            "replace_cells Insert policy scanner batches should fit output flushes");
+        check(data_sheet_plan->single_pass_relationship_scan_input_bytes > 0
+                && data_sheet_plan->single_pass_relationship_scan_input_bytes
+                    < data_sheet_plan->single_pass_staged_output_bytes,
+            "replace_cells Insert policy should scan metadata instead of cell XML");
+        check(data_sheet_plan->single_pass_relationship_scan_boundary_carry_count
+                <= data_sheet_plan->single_pass_relationship_scan_input_call_count,
+            "replace_cells Insert policy scanner carries should fit input calls");
+        check(data_sheet_plan->single_pass_relationship_scan_slow_path_tag_count
+                < data_sheet_plan->single_pass_scanned_source_cell_count,
+            "replace_cells Insert policy should limit relationship attribute slow paths");
         check(data_sheet_plan->single_pass_relationship_scan_us
                     + data_sheet_plan->single_pass_temporary_write_us
                 <= data_sheet_plan->single_pass_transform_us,

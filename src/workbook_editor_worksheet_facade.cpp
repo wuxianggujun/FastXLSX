@@ -202,6 +202,87 @@ void WorksheetEditor::set_cells(std::initializer_list<WorksheetCellUpdate> cells
     set_cells(std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
 }
 
+void WorksheetEditor::set_range(
+    CellRange range, std::span<const CellValue> values)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_range(range);
+        const std::uint64_t row_count =
+            static_cast<std::uint64_t>(range.last_row) - range.first_row + 1U;
+        const std::uint64_t column_count =
+            static_cast<std::uint64_t>(range.last_column) - range.first_column + 1U;
+        const std::uint64_t expected_value_count = row_count * column_count;
+        if (expected_value_count != static_cast<std::uint64_t>(values.size())) {
+            throw FastXlsxError(
+                "WorksheetEditor::set_range() value count does not match range area: expected "
+                + std::to_string(expected_value_count) + ", received "
+                + std::to_string(values.size()));
+        }
+        for (const CellValue& value : values) {
+            if (has_non_default_style(value)) {
+                throw FastXlsxError(
+                    "WorksheetEditor::set_range() does not support non-default StyleId values");
+            }
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        const std::size_t range_width =
+            static_cast<std::size_t>(column_count);
+        std::vector<detail::CellStoreUpdate> updates;
+        updates.reserve(values.size());
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            updates.push_back(detail::CellStoreUpdate {
+                detail::CellPosition {
+                    range.first_row
+                        + static_cast<std::uint32_t>(index / range_width),
+                    range.first_column
+                        + static_cast<std::uint32_t>(index % range_width),
+                },
+                &values[index],
+            });
+        }
+
+        session->set_cells(updates);
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::set_range(
+    CellRange range, std::initializer_list<CellValue> values)
+{
+    set_range(range, std::span<const CellValue>(values.begin(), values.size()));
+}
+
+void WorksheetEditor::set_range(
+    std::string_view range_reference, std::span<const CellValue> values)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    CellRange range {};
+    try {
+        range = detail::parse_worksheet_editor_a1_cell_range(range_reference);
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+    set_range(range, values);
+}
+
+void WorksheetEditor::set_range(std::string_view range_reference,
+    std::initializer_list<CellValue> values)
+{
+    set_range(range_reference,
+        std::span<const CellValue>(values.begin(), values.size()));
+}
+
 void WorksheetEditor::append_row(std::span<const CellValue> values)
 {
     WorkbookEditor::Impl& state = *owner().impl_;

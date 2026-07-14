@@ -77,6 +77,10 @@ struct SinglePassWorksheetTransformStats {
     std::uint64_t output_flush_count = 0;
     std::uint64_t output_peak_buffer_bytes = 0;
     std::uint64_t relationship_scan_us = 0;
+    std::uint64_t relationship_scan_input_call_count = 0;
+    std::uint64_t relationship_scan_input_bytes = 0;
+    std::uint64_t relationship_scan_boundary_carry_count = 0;
+    std::uint64_t relationship_scan_slow_path_tag_count = 0;
     std::uint64_t temporary_write_us = 0;
 };
 
@@ -113,6 +117,10 @@ struct PackagePartReplacement {
     std::uint64_t single_pass_output_flush_count = 0;
     std::uint64_t single_pass_output_peak_buffer_bytes = 0;
     std::uint64_t single_pass_relationship_scan_us = 0;
+    std::uint64_t single_pass_relationship_scan_input_call_count = 0;
+    std::uint64_t single_pass_relationship_scan_input_bytes = 0;
+    std::uint64_t single_pass_relationship_scan_boundary_carry_count = 0;
+    std::uint64_t single_pass_relationship_scan_slow_path_tag_count = 0;
     std::uint64_t single_pass_temporary_write_us = 0;
     std::uint64_t single_pass_commit_ms = 0;
 };
@@ -173,6 +181,10 @@ struct PackageEditorOutputEntryPlan {
     std::uint64_t single_pass_output_flush_count = 0;
     std::uint64_t single_pass_output_peak_buffer_bytes = 0;
     std::uint64_t single_pass_relationship_scan_us = 0;
+    std::uint64_t single_pass_relationship_scan_input_call_count = 0;
+    std::uint64_t single_pass_relationship_scan_input_bytes = 0;
+    std::uint64_t single_pass_relationship_scan_boundary_carry_count = 0;
+    std::uint64_t single_pass_relationship_scan_slow_path_tag_count = 0;
     std::uint64_t single_pass_temporary_write_us = 0;
     std::uint64_t single_pass_commit_ms = 0;
     std::string file_backed_source_copy_reason;
@@ -297,9 +309,16 @@ SheetDataStartTagScannerTestResult testing_scan_sheet_data_start_tags_from_chunk
 struct RelationshipReferenceScannerTestResult {
     std::vector<std::string> elements;
     std::vector<std::string> relationship_ids;
+    std::uint64_t input_call_count = 0;
+    std::uint64_t input_bytes = 0;
+    std::uint64_t boundary_carry_count = 0;
+    std::uint64_t slow_path_tag_count = 0;
 };
 
 RelationshipReferenceScannerTestResult testing_scan_worksheet_relationship_references_from_chunks(
+    std::span<const std::string_view> chunks);
+RelationshipReferenceScannerTestResult
+testing_scan_prevalidated_worksheet_relationship_references_from_chunks(
     std::span<const std::string_view> chunks);
 
 [[nodiscard]] std::string testing_read_package_entry_chunks_to_string(

@@ -75,6 +75,7 @@ constexpr std::uint16_t deflate_compression_method = 8;
 constexpr std::size_t package_entry_file_chunk_size = 1024U * 1024U;
 constexpr std::size_t package_entry_reader_chunk_size = 1024U * 1024U;
 constexpr std::size_t worksheet_transform_output_buffer_size = 256U * 1024U;
+constexpr std::size_t worksheet_relationship_scan_buffer_size = 16U * 1024U;
 
 std::uint64_t steady_clock_elapsed_milliseconds(
     std::chrono::steady_clock::time_point start)
@@ -105,6 +106,11 @@ struct XmlNamespaceBinding {
 };
 
 using XmlNamespaceScope = std::vector<XmlNamespaceBinding>;
+
+struct ScopedXmlNamespaceScope {
+    std::size_t element_depth = 0;
+    XmlNamespaceScope bindings;
+};
 
 struct WorkbookCalcPrScan {
     XmlTagRange workbook_tag;
@@ -277,16 +283,29 @@ void ingest_namespace_declarations(
     }
 }
 
+const XmlNamespaceScope& namespace_scope_bindings(
+    const XmlNamespaceScope& scope) noexcept
+{
+    return scope;
+}
+
+const XmlNamespaceScope& namespace_scope_bindings(
+    const ScopedXmlNamespaceScope& scope) noexcept
+{
+    return scope.bindings;
+}
+
+template <typename NamespaceStack>
 const std::string* find_namespace_uri(
-    const std::vector<XmlNamespaceScope>& namespace_stack,
-    std::string_view prefix) noexcept
+    const NamespaceStack& namespace_stack, std::string_view prefix) noexcept
 {
     for (auto scope = namespace_stack.rbegin(); scope != namespace_stack.rend(); ++scope) {
-        const auto item = std::find_if(scope->begin(), scope->end(),
+        const XmlNamespaceScope& bindings = namespace_scope_bindings(*scope);
+        const auto item = std::find_if(bindings.begin(), bindings.end(),
             [prefix](const XmlNamespaceBinding& binding) {
                 return binding.prefix == prefix;
             });
-        if (item != scope->end()) {
+        if (item != bindings.end()) {
             return &item->uri;
         }
     }
@@ -543,9 +562,10 @@ bool find_attribute_value(std::string_view xml, const XmlTagRange& tag,
     return false;
 }
 
+template <typename NamespaceStack>
 bool find_relationship_id_value(
     std::string_view xml, const XmlTagRange& tag,
-    const std::vector<XmlNamespaceScope>& namespace_stack,
+    const NamespaceStack& namespace_stack,
     std::size_t& value_begin, std::size_t& value_end)
 {
     std::size_t offset = start_tag_attribute_offset(xml, tag);
@@ -1356,20 +1376,37 @@ bool is_worksheet_relationship_reference_element(std::string_view local_name) no
 
 class WorksheetRelationshipReferenceScanner {
 public:
+    enum class InputMode {
+        Strict,
+        PrevalidatedWorksheetOutput,
+    };
+
+    explicit WorksheetRelationshipReferenceScanner(
+        InputMode input_mode = InputMode::Strict) noexcept
+        : input_mode_(input_mode)
+    {
+    }
+
     void process(std::string_view xml)
     {
+        ++input_call_count_;
+        if (xml.size() > std::numeric_limits<std::uint64_t>::max() - input_bytes_) {
+            throw FastXlsxError("worksheet relationship-id scanner input size overflow");
+        }
+        input_bytes_ += static_cast<std::uint64_t>(xml.size());
         if (xml.empty()) {
             return;
         }
         if (inside_ignored_markup()) {
             process_ignored_markup_chunk(xml, false);
-            return;
-        }
-        if (!retained_xml_.empty()) {
+        } else if (!retained_xml_.empty()) {
             process_retained_xml_with_following_chunk(xml);
-            return;
+        } else {
+            process_chunk(xml);
         }
-        process_chunk(xml);
+        if (inside_ignored_markup() || !retained_xml_.empty()) {
+            ++boundary_carry_count_;
+        }
     }
 
     void finish()
@@ -1383,6 +1420,26 @@ public:
     [[nodiscard]] const std::vector<WorksheetRelationshipReference>& references() const noexcept
     {
         return references_;
+    }
+
+    [[nodiscard]] std::uint64_t input_call_count() const noexcept
+    {
+        return input_call_count_;
+    }
+
+    [[nodiscard]] std::uint64_t input_bytes() const noexcept
+    {
+        return input_bytes_;
+    }
+
+    [[nodiscard]] std::uint64_t boundary_carry_count() const noexcept
+    {
+        return boundary_carry_count_;
+    }
+
+    [[nodiscard]] std::uint64_t slow_path_tag_count() const noexcept
+    {
+        return slow_path_tag_count_;
     }
 
 private:
@@ -1649,22 +1706,40 @@ private:
     {
         const char marker = xml[tag.open + 1];
         if (marker == '/') {
-            if (namespace_stack_.empty()) {
+            if (element_depth_ == 0) {
                 throw FastXlsxError("small XML part closing tag has no matching start tag");
             }
-            namespace_stack_.pop_back();
+            leave_element();
             return;
         }
         if (marker == '?' || marker == '!') {
             return;
         }
 
-        XmlNamespaceScope current_scope;
-        ingest_namespace_declarations(current_scope, xml, tag);
         const std::string_view local_name = local_xml_name(start_tag_name(xml, tag));
+        const bool relationship_element =
+            is_worksheet_relationship_reference_element(local_name);
+        const std::size_t attribute_offset = start_tag_attribute_offset(xml, tag);
+        const bool may_declare_namespace =
+            input_mode_ == InputMode::Strict
+            || xml.substr(attribute_offset, tag.close - attribute_offset).find("xmlns:")
+                != std::string_view::npos;
+
+        XmlNamespaceScope current_scope;
+        if (may_declare_namespace) {
+            ingest_namespace_declarations(current_scope, xml, tag);
+        }
+        if (may_declare_namespace || relationship_element) {
+            ++slow_path_tag_count_;
+        }
+
+        ++element_depth_;
+        if (!current_scope.empty()) {
+            namespace_stack_.push_back(
+                ScopedXmlNamespaceScope {element_depth_, std::move(current_scope)});
+        }
         const bool self_closing = is_self_closing_tag(xml, tag);
-        namespace_stack_.push_back(std::move(current_scope));
-        if (is_worksheet_relationship_reference_element(local_name)) {
+        if (relationship_element) {
             std::size_t value_begin = 0;
             std::size_t value_end = 0;
             if (find_relationship_id_value(
@@ -1675,8 +1750,17 @@ private:
         }
 
         if (self_closing) {
+            leave_element();
+        }
+    }
+
+    void leave_element() noexcept
+    {
+        if (!namespace_stack_.empty()
+            && namespace_stack_.back().element_depth == element_depth_) {
             namespace_stack_.pop_back();
         }
+        --element_depth_;
     }
 
     void ensure_retained_xml_within_limit() const
@@ -1723,8 +1807,14 @@ private:
 
     std::string retained_xml_;
     IgnoredMarkupState ignored_markup_state_ = IgnoredMarkupState::None;
-    std::vector<XmlNamespaceScope> namespace_stack_;
+    std::vector<ScopedXmlNamespaceScope> namespace_stack_;
     std::vector<WorksheetRelationshipReference> references_;
+    InputMode input_mode_ = InputMode::Strict;
+    std::size_t element_depth_ = 0;
+    std::uint64_t input_call_count_ = 0;
+    std::uint64_t input_bytes_ = 0;
+    std::uint64_t boundary_carry_count_ = 0;
+    std::uint64_t slow_path_tag_count_ = 0;
 };
 
 void scan_xml_relationship_references(
@@ -2930,6 +3020,10 @@ void clear_indexed_source_entry_direct_range_stats(PackagePartReplacement& repla
     replacement.single_pass_output_flush_count = 0;
     replacement.single_pass_output_peak_buffer_bytes = 0;
     replacement.single_pass_relationship_scan_us = 0;
+    replacement.single_pass_relationship_scan_input_call_count = 0;
+    replacement.single_pass_relationship_scan_input_bytes = 0;
+    replacement.single_pass_relationship_scan_boundary_carry_count = 0;
+    replacement.single_pass_relationship_scan_slow_path_tag_count = 0;
     replacement.single_pass_temporary_write_us = 0;
     replacement.single_pass_commit_ms = 0;
 }
@@ -4446,6 +4540,10 @@ struct SinglePassWorksheetTransformResult {
     WorksheetEventReaderTelemetry source_event_telemetry;
     std::uint64_t transform_action_callback_count = 0;
     std::uint64_t relationship_scan_us = 0;
+    std::uint64_t relationship_scan_input_call_count = 0;
+    std::uint64_t relationship_scan_input_bytes = 0;
+    std::uint64_t relationship_scan_boundary_carry_count = 0;
+    std::uint64_t relationship_scan_slow_path_tag_count = 0;
     std::uint64_t temporary_write_us = 0;
 };
 
@@ -4459,9 +4557,10 @@ public:
                 "failed to create temporary single-pass worksheet transform XML");
         }
         buffer_.reserve(worksheet_transform_output_buffer_size);
+        relationship_buffer_.reserve(worksheet_relationship_scan_buffer_size);
     }
 
-    void append(std::string_view chunk)
+    void append(std::string_view chunk, bool scan_relationships)
     {
         if (chunk.size() > std::numeric_limits<std::uint64_t>::max() - output_bytes_) {
             throw FastXlsxError("single-pass worksheet transform output size overflow");
@@ -4470,6 +4569,10 @@ public:
         ++append_call_count_;
         if (chunk.empty()) {
             return;
+        }
+
+        if (scan_relationships) {
+            append_relationship_scan(chunk);
         }
 
         if (chunk.size() >= worksheet_transform_output_buffer_size) {
@@ -4490,6 +4593,7 @@ public:
     void finish()
     {
         flush_buffer();
+        flush_relationship_buffer();
         const auto relationship_finish_started = std::chrono::steady_clock::now();
         finish_xml_relationship_references(relationship_scanner_, relationship_scan_failed_);
         relationship_scan_us_ +=
@@ -4529,6 +4633,26 @@ public:
         return relationship_scan_us_;
     }
 
+    [[nodiscard]] std::uint64_t relationship_scan_input_call_count() const noexcept
+    {
+        return relationship_scanner_.input_call_count();
+    }
+
+    [[nodiscard]] std::uint64_t relationship_scan_input_bytes() const noexcept
+    {
+        return relationship_scanner_.input_bytes();
+    }
+
+    [[nodiscard]] std::uint64_t relationship_scan_boundary_carry_count() const noexcept
+    {
+        return relationship_scanner_.boundary_carry_count();
+    }
+
+    [[nodiscard]] std::uint64_t relationship_scan_slow_path_tag_count() const noexcept
+    {
+        return relationship_scanner_.slow_path_tag_count();
+    }
+
     [[nodiscard]] std::uint64_t temporary_write_us() const noexcept
     {
         return temporary_write_us_;
@@ -4545,6 +4669,46 @@ public:
     }
 
 private:
+    void append_relationship_scan(std::string_view chunk)
+    {
+        if (chunk.size() >= worksheet_relationship_scan_buffer_size) {
+            flush_relationship_buffer();
+            process_relationship_batch(chunk);
+            return;
+        }
+        if (chunk.size() > worksheet_relationship_scan_buffer_size - relationship_buffer_.size()) {
+            flush_relationship_buffer();
+        }
+        relationship_buffer_.append(chunk);
+        if (relationship_buffer_.size() == worksheet_relationship_scan_buffer_size) {
+            flush_relationship_buffer();
+        }
+    }
+
+    void flush_relationship_buffer()
+    {
+        if (relationship_buffer_.empty()) {
+            return;
+        }
+        process_relationship_batch(relationship_buffer_);
+        relationship_buffer_.clear();
+    }
+
+    void process_relationship_batch(std::string_view batch)
+    {
+        if (relationship_scan_failed_) {
+            return;
+        }
+        const auto relationship_scan_started = std::chrono::steady_clock::now();
+        try {
+            scan_xml_relationship_references(relationship_scanner_, batch);
+        } catch (const std::exception&) {
+            relationship_scan_failed_ = true;
+        }
+        relationship_scan_us_ +=
+            steady_clock_elapsed_microseconds(relationship_scan_started);
+    }
+
     void flush_buffer()
     {
         if (buffer_.empty()) {
@@ -4557,17 +4721,6 @@ private:
     void process_batch(std::string_view batch)
     {
         ++flush_count_;
-        if (!relationship_scan_failed_) {
-            const auto relationship_scan_started = std::chrono::steady_clock::now();
-            try {
-                scan_xml_relationship_references(relationship_scanner_, batch);
-            } catch (const std::exception&) {
-                relationship_scan_failed_ = true;
-            }
-            relationship_scan_us_ +=
-                steady_clock_elapsed_microseconds(relationship_scan_started);
-        }
-
         const auto write_started = std::chrono::steady_clock::now();
         write_file_chunk(output_, batch);
         temporary_write_us_ += steady_clock_elapsed_microseconds(write_started);
@@ -4575,7 +4728,9 @@ private:
 
     std::ofstream output_;
     std::string buffer_;
-    WorksheetRelationshipReferenceScanner relationship_scanner_;
+    std::string relationship_buffer_;
+    WorksheetRelationshipReferenceScanner relationship_scanner_ {
+        WorksheetRelationshipReferenceScanner::InputMode::PrevalidatedWorksheetOutput};
     bool relationship_scan_failed_ = false;
     std::uint64_t output_bytes_ = 0;
     std::uint64_t append_call_count_ = 0;
@@ -4591,12 +4746,14 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
     const RelationshipSet* worksheet_relationships,
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetCellReplacementPlan& replacement_plan,
+    WorksheetRelationshipReferenceAuditResult replacement_relationship_reference_audit,
     WorksheetCellReplacementMode mode)
 {
     BoundedWorksheetTransformOutput output(path);
 
     SinglePassWorksheetTransformResult result;
     bool skipping_dimension = false;
+    bool inside_sheet_data = false;
     std::optional<std::uint64_t> worksheet_root_end;
     std::optional<std::uint64_t> source_dimension_offset;
 
@@ -4629,12 +4786,21 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
             if (action.kind == WorksheetTransformActionKind::ReplaceCell
                 || action.kind == WorksheetTransformActionKind::InsertCell) {
                 action.replacement_payload.for_each_chunk([&](std::string_view chunk) {
-                    output.append(chunk);
+                    output.append(chunk, false);
                 });
                 return;
             }
 
-            output.append(action.raw_xml);
+            const bool scan_relationships =
+                !inside_sheet_data
+                || action.event_kind == WorksheetEventKind::SheetDataStart
+                || action.event_kind == WorksheetEventKind::SheetDataEnd;
+            output.append(action.raw_xml, scan_relationships);
+            if (action.event_kind == WorksheetEventKind::SheetDataStart) {
+                inside_sheet_data = !action.self_closing;
+            } else if (action.event_kind == WorksheetEventKind::SheetDataEnd) {
+                inside_sheet_data = false;
+            }
             if (action.event_kind == WorksheetEventKind::WorksheetStart
                 && !worksheet_root_end.has_value()) {
                 worksheet_root_end = output.output_bytes();
@@ -4661,11 +4827,25 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
     result.output_flush_count = output.flush_count();
     result.output_peak_buffer_bytes = output.peak_buffer_bytes();
     result.relationship_scan_us = output.relationship_scan_us();
+    result.relationship_scan_input_call_count =
+        output.relationship_scan_input_call_count();
+    result.relationship_scan_input_bytes = output.relationship_scan_input_bytes();
+    result.relationship_scan_boundary_carry_count =
+        output.relationship_scan_boundary_carry_count();
+    result.relationship_scan_slow_path_tag_count =
+        output.relationship_scan_slow_path_tag_count();
     result.temporary_write_us = output.temporary_write_us();
     result.relationship_reference_audit = output.relationship_scan_failed()
         ? worksheet_relationship_reference_parse_failure_audit()
         : worksheet_relationship_reference_audit_from_references(
             worksheet_part, output.references(), worksheet_relationships);
+    for (std::string& note : replacement_relationship_reference_audit.notes) {
+        result.relationship_reference_audit.notes.push_back(std::move(note));
+    }
+    for (WorksheetRelationshipReferenceAudit& audit :
+        replacement_relationship_reference_audit.audits) {
+        result.relationship_reference_audit.audits.push_back(std::move(audit));
+    }
     return result;
 }
 
@@ -5061,6 +5241,14 @@ PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
             replacement->single_pass_output_peak_buffer_bytes;
         plan.single_pass_relationship_scan_us =
             replacement->single_pass_relationship_scan_us;
+        plan.single_pass_relationship_scan_input_call_count =
+            replacement->single_pass_relationship_scan_input_call_count;
+        plan.single_pass_relationship_scan_input_bytes =
+            replacement->single_pass_relationship_scan_input_bytes;
+        plan.single_pass_relationship_scan_boundary_carry_count =
+            replacement->single_pass_relationship_scan_boundary_carry_count;
+        plan.single_pass_relationship_scan_slow_path_tag_count =
+            replacement->single_pass_relationship_scan_slow_path_tag_count;
         plan.single_pass_temporary_write_us =
             replacement->single_pass_temporary_write_us;
         plan.single_pass_commit_ms =
@@ -6655,10 +6843,11 @@ SheetDataStartTagScannerTestResult testing_scan_sheet_data_start_tags_from_chunk
     return result;
 }
 
-RelationshipReferenceScannerTestResult testing_scan_worksheet_relationship_references_from_chunks(
-    std::span<const std::string_view> chunks)
+RelationshipReferenceScannerTestResult scan_relationship_references_for_testing(
+    std::span<const std::string_view> chunks,
+    WorksheetRelationshipReferenceScanner::InputMode input_mode)
 {
-    WorksheetRelationshipReferenceScanner scanner;
+    WorksheetRelationshipReferenceScanner scanner(input_mode);
     for (const std::string_view chunk : chunks) {
         scanner.process(chunk);
     }
@@ -6669,7 +6858,26 @@ RelationshipReferenceScannerTestResult testing_scan_worksheet_relationship_refer
         result.elements.push_back(reference.element);
         result.relationship_ids.push_back(reference.relationship_id);
     }
+    result.input_call_count = scanner.input_call_count();
+    result.input_bytes = scanner.input_bytes();
+    result.boundary_carry_count = scanner.boundary_carry_count();
+    result.slow_path_tag_count = scanner.slow_path_tag_count();
     return result;
+}
+
+RelationshipReferenceScannerTestResult testing_scan_worksheet_relationship_references_from_chunks(
+    std::span<const std::string_view> chunks)
+{
+    return scan_relationship_references_for_testing(
+        chunks, WorksheetRelationshipReferenceScanner::InputMode::Strict);
+}
+
+RelationshipReferenceScannerTestResult
+testing_scan_prevalidated_worksheet_relationship_references_from_chunks(
+    std::span<const std::string_view> chunks)
+{
+    return scan_relationship_references_for_testing(chunks,
+        WorksheetRelationshipReferenceScanner::InputMode::PrevalidatedWorksheetOutput);
 }
 
 std::string testing_read_package_entry_chunks_to_string(
@@ -7378,6 +7586,14 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             single_pass_stats->output_peak_buffer_bytes;
         replacement->single_pass_relationship_scan_us =
             single_pass_stats->relationship_scan_us;
+        replacement->single_pass_relationship_scan_input_call_count =
+            single_pass_stats->relationship_scan_input_call_count;
+        replacement->single_pass_relationship_scan_input_bytes =
+            single_pass_stats->relationship_scan_input_bytes;
+        replacement->single_pass_relationship_scan_boundary_carry_count =
+            single_pass_stats->relationship_scan_boundary_carry_count;
+        replacement->single_pass_relationship_scan_slow_path_tag_count =
+            single_pass_stats->relationship_scan_slow_path_tag_count;
         replacement->single_pass_temporary_write_us =
             single_pass_stats->temporary_write_us;
         replacement->single_pass_commit_ms =
@@ -7817,6 +8033,13 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
         }
     }
 
+    WorksheetRelationshipReferenceAuditResult replacement_relationship_reference_audit =
+        worksheet_replacement_cell_payloads_relationship_reference_audit(
+            worksheet_part, replacement_plan,
+            reader_.relationships_for(target_worksheet_part));
+    reject_relationship_reference_audit_by_policy(
+        replacement_relationship_reference_audit, policy);
+
     ScopedPackageEditorTempFile temp_file;
     CurrentWorksheetInputChunkReader transform_reader(reader_, target_worksheet_part, input_source,
         std::string(worksheet_cell_replacement_output_input_context));
@@ -7828,7 +8051,8 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
         transform_result = write_worksheet_cell_transform_single_pass(
             temp_file.path(), target_worksheet_part,
             reader_.relationships_for(target_worksheet_part),
-            transform_source, replacement_plan, mode);
+            transform_source, replacement_plan,
+            std::move(replacement_relationship_reference_audit), mode);
     } catch (const std::exception& error) {
         throw FastXlsxError(
             current_worksheet_input_failure_message("single-pass transform",
@@ -7895,8 +8119,10 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
         "worksheet cell replacement writes transformed XML without the source dimension "
         "to one PackageEditor-owned temporary file, then stages sequential file ranges "
         "around one bounded in-memory exact dimension tag; a 256 KiB output batch coalesces "
-        "event fragments before relationship scanning and file IO, while memory remains "
-        "bounded by event/chunk buffers rather than worksheet size");
+        "event fragments before file IO, while relationship scanning consumes only the "
+        "prevalidated worksheet wrapper, sheetData boundary, and worksheet metadata stream "
+        "after strict replacement-payload relationship audit; memory remains bounded by "
+        "event/chunk buffers rather than worksheet size");
     commit_notes.emplace_back(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "
@@ -7940,6 +8166,14 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
     single_pass_stats.output_peak_buffer_bytes =
         transform_result.output_peak_buffer_bytes;
     single_pass_stats.relationship_scan_us = transform_result.relationship_scan_us;
+    single_pass_stats.relationship_scan_input_call_count =
+        transform_result.relationship_scan_input_call_count;
+    single_pass_stats.relationship_scan_input_bytes =
+        transform_result.relationship_scan_input_bytes;
+    single_pass_stats.relationship_scan_boundary_carry_count =
+        transform_result.relationship_scan_boundary_carry_count;
+    single_pass_stats.relationship_scan_slow_path_tag_count =
+        transform_result.relationship_scan_slow_path_tag_count;
     single_pass_stats.temporary_write_us = transform_result.temporary_write_us;
     replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
         std::move(output_chunks), policy,

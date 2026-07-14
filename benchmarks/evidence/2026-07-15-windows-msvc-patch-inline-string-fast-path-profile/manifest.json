@@ -1,0 +1,49 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-15-windows-msvc-patch-inline-string-fast-path-profile",
+  "created_utc": "2026-07-14T18:36:18Z",
+  "git_revision": "5208cc738b2564e97e2ba2666fe3f6cbcf93021c",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "measurements.json",
+      "sha256": "30c66febc136eda6bb52071581e81708333ce82a11396ff52a3cb3939cf0945e",
+      "role": "result"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "2546f593500acddb9f2cebe67e406d912ed7f8c7b8d19743f454768e3120b5df",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "d8c6c3687c150cc7afd217d8adad4c74b9a04039debdf91d684f61ac88ea308c",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "On this machine and the recorded one-million-cell mixed-inline level-1 targeted-upsert workload, the simple inline-string fast path reduced parser, source-callback and transform-action traffic by 22.73%, 17.24% and 31.23%; transform median fell by 21.10% and total editor median fell by 24.57% while process peak working set stayed effectively flat.",
+      "artifact_paths": ["measurements.json", "summary.json"]
+    },
+    {
+      "statement": "The optimized mixed-inline profile consumed 333327 complete simple inline payloads and 7895685 exact source bytes through the fast path with 6 boundary fallbacks; the representative output opened with openpyxl 3.1.2.",
+      "artifact_paths": ["measurements.json", "summary.json"]
+    },
+    {
+      "statement": "The formula plus external hyperlink guard reported zero inline-string fast-path traffic, opened with openpyxl 3.1.2 and preserved the recorded hyperlink target; focused formula/hyperlink tests also passed.",
+      "artifact_paths": ["measurements.json", "summary.json", "run-context.json"]
+    },
+    {
+      "statement": "Production and stored-only CTest passed 132/132; no-images and production/stored/no-images install-consumer profiles passed. Office was not run, and no cross-machine, arbitrary-workbook or full-feature superiority claim is made.",
+      "artifact_paths": ["run-context.json", "summary.json"]
+    }
+  ]
+}

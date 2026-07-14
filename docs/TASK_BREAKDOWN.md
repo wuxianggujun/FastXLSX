@@ -34,8 +34,8 @@
 ## C5 Large Worksheet Rewrite
 
 - 维护现有 one-inflate direct-range 与 single-pass source-order transform 的支持/拒绝 metadata 清单、failure-before-state-change、dimension 和 relationship audit 契约；新增 worksheet metadata 前先扩展 audit/fail 边界。
-- Single-pass fallback 当前以 256 KiB bounded output batching 合并输出，并在 Patch reader 中把相邻非公式 value wrapper/text 事件合并为 exact-byte span；transformer 继续合并 pass-through action、复用已解析 coordinate，并对有序目标使用 next-target 比较，避免每个 source cell 都做 map lookup。
-- Numeric、mixed inline strings、sharedStrings、formula metadata 与 relationship-bearing hyperlink fixture 已形成 event/action telemetry；relationship scanner 已从 action 级输入迁移为只接收 metadata 的 16 KiB 有界批次，并以 prevalidated worksheet-output 模式减少 namespace/attribute slow path。Schema-v6 evidence 已确认 numeric 5M 的 1 call / 167 bytes / 0 slow tags 与 formula + external hyperlink 1M 的 1 call / 303 bytes / 2 slow tags，并保留 hyperlink target；下一实现批次评估 parser/action residual 中仍保留的 inline-string wrapper 成本。
+- Single-pass fallback 当前以 256 KiB bounded output batching 合并输出，并在 Patch reader 中把相邻非公式 value wrapper/text 事件合并为 exact-byte span；当前窗口内完整的简单 `<is><t>…</t></is>` 直接作为一个 exact-byte span，rich/phonetic/extension、namespace alias、跨窗口和 malformed candidate 继续走原 parser 与 diagnostics。Transformer 继续合并 pass-through action、复用已解析 coordinate，并对有序目标使用 next-target 比较，避免每个 source cell 都做 map lookup。
+- Numeric、mixed inline strings、sharedStrings、formula metadata 与 relationship-bearing hyperlink fixture 已形成 event/action telemetry；relationship scanner 已从 action 级输入迁移为只接收 metadata 的 16 KiB 有界批次，并以 prevalidated worksheet-output 模式减少 namespace/attribute slow path。Schema-v6 evidence 已确认 numeric 5M 的 1 call / 167 bytes / 0 slow tags 与 formula + external hyperlink 1M 的 1 call / 303 bytes / 2 slow tags；schema-v8 mixed-inline evidence 已记录 simple wrapper count/bytes/fallback，并保留 formula boundary 与 external hyperlink target。
 - 继续用更大规模和多数据分布 worksheet fixture 验证 rewritten bytes、temporary footprint、process peak working set、retry 和 unknown-part preservation；当前 5,000,000-cell numeric 以及四类 1,000,000-cell 分布证据不能替代其他机器或任意 XLSX。
 - 不通过完整 worksheet DOM、dense cell map 或扩大 In-memory guardrail 实现。
 
@@ -48,7 +48,8 @@
 - Event/action coalescing 已在同机 5,000,000-cell numeric level 1 workload 将 transform 与 residual median 分别降低 11.53%/14.21%，owned output buffer 与 process peak working set 保持有界；该结果只用于记录 workload，不泛化。
 - Relationship scanner metadata batching 的 schema-v6 bundle 已完成，确认 input calls/bytes、boundary carry、slow-path tags、formula/hyperlink preservation、256 KiB output buffer 与约 8.26–8.29 MB median process peak working set；该轮 system-load-sensitive total elapsed 不用于提升声明。
 - Staged file chunks 的 expected CRC32 已在 production minizip-ng 正常路径按长度合并，并以 completed-entry CRC 校验；失败时才重读定位具体 chunk，不完整 metadata 继续走 per-chunk fallback。Schema-v7 同机 numeric level-6 profile 将 isolated entry residual median 从 131,892 us 降至 603 us，median CRC validation 为 152 us，约 8.34 MB process peak working set 未出现膨胀。
-- **下一优先级**：profile 并消减 Patch parser/action residual 中的 inline-string wrapper 成本，保持 formula metadata 与 exact-byte span 边界。minizip-ng 当前可用 writer 参数只有 compression level；切换 zlib-ng/其他 backend 需要独立的依赖、encode CPU、输出大小和兼容性证据，不在无证据时引入并行压缩或自定义 backend。
+- Simple inline-string fast path 已在 schema-v8 同机 1,000,000-cell mixed-inline level-1 workload 将 parser/source-callback/action traffic 分别降低 22.73%/17.24%/31.23%，transform/residual median 分别降低 21.10%/21.48%，process peak working set median 只变化约 0.004 MB；该结论只覆盖 manifest 记录的 workload。
+- **下一优先级**：建立 level-6 compression backend/参数 profile，先分离 source transform、target-entry read/write、DEFLATE encode CPU、输出大小与兼容性，再决定是否评估 zlib-ng 或其他 backend。minizip-ng 当前可用 writer 参数只有 compression level；不在无证据时引入并行压缩或自定义 backend。
 - 为 Streaming/Patch 增加至少一个更大规模和一台不同机器的 validated bundle；记录冷热启动差异，release claim 使用 warmed repeated protocol，不以单次局部计时替代 bundle。
 - 新 bundle 继续提交 machine-readable artifacts、environment、hash、验证状态和 claim-to-artifact 映射；Office 未运行必须保持 `not_run`。
 - 性能结论必须满足 `PERFORMANCE_TARGETS.md`。

@@ -1,0 +1,77 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "8",
+  "git_revision": "5208cc738b2564e97e2ba2666fe3f6cbcf93021c",
+  "workload": {
+    "rows": 100000,
+    "columns": 10,
+    "source_cells": 1000000,
+    "requested_patch_cells": 1000,
+    "matched_existing_cells": 500,
+    "inserted_cells": 500,
+    "source_compression_level": 6,
+    "output_compression_level": 1,
+    "warmup_runs_per_profile": 2,
+    "measured_runs_per_profile": 5
+  },
+  "implementation": {
+    "fast_path": "In coalesced Patch mode, a complete simple unqualified <is><t>...</t></is> payload already present in the bounded reader window is emitted as one exact-byte span.",
+    "fallback": "Rich text, phonetic or extension markup, namespace aliases, boundary-split payloads and malformed candidates retain the ordinary parser path and diagnostics.",
+    "formula_boundary": "Formula <f> markup remains visible to the transformer and is never consumed by the inline-string fast path.",
+    "public_api_change": false
+  },
+  "mixed_inline_results": {
+    "baseline": {
+      "git_revision": "494c378124fdb9e1bb8ddfb572c3d30a5c883a12",
+      "total_editor_median_ms": 3342,
+      "mutation_median_ms": 2576,
+      "transform_median_us": 2002076,
+      "source_scan_action_median_us": 1935361,
+      "parsed_events": 5866672,
+      "source_callbacks": 3866682,
+      "transform_actions": 3200515,
+      "peak_working_set_median_mb": 9.31641
+    },
+    "optimized": {
+      "git_revision": "5208cc738b2564e97e2ba2666fe3f6cbcf93021c",
+      "total_editor_median_ms": 2521,
+      "mutation_median_ms": 1950,
+      "transform_median_us": 1579572,
+      "source_scan_action_median_us": 1519656,
+      "parsed_events": 4533364,
+      "source_callbacks": 3200028,
+      "transform_actions": 2201035,
+      "simple_inline_fast_path_count": 333327,
+      "simple_inline_fast_path_bytes": 7895685,
+      "simple_inline_fallback_count": 6,
+      "peak_working_set_median_mb": 9.32031,
+      "representative_openpyxl": "opened"
+    },
+    "decrease_percent": {
+      "total_editor_ms": 24.57,
+      "mutation_ms": 24.3,
+      "transform_us": 21.1,
+      "source_scan_action_us": 21.48,
+      "parsed_events": 22.73,
+      "source_callbacks": 17.24,
+      "transform_actions": 31.23
+    },
+    "peak_working_set_delta_mb": 0.0039
+  },
+  "formula_hyperlink_guard": {
+    "total_editor_median_ms": 2338,
+    "transform_median_us": 1518105,
+    "source_scan_action_median_us": 1478204,
+    "simple_inline_fast_path_count": 0,
+    "simple_inline_fallback_count": 0,
+    "peak_working_set_median_mb": 8.31641,
+    "representative_openpyxl": "opened",
+    "verified_external_hyperlink_target": "https://example.com/fastxlsx-benchmark"
+  },
+  "interpretation": {
+    "supported_claim": "On this machine and recorded one-million-cell mixed-inline level-1 targeted-upsert workload, the simple inline-string fast path reduced parser, source-callback and transform-action traffic by 22.73%, 17.24% and 31.23%; transform median fell by 21.10% while median process peak working set changed by about 0.004 MB.",
+    "compatibility": "Focused formula/hyperlink tests passed, the formula guard profile reported zero inline fast-path traffic, and representative mixed-inline/formula outputs opened with openpyxl 3.1.2 while preserving the recorded external hyperlink target.",
+    "next_hotspot": "After parser/action wrapper reduction, the next lane is a separate level-6 compression backend/parameter profile; no backend change is justified by this bundle."
+  },
+  "scope": "Single Windows/MSVC machine, one-million-cell 10-column mixed-inline and formula distributions, 1000 targeted upserts, source DEFLATE level 6 and output DEFLATE level 1. No cross-machine, arbitrary-workbook, Office, backend-comparison or OpenXLSX superiority claim."
+}

@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Patch coalesced reader 对当前 bounded window 内完整的简单 `<is><t>…</t></is>` 使用 exact-byte fast path；rich/phonetic/extension、namespace alias、跨窗口和 malformed candidate 继续走原 parser，formula markup 保持可见。Patch benchmark JSON 升级为 schema v8，并新增 fast-path count/bytes/fallback telemetry；同机 1,000,000-cell mixed-inline level-1 evidence 中 transform/residual median 分别降低 21.10%/21.48%，process peak working set median 基本不变，结论不泛化到其他 workload。
 - Production minizip-ng writer 对具备完整 expected size/CRC32 metadata 的 staged file chunks 使用 entry-level CRC 合并校验，不再在正常写出路径重复逐字节计算 CRC；不完整 metadata 保留原 per-chunk fallback，combined mismatch 才重读并恢复 entry/chunk/file diagnostics，raw-copy 与 stored-bootstrap 语义不变。
 - Patch benchmark JSON 升级为 schema v7，新增 target-entry staged CRC reuse、reused file-chunk count 与 validation timing；同机 1,000,000-cell level-6 evidence 中 isolated entry residual median 从 131,892 us 降至 603 us，numeric/formula profile 的 process peak working set median 均约 8.34 MB。该证据不泛化为跨机器或任意 workbook 吞吐结论。
 - Patch single-pass relationship audit 不再接收 cell XML action traffic，改为只把 metadata 片段经 16 KiB 有界 buffer 输入 prevalidated scanner；保留 split tag/ignored markup 状态与 namespace shadowing，新增 formula/hyperlink preservation 回归。

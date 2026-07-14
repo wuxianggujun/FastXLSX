@@ -47,7 +47,8 @@
 - Compression profile 已验证 level 1 在当前 numeric/mixed Streaming 和完整 worksheet rewrite workload 上以约 9.6%–21.6% 输出增长换取更低 save/close CPU；保持 level 选择由 caller 显式控制，不根据单一数据集静默更改 public 默认值。
 - Event/action coalescing 已在同机 5,000,000-cell numeric level 1 workload 将 transform 与 residual median 分别降低 11.53%/14.21%，owned output buffer 与 process peak working set 保持有界；该结果只用于记录 workload，不泛化。
 - Relationship scanner metadata batching 的 schema-v6 bundle 已完成，确认 input calls/bytes、boundary carry、slow-path tags、formula/hyperlink preservation、256 KiB output buffer 与约 8.26–8.29 MB median process peak working set；该轮 system-load-sensitive total elapsed 不用于提升声明。
-- **下一优先级**：比较 level 6 下现有 minizip-ng/zlib 与可选 backend/参数的 encode CPU、输出大小、兼容性和依赖成本，同时以 profile 判断 inline-string wrapper residual 是否值得单独优化。只有证据显示 CPU 可并行且事务/内存边界可控时才评估并行压缩。
+- Staged file chunks 的 expected CRC32 已在 production minizip-ng 正常路径按长度合并，并以 completed-entry CRC 校验；失败时才重读定位具体 chunk，不完整 metadata 继续走 per-chunk fallback。Schema-v7 同机 numeric level-6 profile 将 isolated entry residual median 从 131,892 us 降至 603 us，median CRC validation 为 152 us，约 8.34 MB process peak working set 未出现膨胀。
+- **下一优先级**：profile 并消减 Patch parser/action residual 中的 inline-string wrapper 成本，保持 formula metadata 与 exact-byte span 边界。minizip-ng 当前可用 writer 参数只有 compression level；切换 zlib-ng/其他 backend 需要独立的依赖、encode CPU、输出大小和兼容性证据，不在无证据时引入并行压缩或自定义 backend。
 - 为 Streaming/Patch 增加至少一个更大规模和一台不同机器的 validated bundle；记录冷热启动差异，release claim 使用 warmed repeated protocol，不以单次局部计时替代 bundle。
 - 新 bundle 继续提交 machine-readable artifacts、environment、hash、验证状态和 claim-to-artifact 映射；Office 未运行必须保持 `not_run`。
 - 性能结论必须满足 `PERFORMANCE_TARGETS.md`。

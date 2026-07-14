@@ -1,0 +1,81 @@
+{
+  "patch_staged_crc_profile_schema_version": "1",
+  "residual_definition": "target worksheet entry total_us minus open_us, input_read_us, writer_write_us, staged_crc_validation_us and close_us for the same measured run",
+  "baseline": {
+    "git_revision": "6b2ef7d716d7e275a5637887fad057a38ba5810c",
+    "benchmark_schema_version": "6",
+    "profile": "numeric-1m-level6",
+    "warmup_runs": 2,
+    "measured_runs": 5,
+    "runs": [
+      {"total_editor_ms": 3973, "save_ms": 2072, "entry_total_us": 2049853, "entry_open_us": 115, "input_read_us": 252086, "writer_write_us": 1683419, "entry_close_us": 2781, "residual_us": 111452, "peak_working_set_mb": 8.32422},
+      {"total_editor_ms": 4336, "save_ms": 2175, "entry_total_us": 2119592, "entry_open_us": 79, "input_read_us": 248545, "writer_write_us": 1749867, "entry_close_us": 768, "residual_us": 120333, "peak_working_set_mb": 8.32031},
+      {"total_editor_ms": 5589, "save_ms": 3062, "entry_total_us": 2833865, "entry_open_us": 560, "input_read_us": 377110, "writer_write_us": 2263032, "entry_close_us": 1885, "residual_us": 191278, "peak_working_set_mb": 8.31641},
+      {"total_editor_ms": 4944, "save_ms": 2375, "entry_total_us": 2330860, "entry_open_us": 1215, "input_read_us": 252888, "writer_write_us": 1944174, "entry_close_us": 691, "residual_us": 131892, "peak_working_set_mb": 8.3125},
+      {"total_editor_ms": 4889, "save_ms": 2716, "entry_total_us": 2709364, "entry_open_us": 82, "input_read_us": 306192, "writer_write_us": 2229903, "entry_close_us": 709, "residual_us": 172478, "peak_working_set_mb": 8.30859}
+    ],
+    "medians": {
+      "total_editor_ms": 4889,
+      "save_ms": 2375,
+      "entry_total_us": 2330860,
+      "residual_us": 131892,
+      "peak_working_set_mb": 8.31641
+    }
+  },
+  "optimized": {
+    "git_revision": "7d44f3e14d1a187ffcc81aec8d86bc6dd757935f",
+    "benchmark_schema_version": "7",
+    "numeric_1m_level6": {
+      "warmup_runs": 2,
+      "measured_runs": 5,
+      "runs": [
+        {"total_editor_ms": 4886, "save_ms": 2516, "entry_total_us": 2497218, "entry_open_us": 85, "input_read_us": 416667, "writer_write_us": 2079408, "staged_crc_validation_us": 132, "entry_close_us": 516, "residual_us": 410, "reused_staged_file_chunks": 2, "peak_working_set_mb": 8.32031},
+        {"total_editor_ms": 3438, "save_ms": 1599, "entry_total_us": 1591599, "entry_open_us": 93, "input_read_us": 221689, "writer_write_us": 1367879, "staged_crc_validation_us": 186, "entry_close_us": 997, "residual_us": 755, "reused_staged_file_chunks": 2, "peak_working_set_mb": 8.35547},
+        {"total_editor_ms": 3416, "save_ms": 1694, "entry_total_us": 1688369, "entry_open_us": 93, "input_read_us": 220352, "writer_write_us": 1466257, "staged_crc_validation_us": 162, "entry_close_us": 916, "residual_us": 589, "reused_staged_file_chunks": 2, "peak_working_set_mb": 8.33594},
+        {"total_editor_ms": 3303, "save_ms": 1675, "entry_total_us": 1669776, "entry_open_us": 76, "input_read_us": 207208, "writer_write_us": 1460941, "staged_crc_validation_us": 140, "entry_close_us": 808, "residual_us": 603, "reused_staged_file_chunks": 2, "peak_working_set_mb": 8.33594},
+        {"total_editor_ms": 3151, "save_ms": 1449, "entry_total_us": 1443331, "entry_open_us": 68, "input_read_us": 185510, "writer_write_us": 1255449, "staged_crc_validation_us": 152, "entry_close_us": 1548, "residual_us": 604, "reused_staged_file_chunks": 2, "peak_working_set_mb": 8.33594}
+      ],
+      "medians": {
+        "total_editor_ms": 3416,
+        "save_ms": 1675,
+        "entry_total_us": 1669776,
+        "staged_crc_validation_us": 152,
+        "residual_us": 603,
+        "peak_working_set_mb": 8.33594
+      },
+      "output_bytes": 3133360,
+      "staged_worksheet_bytes": 34897577,
+      "representative_openpyxl": "opened",
+      "openpyxl_version": "3.1.2"
+    },
+    "formula_hyperlink_1m_level6": {
+      "warmup_runs": 1,
+      "measured_runs": 3,
+      "runs": [
+        {"total_editor_ms": 4782, "save_ms": 2557, "entry_total_us": 2543199, "entry_open_us": 68, "input_read_us": 280065, "writer_write_us": 2262030, "staged_crc_validation_us": 149, "entry_close_us": 419, "residual_us": 468, "reused_staged_file_chunks": 2, "peak_working_set_mb": 8.35547},
+        {"total_editor_ms": 3845, "save_ms": 2039, "entry_total_us": 2031632, "entry_open_us": 94, "input_read_us": 291016, "writer_write_us": 1739289, "staged_crc_validation_us": 196, "entry_close_us": 432, "residual_us": 605, "reused_staged_file_chunks": 2, "peak_working_set_mb": 8.33594},
+        {"total_editor_ms": 3266, "save_ms": 1608, "entry_total_us": 1600761, "entry_open_us": 100, "input_read_us": 194427, "writer_write_us": 1404994, "staged_crc_validation_us": 156, "entry_close_us": 522, "residual_us": 562, "reused_staged_file_chunks": 2, "peak_working_set_mb": 8.32812}
+      ],
+      "medians": {
+        "total_editor_ms": 3845,
+        "save_ms": 2039,
+        "entry_total_us": 2031632,
+        "staged_crc_validation_us": 156,
+        "residual_us": 562,
+        "peak_working_set_mb": 8.33594
+      },
+      "output_bytes": 3762622,
+      "staged_worksheet_bytes": 34897713,
+      "relationship_scan_input_calls": 1,
+      "relationship_scan_input_bytes": 303,
+      "verified_external_hyperlink_target": "https://example.com/fastxlsx-benchmark",
+      "representative_openpyxl": "opened",
+      "openpyxl_version": "3.1.2"
+    }
+  },
+  "comparison": {
+    "numeric_residual_median_reduction_percent": 99.54,
+    "numeric_entry_total_observed_reduction_percent": 28.36,
+    "qualification": "The residual is isolated from per-run target-entry telemetry and directly captures the removed duplicate CRC scan. Overall editor, save and minizip write timings remain sensitive to machine load and are observations, not generalized throughput claims."
+  }
+}

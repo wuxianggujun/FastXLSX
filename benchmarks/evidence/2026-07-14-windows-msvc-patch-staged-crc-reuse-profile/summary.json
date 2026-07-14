@@ -1,0 +1,51 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "7",
+  "git_revision": "7d44f3e14d1a187ffcc81aec8d86bc6dd757935f",
+  "workload": {
+    "rows": 100000,
+    "columns": 10,
+    "source_cells": 1000000,
+    "requested_patch_cells": 1000,
+    "matched_existing_cells": 500,
+    "inserted_cells": 500,
+    "source_compression_level": 6,
+    "output_compression_level": 6
+  },
+  "implementation": {
+    "normal_path": "For a staged chunked entry whose file chunks all carry expected size and CRC32 metadata, combine chunk CRC32 values by length and compare the result with minizip-ng's completed-entry CRC32.",
+    "failure_path": "On a combined CRC mismatch, reread expected file chunks only on the failure path so diagnostics retain ZIP entry, chunk index and file context.",
+    "fallback": "Entries without complete staged CRC metadata retain per-file-chunk validation; raw compressed copy and stored-bootstrap behavior are unchanged.",
+    "public_api_change": false
+  },
+  "results": {
+    "numeric_level6": {
+      "baseline_residual_median_us": 131892,
+      "optimized_residual_median_us": 603,
+      "residual_reduction_percent": 99.54,
+      "optimized_staged_crc_validation_median_us": 152,
+      "baseline_entry_total_median_us": 2330860,
+      "optimized_entry_total_median_us": 1669776,
+      "observed_entry_total_reduction_percent": 28.36,
+      "optimized_peak_working_set_median_mb": 8.33594
+    },
+    "formula_hyperlink_level6": {
+      "optimized_residual_median_us": 562,
+      "optimized_staged_crc_validation_median_us": 156,
+      "optimized_peak_working_set_median_mb": 8.33594,
+      "representative_openpyxl": "opened",
+      "verified_external_hyperlink_target": "https://example.com/fastxlsx-benchmark"
+    }
+  },
+  "compatibility": {
+    "raw_copy_payload_accounting": "Every warm-up and measured matrix output passed planned raw compressed-payload equality and logical byte accounting.",
+    "stale_chunk_failure": "Focused tests preserved failure-before-state-change, chunk-specific diagnostics, output protection and retry after staged file mutation.",
+    "office_open": "not_run"
+  },
+  "interpretation": {
+    "supported_claim": "On this machine and the recorded one-million-cell level-6 targeted-upsert workload, removing the normal-path duplicate staged-file CRC scan reduced the isolated target-entry residual median from 131892 to 603 microseconds while keeping process peak working set near 8.34 MB.",
+    "overall_timing": "The observed target-entry median also changed from 2330860 to 1669776 microseconds, but minizip write and system scheduling varied; this is not generalized as an overall throughput claim.",
+    "next_hotspot": "DEFLATE writer time and worksheet parser/action traffic dominate the remaining profiles. The next implementation lane is inline-string wrapper residual profiling; a compression backend change still requires separate dependency, output-size and compatibility evidence."
+  },
+  "scope": "Single Windows/MSVC machine, one-million-cell 10-column numeric and formula distributions, 1000 targeted upserts, source/output DEFLATE level 6. No cross-machine, arbitrary-workbook, Office, parallel-compression or OpenXLSX superiority claim."
+}

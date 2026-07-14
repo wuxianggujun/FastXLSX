@@ -1,0 +1,49 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-14-windows-msvc-patch-staged-crc-reuse-profile",
+  "created_utc": "2026-07-14T16:17:15Z",
+  "git_revision": "7d44f3e14d1a187ffcc81aec8d86bc6dd757935f",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "measurements.json",
+      "sha256": "c521638bf1fed392b81ac28f5473f1b1d0ba411316e96e88bb40e033ec2bb759",
+      "role": "result"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "4baeebf57e68316f7bdadfb299957723732115bd7f7c28f41d6f80f5cf04d754",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "565aaa0f19462a56c26b4ac4db0d4b6ac366e333609740387d3a1f0c8e39b819",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "On this machine and the recorded one-million-cell numeric level-6 targeted-upsert workload, the isolated target-entry residual median fell from 131892 to 603 microseconds after the normal path reused staged file CRC32 metadata; median staged-CRC validation was 152 microseconds and process peak working set remained about 8.34 MB.",
+      "artifact_paths": ["measurements.json", "summary.json"]
+    },
+    {
+      "statement": "The optimized one-million-cell formula workload with an external hyperlink reported a 562-microsecond target-entry residual median, a 156-microsecond staged-CRC validation median and an 8.33594 MB process peak working set median; the representative output opened with openpyxl 3.1.2 and preserved the recorded hyperlink target.",
+      "artifact_paths": ["measurements.json", "summary.json"]
+    },
+    {
+      "statement": "Focused tests preserved chunk-specific stale-file diagnostics, failure-before-state-change, output protection and retry. Production and stored-only CTest passed 132/132, and no-images plus all three install-consumer profiles passed.",
+      "artifact_paths": ["run-context.json", "summary.json"]
+    },
+    {
+      "statement": "The observed target-entry total median changed from 2330860 to 1669776 microseconds, but minizip write and machine scheduling varied; this evidence does not generalize the observation into a cross-machine, arbitrary-workbook, Office or full-feature throughput claim.",
+      "artifact_paths": ["measurements.json", "summary.json", "run-context.json"]
+    }
+  ]
+}

@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Production minizip-ng writer 对具备完整 expected size/CRC32 metadata 的 staged file chunks 使用 entry-level CRC 合并校验，不再在正常写出路径重复逐字节计算 CRC；不完整 metadata 保留原 per-chunk fallback，combined mismatch 才重读并恢复 entry/chunk/file diagnostics，raw-copy 与 stored-bootstrap 语义不变。
+- Patch benchmark JSON 升级为 schema v7，新增 target-entry staged CRC reuse、reused file-chunk count 与 validation timing；同机 1,000,000-cell level-6 evidence 中 isolated entry residual median 从 131,892 us 降至 603 us，numeric/formula profile 的 process peak working set median 均约 8.34 MB。该证据不泛化为跨机器或任意 workbook 吞吐结论。
 - Patch single-pass relationship audit 不再接收 cell XML action traffic，改为只把 metadata 片段经 16 KiB 有界 buffer 输入 prevalidated scanner；保留 split tag/ignored markup 状态与 namespace shadowing，新增 formula/hyperlink preservation 回归。
 - Patch benchmark JSON 升级为 schema v6，在既有 schema-v5 指标上增加 relationship scanner input calls/bytes、boundary carry 与 slow-path tag telemetry；新增 validated v6 bundle 覆盖 5,000,000-cell numeric 与 1,000,000-cell formula + external hyperlink workload，并明确排除受系统负载影响的总耗时提升声明。
 - 测试工件改为每进程独立的 system-temp PID 子目录并在正常退出时清理，避免全量 CTest 在共享 flat 目录累积数千个历史 XLSX/PNG/ZIP 文件或产生跨进程路径冲突。

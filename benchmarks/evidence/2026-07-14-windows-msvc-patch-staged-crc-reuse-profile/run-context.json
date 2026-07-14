@@ -1,0 +1,32 @@
+{
+  "run_context_schema_version": "1",
+  "completed_utc": "2026-07-14T16:17:15Z",
+  "git_revision": "7d44f3e14d1a187ffcc81aec8d86bc6dd757935f",
+  "baseline_git_revision": "6b2ef7d716d7e275a5637887fad057a38ba5810c",
+  "working_tree": "The baseline executable was built from the clean baseline revision. The optimized executable and reports correspond to the implementation committed as 7d44f3e14d1a187ffcc81aec8d86bc6dd757935f; evidence and final documentation were added afterward.",
+  "benchmark_build_preset": "windows-nmake-release-benchmark",
+  "performance_commands": [
+    "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-entry-crc-baseline-numeric-1m-l6 --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-pattern numeric --source-compression-level 6 --output-compression-level 6 --verify-openpyxl",
+    "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-entry-crc-post-numeric-1m-l6 --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-pattern numeric --source-compression-level 6 --output-compression-level 6 --verify-openpyxl",
+    "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-entry-crc-post-formula-hyperlink-1m-l6 --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 1 --measured-runs 3 --source-pattern formula --source-external-hyperlink --source-compression-level 6 --output-compression-level 6 --verify-openpyxl"
+  ],
+  "protocol": "The baseline and optimized numeric profiles each used two warm-ups and five measured runs. The optimized formula/external-hyperlink compatibility profile used one warm-up and three measured runs. Source fixture generation occurred in a separate process and measured runs reused the source workbook.",
+  "telemetry": "Schema v7 adds target worksheet staged-CRC reuse, reused file-chunk count and validation microseconds to the existing package writer entry breakdown.",
+  "validation": {
+    "focused_ctest": [
+      "fastxlsx.package_reader.zip-failures passed",
+      "fastxlsx.package_editor.core passed",
+      "fastxlsx.package_editor.policy-save-as-guards passed",
+      "fastxlsx.package_editor.preservation-linked-external-links passed",
+      "fastxlsx.workbook_editor_public_patch_cells passed"
+    ],
+    "production_ctest": "132/132 passed",
+    "stored_only_ctest": "132/132 passed",
+    "no_images_build_and_smoke": "passed",
+    "install_consumer_profiles": ["production", "stored-only", "no-images"],
+    "patch_matrix_self_test": "passed",
+    "representative_openpyxl": "opened",
+    "office_open": "not_run"
+  },
+  "scope": "Single Windows/MSVC machine and the recorded level-6 numeric/formula targeted-upsert workloads. Overall elapsed observations are not generalized beyond the recorded runs."
+}

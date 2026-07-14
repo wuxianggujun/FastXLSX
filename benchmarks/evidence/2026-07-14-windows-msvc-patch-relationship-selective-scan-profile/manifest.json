@@ -1,0 +1,54 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-14-windows-msvc-patch-relationship-selective-scan-profile",
+  "created_utc": "2026-07-14T14:09:10Z",
+  "git_revision": "4d800f6ad87712f43595482626aa92c82ad44a06",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "summary.json",
+      "sha256": "d663b898b2cfb102be7677a753b554342d9a0f463e6df58f7f15c2ece99c4b83",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "1c12e5efd6c47fd559833d1c166665c8affe42457655c631b2d0b201caf90aea",
+      "role": "summary"
+    },
+    {
+      "path": "numeric-5m-report.json",
+      "sha256": "3d4d5bf0ffb401ce0aba91210b3f6325b7c6a931ae003c5f3e8065695bd80463",
+      "role": "matrix-report"
+    },
+    {
+      "path": "formula-hyperlink-1m-report.json",
+      "sha256": "16aa0a339e0906c74902fd911797512637a4d7993e4b0a3fe45ec8d7ba56f661",
+      "role": "matrix-report"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "On this machine and the recorded five-million-cell numeric targeted-upsert workload, the schema-v6 relationship scanner consumed one 167-byte metadata batch while the transform staged 183697577 worksheet bytes; median scanner time was 3 microseconds, the owned output buffer remained 262144 bytes and median process peak working set was 8.25781 MB.",
+      "artifact_paths": ["summary.json", "numeric-5m-report.json"]
+    },
+    {
+      "statement": "On the recorded one-million-cell formula workload with an external A1 hyperlink, the scanner consumed one 303-byte metadata batch, visited two relationship/namespace slow-path tags and recorded an 8-microsecond median; the representative output opened with openpyxl 3.1.2 and preserved the recorded hyperlink target.",
+      "artifact_paths": ["summary.json", "formula-hyperlink-1m-report.json"]
+    },
+    {
+      "statement": "Every warm-up and measured output passed package byte accounting and exact compressed-payload checks for each planned raw-copy entry. Microsoft Office was not run, and system-load-sensitive total elapsed times are not used as improvement claims.",
+      "artifact_paths": ["summary.json", "run-context.json", "numeric-5m-report.json", "formula-hyperlink-1m-report.json"]
+    },
+    {
+      "statement": "The implementation passed focused relationship/range tests, production and stored-only 132-test CTest profiles, the no-images runtime smoke and installed-package consumer builds for production, stored-only and no-images profiles.",
+      "artifact_paths": ["run-context.json"]
+    }
+  ]
+}

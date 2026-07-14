@@ -5,7 +5,7 @@
 ### Changed
 
 - Patch single-pass relationship audit 不再接收 cell XML action traffic，改为只把 metadata 片段经 16 KiB 有界 buffer 输入 prevalidated scanner；保留 split tag/ignored markup 状态与 namespace shadowing，新增 formula/hyperlink preservation 回归。
-- Patch benchmark JSON 升级为 schema v6，在既有 schema-v5 指标上增加 relationship scanner input calls/bytes、boundary carry 与 slow-path tag telemetry；tracked release evidence 在新的 validated v6 bundle 提交前仍以既有 v5 bundles 为准。
+- Patch benchmark JSON 升级为 schema v6，在既有 schema-v5 指标上增加 relationship scanner input calls/bytes、boundary carry 与 slow-path tag telemetry；新增 validated v6 bundle 覆盖 5,000,000-cell numeric 与 1,000,000-cell formula + external hyperlink workload，并明确排除受系统负载影响的总耗时提升声明。
 - 测试工件改为每进程独立的 system-temp PID 子目录并在正常退出时清理，避免全量 CTest 在共享 flat 目录累积数千个历史 XLSX/PNG/ZIP 文件或产生跨进程路径冲突。
 - Streaming worksheet 热路径改为 256 KiB 有界 body batching，减少逐行文件写调用；成功 `close()` 后立即释放 worksheet 临时文件、row/body buffer、sharedStrings 与 styles 等不再使用的资源，失败时仍保留可重试状态。
 - Patch missing-cell upsert、relationship-bearing worksheet 与其他 direct-range 不适用场景改为单次 source-order scan；同一扫描完成 replacement/insertion、dimension、relationship audit 与 telemetry，再以 file ranges + 小型 memory chunk staging 输出。

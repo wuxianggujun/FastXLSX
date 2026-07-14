@@ -1,0 +1,115 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "6",
+  "git_revision": "4d800f6ad87712f43595482626aa92c82ad44a06",
+  "workload": {
+    "columns": 10,
+    "requested_patch_cells": 1000,
+    "matched_existing_cells": 500,
+    "inserted_cells": 500,
+    "source_compression_level": 6,
+    "output_compression_level": 1,
+    "warmup_runs_per_profile": 2,
+    "measured_runs_per_profile": 5
+  },
+  "profiles": [
+    {
+      "name": "numeric-5m",
+      "source_pattern": "numeric",
+      "source_rows": 500000,
+      "source_cells": 5000000,
+      "source_bytes": 15887388,
+      "output_bytes": 17432167,
+      "staged_worksheet_output_bytes": 183697577,
+      "timing_min_median_max": {
+        "total_editor_ms": [16835, 18880, 19845],
+        "mutation_ms": [12677, 13482, 14139],
+        "single_pass_transform_us": [10273962, 11253962, 11824342],
+        "source_scan_action_us": [9785187, 10862885, 11418439],
+        "relationship_scan_us": [3, 3, 4],
+        "temporary_write_us": [387968, 405899, 488772],
+        "package_writer_total_us": [4145089, 5381324, 5794041]
+      },
+      "relationship_scanner": {
+        "input_calls": 1,
+        "input_bytes": 167,
+        "boundary_carries": 0,
+        "slow_path_tags": 0
+      },
+      "event_traffic": {
+        "parsed_events": 26000006,
+        "source_callbacks": 16000068,
+        "coalesced_input_events": 15000000,
+        "coalesced_output_events": 5000062,
+        "transform_action_callbacks": 11001084,
+        "output_append_calls": 11001083,
+        "output_flushes": 701,
+        "peak_output_buffer_bytes": 262144
+      },
+      "process_peak_working_set_mb_min_median_max": [8.23438, 8.25781, 8.29688],
+      "representative_openpyxl": "opened",
+      "openpyxl_version": "3.1.2",
+      "timing_use": "Scanner isolation and bounded-memory evidence only; total elapsed is excluded from improvement claims because this run was system-load sensitive."
+    },
+    {
+      "name": "formula-hyperlink-1m",
+      "source_pattern": "formula",
+      "source_external_hyperlink": true,
+      "source_rows": 100000,
+      "source_cells": 1000000,
+      "source_bytes": 3758502,
+      "output_bytes": 4454227,
+      "staged_worksheet_output_bytes": 34897713,
+      "timing_min_median_max": {
+        "total_editor_ms": [2407, 3166, 3792],
+        "mutation_ms": [1715, 2216, 2686],
+        "single_pass_transform_us": [1385490, 1763235, 2193713],
+        "source_scan_action_us": [1328965, 1697707, 2134175],
+        "relationship_scan_us": [8, 8, 10],
+        "temporary_write_us": [50140, 59528, 73816],
+        "package_writer_total_us": [622812, 759720, 1084154]
+      },
+      "relationship_scanner": {
+        "input_calls": 1,
+        "input_bytes": 303,
+        "boundary_carries": 0,
+        "slow_path_tags": 2
+      },
+      "event_traffic": {
+        "parsed_events": 5200009,
+        "source_callbacks": 3600016,
+        "coalesced_input_events": 2600000,
+        "coalesced_output_events": 1000007,
+        "transform_action_callbacks": 2800722,
+        "output_append_calls": 2800721,
+        "output_flushes": 134,
+        "peak_output_buffer_bytes": 262144
+      },
+      "process_peak_working_set_mb_min_median_max": [8.27734, 8.28516, 8.28906],
+      "representative_openpyxl": "opened",
+      "openpyxl_version": "3.1.2",
+      "verified_external_hyperlink_target": "https://example.com/fastxlsx-benchmark",
+      "timing_use": "Relationship-preservation, scanner-isolation and bounded-memory evidence only."
+    }
+  ],
+  "same_machine_historical_context": {
+    "baseline_artifact": "../2026-07-13-windows-msvc-patch-event-coalescing-profile/summary.json",
+    "baseline_relationship_scan_us_median": {
+      "numeric_5m": 997828,
+      "formula_hyperlink_1m": 238898
+    },
+    "current_relationship_scan_us_median": {
+      "numeric_5m": 3,
+      "formula_hyperlink_1m": 8
+    },
+    "qualification": "The isolated relationship scanner stage is directly comparable on the same machine and workload shapes. Overall editor and transform elapsed times are not used as improvement claims because the current run experienced materially different system load."
+  },
+  "observations": {
+    "selective_relationship_input": "The numeric profile scanned 167 metadata bytes while staging 183697577 worksheet bytes; the relationship-bearing formula profile scanned 303 metadata bytes while staging 34897713 worksheet bytes and visited two relationship/namespace slow-path tags.",
+    "bounded_memory": "Both profiles retained the 262144-byte owned output buffer. Median process peak working set was 8.25781 MB for five million numeric cells and 8.28516 MB for one million formula cells with an external hyperlink.",
+    "preservation": "The runner verified exact compressed payload equality for every planned raw-copy entry. The formula representative opened with openpyxl and preserved the A1 external hyperlink target.",
+    "remaining_hotspots": "With relationship scanning reduced to microseconds, the recorded source parser/action residual and DEFLATE package writer stages dominate these profiles. Compression backend/parameter profiling remains the next evidence-driven lane."
+  },
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine, the recorded 10-column numeric and formula distributions, 1000 targeted upserts, source DEFLATE level 6 and output DEFLATE level 1 only. This evidence does not claim arbitrary-workbook, cross-machine, Office or full-feature superiority."
+}

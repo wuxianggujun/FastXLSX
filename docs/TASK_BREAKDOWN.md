@@ -35,7 +35,7 @@
 
 - 维护现有 one-inflate direct-range 与 single-pass source-order transform 的支持/拒绝 metadata 清单、failure-before-state-change、dimension 和 relationship audit 契约；新增 worksheet metadata 前先扩展 audit/fail 边界。
 - Single-pass fallback 当前以 256 KiB bounded output batching 合并输出，并在 Patch reader 中把相邻非公式 value wrapper/text 事件合并为 exact-byte span；transformer 继续合并 pass-through action、复用已解析 coordinate，并对有序目标使用 next-target 比较，避免每个 source cell 都做 map lookup。
-- Numeric、mixed inline strings、sharedStrings、formula metadata 与 relationship-bearing hyperlink fixture 已形成 event/action telemetry；relationship scanner 已从 action 级输入迁移为只接收 metadata 的 16 KiB 有界批次，并以 prevalidated worksheet-output 模式减少 namespace/attribute slow path。下一实现批次在 v6 evidence 确认 input calls/bytes、boundary carry、slow-path tags 与 formula/hyperlink preservation 后，再评估 parser/action residual 中仍保留的 inline-string wrapper 成本。
+- Numeric、mixed inline strings、sharedStrings、formula metadata 与 relationship-bearing hyperlink fixture 已形成 event/action telemetry；relationship scanner 已从 action 级输入迁移为只接收 metadata 的 16 KiB 有界批次，并以 prevalidated worksheet-output 模式减少 namespace/attribute slow path。Schema-v6 evidence 已确认 numeric 5M 的 1 call / 167 bytes / 0 slow tags 与 formula + external hyperlink 1M 的 1 call / 303 bytes / 2 slow tags，并保留 hyperlink target；下一实现批次评估 parser/action residual 中仍保留的 inline-string wrapper 成本。
 - 继续用更大规模和多数据分布 worksheet fixture 验证 rewritten bytes、temporary footprint、process peak working set、retry 和 unknown-part preservation；当前 5,000,000-cell numeric 以及四类 1,000,000-cell 分布证据不能替代其他机器或任意 XLSX。
 - 不通过完整 worksheet DOM、dense cell map 或扩大 In-memory guardrail 实现。
 
@@ -46,7 +46,8 @@
 - Targeted strict replace 已采用 DEFLATE one-inflate + target-only direct-range staging；missing-cell upsert、relationship-bearing worksheet 与其他 fallback 已改为 256 KiB output-batched single-pass source-order transform，并保持精确 dimension、relationship audit、retry 与 bounded memory 语义。
 - Compression profile 已验证 level 1 在当前 numeric/mixed Streaming 和完整 worksheet rewrite workload 上以约 9.6%–21.6% 输出增长换取更低 save/close CPU；保持 level 选择由 caller 显式控制，不根据单一数据集静默更改 public 默认值。
 - Event/action coalescing 已在同机 5,000,000-cell numeric level 1 workload 将 transform 与 residual median 分别降低 11.53%/14.21%，owned output buffer 与 process peak working set 保持有界；该结果只用于记录 workload，不泛化。
-- **下一优先级**：先为 relationship scanner metadata batching 生成 schema-v6 validated bundle，确认 input calls/bytes、boundary carry、slow-path tags、formula/hyperlink preservation 与 bounded memory；随后比较 level 6 下现有 minizip-ng/zlib 与可选 backend/参数的 encode CPU、输出大小、兼容性和依赖成本。只有证据显示 CPU 可并行且事务/内存边界可控时才评估并行压缩。
+- Relationship scanner metadata batching 的 schema-v6 bundle 已完成，确认 input calls/bytes、boundary carry、slow-path tags、formula/hyperlink preservation、256 KiB output buffer 与约 8.26–8.29 MB median process peak working set；该轮 system-load-sensitive total elapsed 不用于提升声明。
+- **下一优先级**：比较 level 6 下现有 minizip-ng/zlib 与可选 backend/参数的 encode CPU、输出大小、兼容性和依赖成本，同时以 profile 判断 inline-string wrapper residual 是否值得单独优化。只有证据显示 CPU 可并行且事务/内存边界可控时才评估并行压缩。
 - 为 Streaming/Patch 增加至少一个更大规模和一台不同机器的 validated bundle；记录冷热启动差异，release claim 使用 warmed repeated protocol，不以单次局部计时替代 bundle。
 - 新 bundle 继续提交 machine-readable artifacts、environment、hash、验证状态和 claim-to-artifact 映射；Office 未运行必须保持 `not_run`。
 - 性能结论必须满足 `PERFORMANCE_TARGETS.md`。

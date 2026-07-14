@@ -42,7 +42,7 @@ py -3 tools/run_benchmark_matrix.py --self-test
 py -3 tools/run_patch_benchmark_matrix.py --self-test
 ```
 
-重复矩阵默认每个 case 使用 1 次 warm-up 和 3 次 measured run；profiling bundle 可显式增加 warm-up/measured 次数，但必须在 run context 记录。报告保留全部 measured result 与 min/median/max；`--verify-openpyxl` 只验证 median 代表 workbook，Office 仍是独立步骤。当前 validator 应通过 4 个 production Streaming bundle、6 个 Patch bundle 和 1 个 OpenXLSX reference bundle；它们都只能支持 manifest 限定的单机 workload 结论，不能泛化到其他机器或数据规模。`office_open="not_run"` 不得写成 Office 已验证。
+重复矩阵默认每个 case 使用 1 次 warm-up 和 3 次 measured run；profiling bundle 可显式增加 warm-up/measured 次数，但必须在 run context 记录。报告保留全部 measured result 与 min/median/max；`--verify-openpyxl` 只验证 median 代表 workbook，Office 仍是独立步骤。当前 validator 应通过 4 个 production Streaming bundle、7 个 Patch bundle 和 1 个 OpenXLSX reference bundle；它们都只能支持 manifest 限定的单机 workload 结论，不能泛化到其他机器或数据规模。`office_open="not_run"` 不得写成 Office 已验证。
 
 当前 Streaming benchmark executable 输出 schema v5；Patch `WorkbookEditor` benchmark executable 输出 schema v6。Streaming 必须分列 generation、package close、throughput、body buffer peak/flush count 和 close 后 active temporary file count；Patch 必须分列 direct-range/single-pass transform、parser/source-callback/coalesced/action traffic、output append/flush/peak buffer、relationship scanner input calls/bytes/boundary carry/slow-path tags、relationship/temporary IO、package writer target-entry telemetry，以及 raw compressed-copy entry names/count/bytes。历史 schema-v4/v5 artifact 仍可读取或验证，但新 Patch evidence 不得删除 v6 relationship scanner telemetry。
 

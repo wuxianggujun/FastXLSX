@@ -102,6 +102,67 @@ private:
     std::uint32_t value_ = 0xffffffffu;
 };
 
+std::uint32_t crc32_matrix_times(
+    const std::array<std::uint32_t, 32>& matrix, std::uint32_t vector) noexcept
+{
+    std::uint32_t result = 0;
+    std::size_t matrix_index = 0;
+    while (vector != 0) {
+        if ((vector & 1u) != 0u) {
+            result ^= matrix[matrix_index];
+        }
+        vector >>= 1u;
+        ++matrix_index;
+    }
+    return result;
+}
+
+void crc32_matrix_square(std::array<std::uint32_t, 32>& square,
+    const std::array<std::uint32_t, 32>& matrix) noexcept
+{
+    for (std::size_t index = 0; index < square.size(); ++index) {
+        square[index] = crc32_matrix_times(matrix, matrix[index]);
+    }
+}
+
+std::uint32_t combine_crc32(
+    std::uint32_t first, std::uint32_t second, std::uint64_t second_size) noexcept
+{
+    if (second_size == 0) {
+        return first;
+    }
+
+    std::array<std::uint32_t, 32> odd {};
+    std::array<std::uint32_t, 32> even {};
+    odd[0] = 0xedb88320u;
+    std::uint32_t row = 1;
+    for (std::size_t index = 1; index < odd.size(); ++index) {
+        odd[index] = row;
+        row <<= 1u;
+    }
+
+    crc32_matrix_square(even, odd);
+    crc32_matrix_square(odd, even);
+    do {
+        crc32_matrix_square(even, odd);
+        if ((second_size & 1u) != 0u) {
+            first = crc32_matrix_times(even, first);
+        }
+        second_size >>= 1u;
+        if (second_size == 0) {
+            break;
+        }
+
+        crc32_matrix_square(odd, even);
+        if ((second_size & 1u) != 0u) {
+            first = crc32_matrix_times(odd, first);
+        }
+        second_size >>= 1u;
+    } while (second_size != 0);
+
+    return first ^ second;
+}
+
 void add_entry_uncompressed_size(std::uint64_t& size, std::uint64_t chunk_size)
 {
     if (chunk_size > std::numeric_limits<std::uint64_t>::max() - size) {
@@ -396,6 +457,50 @@ void validate_package_entries_zip32(const std::vector<PackageEntry>& entries)
 
 #ifdef FASTXLSX_HAS_MINIZIP_NG
 
+struct EntryCrcValidationPlan {
+    bool reuse_staged_crc32 = false;
+    std::uint32_t expected_crc32 = 0;
+    std::uint64_t reused_file_chunk_count = 0;
+};
+
+EntryCrcValidationPlan make_entry_crc_validation_plan(const PackageEntry& entry)
+{
+    EntryCrcValidationPlan plan;
+    if (entry.chunks.empty()) {
+        return plan;
+    }
+
+    std::uint32_t combined_crc32 = 0;
+    for (const PackageEntryChunk& chunk : entry.chunks) {
+        std::uint64_t chunk_size = 0;
+        std::uint32_t chunk_crc32 = 0;
+        switch (chunk.kind) {
+        case PackageEntryChunk::Kind::Memory:
+            chunk_size = static_cast<std::uint64_t>(chunk.data.size());
+            chunk_crc32 = chunk.has_expected_crc32
+                ? chunk.expected_crc32
+                : crc32(chunk.data);
+            break;
+        case PackageEntryChunk::Kind::File:
+            if (!chunk.has_expected_crc32
+                || (!chunk.has_file_range && !chunk.has_expected_size)) {
+                return {};
+            }
+            chunk_size = chunk.has_file_range ? chunk.file_size : chunk.expected_size;
+            chunk_crc32 = chunk.expected_crc32;
+            ++plan.reused_file_chunk_count;
+            break;
+        default:
+            return {};
+        }
+        combined_crc32 = combine_crc32(combined_crc32, chunk_crc32, chunk_size);
+    }
+
+    plan.reuse_staged_crc32 = plan.reused_file_chunk_count != 0;
+    plan.expected_crc32 = combined_crc32;
+    return plan;
+}
+
 std::string path_to_utf8(const std::filesystem::path& path)
 {
     const auto value = path.u8string();
@@ -539,18 +644,18 @@ void write_minizip_memory_chunk(void* writer, std::string_view data,
     }
 }
 
-void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cache,
+template <typename Consumer>
+void consume_minizip_file_chunk(MinizipFileChunkReadCache& file_cache,
     const PackageEntryChunk& chunk, std::vector<char>& buffer,
-    PackageWriterEntryTelemetry* telemetry)
+    PackageWriterEntryTelemetry* telemetry, Consumer consumer)
 {
     std::ifstream& stream = file_cache.open_for_payload(chunk, buffer);
 
-    Crc32Accumulator chunk_crc;
-    std::uint64_t written_size = 0;
+    std::uint64_t consumed_size = 0;
     const bool has_read_limit = file_chunk_has_read_limit(chunk);
     const std::uint64_t read_limit = file_chunk_read_limit(chunk);
     while (true) {
-        if (has_read_limit && written_size == read_limit) {
+        if (has_read_limit && consumed_size == read_limit) {
             if (!chunk.has_file_range) {
                 const int next = stream.peek();
                 if (next != std::char_traits<char>::eof()) {
@@ -568,7 +673,7 @@ void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cach
         std::size_t requested = buffer.size();
         if (has_read_limit) {
             requested = static_cast<std::size_t>(
-                std::min<std::uint64_t>(read_limit - written_size,
+                std::min<std::uint64_t>(read_limit - consumed_size,
                     static_cast<std::uint64_t>(buffer.size())));
         }
         const auto read_started = telemetry != nullptr
@@ -587,37 +692,49 @@ void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cach
             if (has_read_limit) {
                 throw FastXlsxError(expected_actual_size_message(
                     "file-backed ZIP entry chunk ended before expected bytes",
-                    read_limit, written_size));
+                    read_limit, consumed_size));
             }
             break;
         }
-        const int chunk_size = static_cast<int>(read_size);
+        consumer(std::string_view(buffer.data(), static_cast<std::size_t>(read_size)));
+        consumed_size += static_cast<std::uint64_t>(read_size);
+    }
+    file_cache.note_payload_bytes_read(consumed_size);
+    require_expected_chunk_size(chunk, consumed_size);
+}
+
+void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cache,
+    const PackageEntryChunk& chunk, std::vector<char>& buffer,
+    bool validate_chunk_crc32, PackageWriterEntryTelemetry* telemetry)
+{
+    Crc32Accumulator chunk_crc;
+    consume_minizip_file_chunk(file_cache, chunk, buffer, telemetry,
+        [&](std::string_view data) {
+        const int chunk_size = static_cast<int>(data.size());
         const auto write_started = telemetry != nullptr
             ? std::chrono::steady_clock::now()
             : std::chrono::steady_clock::time_point {};
-        const int written = mz_zip_writer_entry_write(writer, buffer.data(), chunk_size);
+        const int written = mz_zip_writer_entry_write(writer, data.data(), chunk_size);
         if (telemetry != nullptr) {
             telemetry->writer_write_us += elapsed_microseconds(write_started);
             ++telemetry->writer_write_calls;
-            telemetry->input_bytes += static_cast<std::uint64_t>(read_size);
+            telemetry->input_bytes += static_cast<std::uint64_t>(data.size());
         }
         if (written != chunk_size) {
             throw FastXlsxError("minizip-ng failed to write file-backed ZIP entry data");
         }
-        if (chunk.has_expected_crc32) {
-            chunk_crc.update(
-                std::string_view(buffer.data(), static_cast<std::size_t>(read_size)));
+        if (validate_chunk_crc32) {
+            chunk_crc.update(data);
         }
-        written_size += static_cast<std::uint64_t>(read_size);
+    });
+    if (validate_chunk_crc32) {
+        require_expected_chunk_crc32(chunk, chunk_crc.value());
     }
-    file_cache.note_payload_bytes_read(written_size);
-    require_expected_chunk_size(chunk, written_size);
-    require_expected_chunk_crc32(chunk, chunk_crc.value());
 }
 
 void write_minizip_entry_chunks(
     void* writer, const PackageEntry& entry, std::vector<char>& file_buffer,
-    PackageWriterEntryTelemetry* telemetry)
+    bool reuse_staged_crc32, PackageWriterEntryTelemetry* telemetry)
 {
     if (entry.chunks.empty()) {
         write_minizip_memory_chunk(writer, entry.data, telemetry);
@@ -637,7 +754,8 @@ void write_minizip_entry_chunks(
                     file_buffer.resize(io_buffer_size);
                 }
                 write_minizip_file_chunk(
-                    writer, file_cache, chunk, file_buffer, telemetry);
+                    writer, file_cache, chunk, file_buffer,
+                    chunk.has_expected_crc32 && !reuse_staged_crc32, telemetry);
                 break;
             default:
                 throw FastXlsxError("unsupported ZIP entry chunk kind");
@@ -658,7 +776,49 @@ void write_minizip_raw_compressed_entry(void* writer,
     }
     PackageEntryChunk chunk = PackageEntryChunk::file_range(
         source.path, source.data_offset, source.compressed_size);
-    write_minizip_file_chunk(writer, file_cache, chunk, file_buffer, telemetry);
+    write_minizip_file_chunk(writer, file_cache, chunk, file_buffer, false, telemetry);
+}
+
+void diagnose_entry_crc32_mismatch(
+    const PackageEntry& entry, std::vector<char>& file_buffer)
+{
+    if (file_buffer.empty()) {
+        file_buffer.resize(io_buffer_size);
+    }
+    MinizipFileChunkReadCache file_cache;
+    for (std::size_t chunk_index = 0; chunk_index < entry.chunks.size(); ++chunk_index) {
+        const PackageEntryChunk& chunk = entry.chunks[chunk_index];
+        if (chunk.kind != PackageEntryChunk::Kind::File || !chunk.has_expected_crc32) {
+            continue;
+        }
+        try {
+            Crc32Accumulator chunk_crc;
+            consume_minizip_file_chunk(file_cache, chunk, file_buffer, nullptr,
+                [&](std::string_view data) { chunk_crc.update(data); });
+            require_expected_chunk_crc32(chunk, chunk_crc.value());
+        } catch (const std::exception& error) {
+            wrap_zip_entry_chunk_error(entry.name, chunk, chunk_index, error);
+        }
+    }
+}
+
+void validate_written_entry_crc32(void* zip_handle, const PackageEntry& entry,
+    const EntryCrcValidationPlan& plan, std::vector<char>& file_buffer)
+{
+    mz_zip_file* written_file_info = nullptr;
+    check_minizip_result(mz_zip_entry_get_info(zip_handle, &written_file_info),
+        "get written ZIP entry info");
+    if (written_file_info == nullptr) {
+        throw FastXlsxError("minizip-ng returned no written ZIP entry info");
+    }
+    if (written_file_info->crc == plan.expected_crc32) {
+        return;
+    }
+
+    diagnose_entry_crc32_mismatch(entry, file_buffer);
+    throw FastXlsxError("ZIP entry CRC32 changed after staging: expected "
+        + std::to_string(plan.expected_crc32) + ", actual "
+        + std::to_string(written_file_info->crc));
 }
 
 void write_minizip_package(
@@ -717,6 +877,19 @@ void write_minizip_package(
             const auto entry_started = active_entry_telemetry != nullptr
                 ? std::chrono::steady_clock::now()
                 : std::chrono::steady_clock::time_point {};
+            const auto crc_plan_started = active_entry_telemetry != nullptr
+                ? std::chrono::steady_clock::now()
+                : std::chrono::steady_clock::time_point {};
+            const EntryCrcValidationPlan crc_plan =
+                make_entry_crc_validation_plan(entry);
+            if (active_entry_telemetry != nullptr) {
+                active_entry_telemetry->reused_staged_crc32 =
+                    crc_plan.reuse_staged_crc32;
+                active_entry_telemetry->reused_staged_file_chunk_count =
+                    crc_plan.reused_file_chunk_count;
+                active_entry_telemetry->staged_crc_validation_us =
+                    elapsed_microseconds(crc_plan_started);
+            }
 
             mz_zip_file file_info {};
             file_info.filename = entry.name.c_str();
@@ -752,7 +925,8 @@ void write_minizip_package(
                     active_entry_telemetry);
             } else {
                 write_minizip_entry_chunks(
-                    writer.get(), entry, file_buffer, active_entry_telemetry);
+                    writer.get(), entry, file_buffer, crc_plan.reuse_staged_crc32,
+                    active_entry_telemetry);
             }
 
             const auto entry_close_started = active_entry_telemetry != nullptr
@@ -761,6 +935,18 @@ void write_minizip_package(
             check_minizip_result(mz_zip_writer_entry_close(writer.get()), "close ZIP entry");
             if (active_entry_telemetry != nullptr) {
                 active_entry_telemetry->close_us = elapsed_microseconds(entry_close_started);
+            }
+            if (crc_plan.reuse_staged_crc32) {
+                const auto crc_validation_started = active_entry_telemetry != nullptr
+                    ? std::chrono::steady_clock::now()
+                    : std::chrono::steady_clock::time_point {};
+                validate_written_entry_crc32(zip_handle, entry, crc_plan, file_buffer);
+                if (active_entry_telemetry != nullptr) {
+                    active_entry_telemetry->staged_crc_validation_us +=
+                        elapsed_microseconds(crc_validation_started);
+                }
+            }
+            if (active_entry_telemetry != nullptr) {
                 active_entry_telemetry->total_us = elapsed_microseconds(entry_started);
                 telemetry->entries.push_back(std::move(entry_telemetry));
             }

@@ -107,14 +107,17 @@ enum class PackageWriterBackend {
 struct PackageWriterEntryTelemetry {
     std::string entry_name;
     bool raw_compressed_copy = false;
+    bool reused_staged_crc32 = false;
     std::uint64_t uncompressed_bytes = 0;
     std::uint64_t input_bytes = 0;
     std::uint64_t input_read_calls = 0;
     std::uint64_t writer_write_calls = 0;
+    std::uint64_t reused_staged_file_chunk_count = 0;
     std::uint64_t total_us = 0;
     std::uint64_t open_us = 0;
     std::uint64_t input_read_us = 0;
     std::uint64_t writer_write_us = 0;
+    std::uint64_t staged_crc_validation_us = 0;
     std::uint64_t close_us = 0;
 };
 

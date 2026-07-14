@@ -347,6 +347,105 @@ void test_package_writer_applies_explicit_minizip_compression_levels()
     }
 }
 
+void test_package_writer_reuses_staged_crc32_for_chunked_minizip_entries()
+{
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-writer-staged-crc-body.bin");
+    const std::filesystem::path combined_path =
+        output_path("fastxlsx-package-writer-staged-crc-combined.xlsx");
+    const std::filesystem::path fallback_path =
+        output_path("fastxlsx-package-writer-staged-crc-fallback.xlsx");
+    const std::string body = "0123456789-file-backed-payload";
+    write_file(body_path, body);
+
+    const std::string content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(</Types>)";
+    const std::string prefix = "prefix:";
+    const std::string suffix = ":suffix";
+    constexpr std::uint64_t range_offset = 3;
+    constexpr std::uint64_t range_size = 11;
+
+    fastxlsx::detail::PackageEntryChunk full_file =
+        fastxlsx::detail::PackageEntryChunk::file(body_path);
+    full_file.has_expected_size = true;
+    full_file.expected_size = body.size();
+    full_file.has_expected_crc32 = true;
+    full_file.expected_crc32 = fastxlsx::detail::crc32(body);
+
+    fastxlsx::detail::PackageEntryChunk file_range =
+        fastxlsx::detail::PackageEntryChunk::file_range(
+            body_path, range_offset, range_size);
+    file_range.has_expected_crc32 = true;
+    file_range.expected_crc32 = fastxlsx::detail::crc32(
+        std::string_view(body).substr(range_offset, range_size));
+
+    fastxlsx::detail::PackageWriterOptions options;
+    options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    options.compression_level = 6;
+    fastxlsx::detail::PackageWriterTelemetry combined_telemetry;
+    options.telemetry = &combined_telemetry;
+    fastxlsx::detail::write_package(combined_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/chunked.bin",
+                {
+                    fastxlsx::detail::PackageEntryChunk::memory(prefix),
+                    full_file,
+                    fastxlsx::detail::PackageEntryChunk::memory(""),
+                    file_range,
+                    fastxlsx::detail::PackageEntryChunk::memory(suffix),
+                }},
+        },
+        options);
+
+    const fastxlsx::detail::PackageReader combined_reader =
+        fastxlsx::detail::PackageReader::open(combined_path);
+    check(combined_reader.read_entry("custom/chunked.bin")
+            == prefix + body + body.substr(range_offset, range_size) + suffix,
+        "combined staged CRC output should preserve ordered chunk bytes");
+    const auto combined_entry = std::find_if(combined_telemetry.entries.begin(),
+        combined_telemetry.entries.end(),
+        [](const fastxlsx::detail::PackageWriterEntryTelemetry& entry) {
+            return entry.entry_name == "custom/chunked.bin";
+        });
+    check(combined_entry != combined_telemetry.entries.end(),
+        "combined staged CRC telemetry should include the chunked entry");
+    if (combined_entry != combined_telemetry.entries.end()) {
+        check(combined_entry->reused_staged_crc32,
+            "chunked minizip entry should reuse staged CRC metadata");
+        check(combined_entry->reused_staged_file_chunk_count == 2,
+            "chunked minizip entry should report every reused file chunk CRC");
+    }
+
+    fastxlsx::detail::PackageWriterTelemetry fallback_telemetry;
+    options.telemetry = &fallback_telemetry;
+    fastxlsx::detail::write_package(fallback_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/chunked.bin",
+                {fastxlsx::detail::PackageEntryChunk::file(body_path)}},
+        },
+        options);
+    const auto fallback_entry = std::find_if(fallback_telemetry.entries.begin(),
+        fallback_telemetry.entries.end(),
+        [](const fastxlsx::detail::PackageWriterEntryTelemetry& entry) {
+            return entry.entry_name == "custom/chunked.bin";
+        });
+    check(fallback_entry != fallback_telemetry.entries.end(),
+        "fallback staged CRC telemetry should include the chunked entry");
+    if (fallback_entry != fallback_telemetry.entries.end()) {
+        check(!fallback_entry->reused_staged_crc32
+                && fallback_entry->reused_staged_file_chunk_count == 0,
+            "file chunks without expected CRC metadata should keep fallback validation");
+    }
+}
+
 void test_package_writer_raw_copies_matching_compressed_entries()
 {
     const std::filesystem::path source_path =
@@ -1650,6 +1749,7 @@ int main()
         test_package_reader_closes_abandoned_deflated_entry_chunk_source();
         test_package_reader_extracts_deflated_entry_to_file_with_minizip();
         test_package_writer_applies_explicit_minizip_compression_levels();
+        test_package_writer_reuses_staged_crc32_for_chunked_minizip_entries();
         test_package_writer_raw_copies_matching_compressed_entries();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_read();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_extract();

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "6"
+BENCHMARK_SCHEMA_VERSION = "7"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -58,6 +58,7 @@ METRICS = [
     "target_worksheet_entry_total_us",
     "target_worksheet_entry_input_read_us",
     "target_worksheet_entry_writer_write_us",
+    "target_worksheet_entry_staged_crc_validation_us",
     "target_worksheet_entry_close_us",
 ]
 
@@ -422,6 +423,15 @@ def verify_result(
             "target worksheet entry should report writer calls")
         require(int(result.get("target_worksheet_entry_total_us")) > 0,
             "target worksheet entry should report positive total time")
+        if case.scenario == "patch-upsert":
+            require(result.get("target_worksheet_entry_reused_staged_crc32") is True,
+                "patch-upsert should reuse staged CRC32 metadata")
+            require(
+                int(result.get("target_worksheet_entry_reused_staged_file_chunk_count")) > 0,
+                "patch-upsert should report reused staged file chunks",
+            )
+            require(int(result.get("target_worksheet_entry_staged_crc_validation_us")) >= 0,
+                "patch-upsert staged CRC validation time must be non-negative")
     require(not result.get("materialized_worksheet"), "Patch case unexpectedly materialized sheet")
 
     copied_names = list(result.get("copied_entry_names", []))
@@ -768,6 +778,7 @@ def run_self_test() -> None:
                 "target_worksheet_entry_total_us": 500,
                 "target_worksheet_entry_input_read_us": 50,
                 "target_worksheet_entry_writer_write_us": 400,
+                "target_worksheet_entry_staged_crc_validation_us": 1,
                 "target_worksheet_entry_close_us": 50,
             },
             "byte_accounting": {

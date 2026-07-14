@@ -72,6 +72,9 @@ struct SinglePassWorksheetTransformStats {
     std::uint64_t source_callback_event_count = 0;
     std::uint64_t source_coalesced_input_event_count = 0;
     std::uint64_t source_coalesced_output_event_count = 0;
+    std::uint64_t source_simple_inline_string_fast_path_count = 0;
+    std::uint64_t source_simple_inline_string_fast_path_bytes = 0;
+    std::uint64_t source_simple_inline_string_fallback_count = 0;
     std::uint64_t transform_action_callback_count = 0;
     std::uint64_t output_append_call_count = 0;
     std::uint64_t output_flush_count = 0;
@@ -112,6 +115,9 @@ struct PackagePartReplacement {
     std::uint64_t single_pass_source_callback_event_count = 0;
     std::uint64_t single_pass_source_coalesced_input_event_count = 0;
     std::uint64_t single_pass_source_coalesced_output_event_count = 0;
+    std::uint64_t single_pass_source_simple_inline_string_fast_path_count = 0;
+    std::uint64_t single_pass_source_simple_inline_string_fast_path_bytes = 0;
+    std::uint64_t single_pass_source_simple_inline_string_fallback_count = 0;
     std::uint64_t single_pass_transform_action_callback_count = 0;
     std::uint64_t single_pass_output_append_call_count = 0;
     std::uint64_t single_pass_output_flush_count = 0;
@@ -176,6 +182,9 @@ struct PackageEditorOutputEntryPlan {
     std::uint64_t single_pass_source_callback_event_count = 0;
     std::uint64_t single_pass_source_coalesced_input_event_count = 0;
     std::uint64_t single_pass_source_coalesced_output_event_count = 0;
+    std::uint64_t single_pass_source_simple_inline_string_fast_path_count = 0;
+    std::uint64_t single_pass_source_simple_inline_string_fast_path_bytes = 0;
+    std::uint64_t single_pass_source_simple_inline_string_fallback_count = 0;
     std::uint64_t single_pass_transform_action_callback_count = 0;
     std::uint64_t single_pass_output_append_call_count = 0;
     std::uint64_t single_pass_output_flush_count = 0;

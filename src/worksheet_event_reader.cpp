@@ -225,6 +225,90 @@ CellValueElementKind cell_value_element_kind(std::string_view name) noexcept
     return CellValueElementKind::None;
 }
 
+struct SimpleInlineStringPayloadMatch {
+    bool candidate = false;
+    std::size_t byte_count = 0;
+};
+
+bool starts_with_unqualified_element_candidate(
+    std::string_view xml, std::string_view name) noexcept
+{
+    if (xml.size() <= name.size() + 1 || xml.front() != '<'
+        || xml.substr(1, name.size()) != name) {
+        return false;
+    }
+
+    const char boundary = xml[name.size() + 1];
+    return is_space(boundary) || boundary == '>' || boundary == '/';
+}
+
+SimpleInlineStringPayloadMatch match_simple_inline_string_payload(std::string_view xml)
+{
+    if (!starts_with_unqualified_element_candidate(xml, "is")) {
+        return {};
+    }
+
+    SimpleInlineStringPayloadMatch match { true, 0 };
+    const std::size_t inline_open_end = find_markup_end_or_npos(xml, 0);
+    if (inline_open_end == std::string_view::npos) {
+        return match;
+    }
+    const std::string_view inline_open = xml.substr(0, inline_open_end + 1);
+    if (is_closing_tag(inline_open) || is_self_closing_tag(inline_open)
+        || element_name(inline_open) != "is") {
+        return match;
+    }
+
+    std::size_t position = inline_open_end + 1;
+    if (position >= xml.size() || xml[position] != '<') {
+        return match;
+    }
+    const std::size_t text_open_end = find_markup_end_or_npos(xml, position);
+    if (text_open_end == std::string_view::npos) {
+        return match;
+    }
+    const std::string_view text_open =
+        xml.substr(position, text_open_end + 1 - position);
+    if (is_closing_tag(text_open) || element_name(text_open) != "t") {
+        return match;
+    }
+
+    position = text_open_end + 1;
+    if (!is_self_closing_tag(text_open)) {
+        const std::size_t text_close_begin = xml.find('<', position);
+        if (text_close_begin == std::string_view::npos) {
+            return match;
+        }
+        const std::size_t text_close_end =
+            find_markup_end_or_npos(xml, text_close_begin);
+        if (text_close_end == std::string_view::npos) {
+            return match;
+        }
+        const std::string_view text_close =
+            xml.substr(text_close_begin, text_close_end + 1 - text_close_begin);
+        if (!is_closing_tag(text_close) || element_name(text_close) != "t") {
+            return match;
+        }
+        position = text_close_end + 1;
+    }
+
+    if (position >= xml.size() || xml[position] != '<') {
+        return match;
+    }
+    const std::size_t inline_close_end = find_markup_end_or_npos(xml, position);
+    if (inline_close_end == std::string_view::npos) {
+        return match;
+    }
+    const std::string_view inline_close =
+        xml.substr(position, inline_close_end + 1 - position);
+    if (!is_closing_tag(inline_close) || element_name(inline_close) != "is") {
+        return match;
+    }
+
+    match.byte_count = inline_close_end + 1;
+    return match;
+}
+
 class WorksheetEventState {
 public:
     WorksheetEventState(const WorksheetEventCallback& callback,
@@ -313,6 +397,40 @@ public:
         }
 
         emit_opening_tag(raw, name, self_closing, offset);
+    }
+
+    std::size_t try_emit_simple_inline_string_payload(
+        std::string_view xml, std::uint64_t offset)
+    {
+        if (!coalesce_cell_value_events_ || !in_cell_ || in_cell_value_) {
+            return 0;
+        }
+
+        const SimpleInlineStringPayloadMatch match =
+            match_simple_inline_string_payload(xml);
+        if (!match.candidate) {
+            return 0;
+        }
+        if (match.byte_count == 0) {
+            if (telemetry_ != nullptr) {
+                ++telemetry_->simple_inline_string_fallback_count;
+            }
+            return 0;
+        }
+
+        const std::string_view raw = xml.substr(0, match.byte_count);
+        emit(WorksheetEvent { WorksheetEventKind::RawText,
+            raw,
+            {},
+            current_row_,
+            current_cell_ },
+            offset);
+        if (telemetry_ != nullptr) {
+            ++telemetry_->simple_inline_string_fast_path_count;
+            telemetry_->simple_inline_string_fast_path_bytes +=
+                static_cast<std::uint64_t>(match.byte_count);
+        }
+        return match.byte_count;
     }
 
     void flush_coalesced_event()
@@ -749,6 +867,18 @@ std::size_t consume_available_events(std::string_view xml_window,
             state.emit_text(xml_window.substr(position, open - position),
                 add_source_offset(window_begin_offset, position));
             position = open;
+        }
+
+        if (starts_with_unqualified_element_candidate(
+                xml_window.substr(position), "is")) {
+            const std::size_t inline_string_bytes =
+                state.try_emit_simple_inline_string_payload(
+                    xml_window.substr(position),
+                    add_source_offset(window_begin_offset, position));
+            if (inline_string_bytes != 0) {
+                position += inline_string_bytes;
+                continue;
+            }
         }
 
         if (starts_with_at(xml_window, position, "<!--")) {

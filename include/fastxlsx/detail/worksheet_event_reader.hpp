@@ -61,6 +61,9 @@ struct WorksheetEventReaderTelemetry {
     std::uint64_t callback_event_count = 0;
     std::uint64_t coalesced_input_event_count = 0;
     std::uint64_t coalesced_output_event_count = 0;
+    std::uint64_t simple_inline_string_fast_path_count = 0;
+    std::uint64_t simple_inline_string_fast_path_bytes = 0;
+    std::uint64_t simple_inline_string_fallback_count = 0;
 };
 
 /// Internal pull-based worksheet XML chunk source.
@@ -87,7 +90,9 @@ struct WorksheetEventReaderOptions {
     bool copy_context_attributes = true;
 
     /// Coalesces adjacent non-formula cell value wrapper/text events before
-    /// invoking the callback.
+    /// invoking the callback. Complete simple inline-string payloads already
+    /// present in the bounded window are emitted as one exact-byte span;
+    /// complex or boundary-split payloads retain the ordinary parser path.
     ///
     /// This preserves exact source bytes and parser validation while reducing
     /// callback traffic for Patch rewrite hot paths. The default remains false

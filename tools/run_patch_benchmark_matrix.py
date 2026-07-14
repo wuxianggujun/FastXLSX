@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "7"
+BENCHMARK_SCHEMA_VERSION = "8"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -44,6 +44,9 @@ METRICS = [
     "single_pass_source_callback_event_count",
     "single_pass_source_coalesced_input_event_count",
     "single_pass_source_coalesced_output_event_count",
+    "single_pass_source_simple_inline_string_fast_path_count",
+    "single_pass_source_simple_inline_string_fast_path_bytes",
+    "single_pass_source_simple_inline_string_fallback_count",
     "single_pass_transform_action_callback_count",
     "single_pass_relationship_scan_us",
     "single_pass_relationship_scan_input_call_count",
@@ -347,6 +350,25 @@ def verify_result(
             "patch-upsert should reduce parser events before transform actions")
         require(coalesced_input_events > coalesced_output_events > 0,
             "patch-upsert should report value-event coalescing")
+        inline_fast_path_count = int(
+            result.get("single_pass_source_simple_inline_string_fast_path_count")
+        )
+        inline_fast_path_bytes = int(
+            result.get("single_pass_source_simple_inline_string_fast_path_bytes")
+        )
+        inline_fallback_count = int(
+            result.get("single_pass_source_simple_inline_string_fallback_count")
+        )
+        if source_pattern == "mixed-inline":
+            require(inline_fast_path_count > 0,
+                "mixed-inline patch-upsert should use the simple inline-string fast path")
+            require(inline_fast_path_bytes > inline_fast_path_count,
+                "mixed-inline fast-path bytes should exceed its payload count")
+            require(inline_fallback_count < inline_fast_path_count,
+                "mixed-inline fast-path fallbacks should stay below completed payloads")
+        else:
+            require(inline_fast_path_count == 0 and inline_fast_path_bytes == 0,
+                "non-inline source should not report simple inline-string fast-path traffic")
         require(int(result.get("single_pass_output_append_call_count")) > 0,
             "patch-upsert should report output append calls")
         require(int(result.get("single_pass_output_flush_count")) > 0,
@@ -764,6 +786,9 @@ def run_self_test() -> None:
                 "single_pass_source_callback_event_count": 300,
                 "single_pass_source_coalesced_input_event_count": 300,
                 "single_pass_source_coalesced_output_event_count": 100,
+                "single_pass_source_simple_inline_string_fast_path_count": 0,
+                "single_pass_source_simple_inline_string_fast_path_bytes": 0,
+                "single_pass_source_simple_inline_string_fallback_count": 0,
                 "single_pass_transform_action_callback_count": 200,
                 "single_pass_relationship_scan_us": 200,
                 "single_pass_relationship_scan_input_call_count": 1,

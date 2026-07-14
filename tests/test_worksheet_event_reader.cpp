@@ -389,6 +389,91 @@ void test_event_reader_coalesces_patch_value_events_with_telemetry()
         "event telemetry callback count should match observed events");
 }
 
+void test_event_reader_fast_paths_simple_inline_strings_and_falls_back_safely()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1" t="inlineStr"><is><t xml:space="preserve">alpha &amp; beta</t></is></c>)"
+        R"(<c r="B1" t="inlineStr"><is><t/></is></c>)"
+        R"(<c r="C1" t="inlineStr"><is><r><t>rich</t></r></is></c>)"
+        R"(<c r="D1"><f>A1&amp;"!"</f><v>0</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+
+    fastxlsx::detail::WorksheetEventReaderTelemetry detailed_telemetry;
+    fastxlsx::detail::WorksheetEventReaderOptions detailed_options;
+    detailed_options.telemetry = &detailed_telemetry;
+    const std::vector<CopiedWorksheetEvent> detailed =
+        read_source_events(xml, xml.size(), detailed_options);
+
+    fastxlsx::detail::WorksheetEventReaderTelemetry telemetry;
+    fastxlsx::detail::WorksheetEventReaderOptions options;
+    options.copy_context_attributes = false;
+    options.coalesce_cell_value_events = true;
+    options.telemetry = &telemetry;
+    const std::vector<CopiedWorksheetEvent> events =
+        read_source_events(xml, xml.size(), options);
+
+    std::string reconstructed;
+    for (const CopiedWorksheetEvent& event : events) {
+        reconstructed += event.raw_xml;
+    }
+    check(reconstructed == xml,
+        "inline-string fast path should preserve exact worksheet bytes");
+    check(telemetry.simple_inline_string_fast_path_count == 2,
+        "simple inline strings should use the bounded fast path");
+    check(telemetry.simple_inline_string_fast_path_bytes
+            == std::string_view(R"(<is><t xml:space="preserve">alpha &amp; beta</t></is>)").size()
+                + std::string_view(R"(<is><t/></is>)").size(),
+        "inline-string fast path should report exact consumed bytes");
+    check(telemetry.simple_inline_string_fallback_count == 1,
+        "rich inline strings should report one ordinary-parser fallback");
+    check(telemetry.parsed_event_count < detailed_telemetry.parsed_event_count,
+        "inline-string fast path should reduce parsed event traffic");
+    check(count_kind(events, WorksheetEventKind::CellValueMarkup) == 2,
+        "inline-string fast path should keep formula boundaries visible");
+    check(count_kind(detailed, WorksheetEventKind::Metadata)
+            > count_kind(events, WorksheetEventKind::Metadata),
+        "detailed mode should retain inline-string metadata events");
+}
+
+void test_event_reader_inline_string_fast_path_preserves_chunked_fallback_diagnostics()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>alpha</t></is></c></row></sheetData></worksheet>)";
+    fastxlsx::detail::WorksheetEventReaderTelemetry telemetry;
+    fastxlsx::detail::WorksheetEventReaderOptions options;
+    options.copy_context_attributes = false;
+    options.coalesce_cell_value_events = true;
+    options.max_window_bytes = 32;
+    options.telemetry = &telemetry;
+    const std::vector<CopiedWorksheetEvent> events = read_source_events(xml, 1, options);
+
+    std::string reconstructed;
+    for (const CopiedWorksheetEvent& event : events) {
+        reconstructed += event.raw_xml;
+    }
+    check(reconstructed == xml,
+        "boundary-split inline strings should preserve exact bytes through fallback");
+    check(telemetry.simple_inline_string_fast_path_count == 0,
+        "boundary-split inline strings should retain the ordinary parser path");
+    check(telemetry.simple_inline_string_fallback_count == 1,
+        "boundary-split inline strings should report one fallback");
+
+    bool failed = false;
+    try {
+        const std::string malformed =
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>alpha</v></is></c></row></sheetData></worksheet>)";
+        (void)read_source_events(malformed, malformed.size(), options);
+    } catch (const std::exception& error) {
+        failed = true;
+        check(std::string_view(error.what()).find("mismatched cell value boundary")
+                != std::string_view::npos,
+            "inline-string fallback should retain mismatched-value diagnostics");
+    }
+    check(failed,
+        "inline-string fast-path candidates should not bypass malformed value diagnostics");
+}
+
 void test_event_reader_rejects_xml_declaration_after_root_start()
 {
     const std::string xml =
@@ -669,6 +754,8 @@ int main()
         test_event_reader_exposes_absolute_source_offsets_across_chunks();
         test_event_reader_can_skip_context_attribute_copies();
         test_event_reader_coalesces_patch_value_events_with_telemetry();
+        test_event_reader_fast_paths_simple_inline_strings_and_falls_back_safely();
+        test_event_reader_inline_string_fast_path_preserves_chunked_fallback_diagnostics();
         test_event_reader_rejects_xml_declaration_after_root_start();
         test_event_reader_rejects_mismatched_cell_value_boundaries();
         test_event_reader_rejects_invalid_core_element_nesting();

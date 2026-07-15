@@ -1043,6 +1043,7 @@ void test_transformer_patch_coalescing_reduces_actions_without_changing_output()
     const std::string xml =
         R"(<worksheet><sheetData><row r="1">)"
         R"(<c r="A1"><v>old-a</v></c><c r="C1"><v>old-c</v></c>)"
+        R"(<c r="D1" t="s" s="2"><f>C1+1</f><v>3</v></c>)"
         R"(</row></sheetData></worksheet>)";
     const std::array replacements {
         cell_replacement("B1", R"(<c r="B1"><v>new-b</v></c>)"),
@@ -1064,10 +1065,19 @@ void test_transformer_patch_coalescing_reduces_actions_without_changing_output()
         "Patch coalescing should reduce transform action callbacks");
     check(telemetry.parsed_event_count > telemetry.callback_event_count,
         "Patch coalescing should reduce event-reader callbacks");
-    check(telemetry.complete_cell_coalesced_count == 2,
+    check(telemetry.complete_cell_coalesced_count == 3,
         "Patch coalescing should emit each untouched source cell once");
+    check(coalesced.summary.pass_through_batched_cell_count == 3,
+        "Patch pass-through batches should retain the source cell count");
+    check(coalesced.summary.pass_through_batch_count
+            < coalesced.summary.pass_through_batched_cell_count,
+        "Patch pass-through batches should combine consecutive source cells");
+    check(coalesced.summary.pass_through_batch_peak_cell_count >= 2,
+        "Patch pass-through telemetry should expose multi-cell batches");
+    check(coalesced.summary.pass_through_batched_bytes > 0,
+        "Patch pass-through telemetry should expose exact-byte traffic");
     check(emitted.xml
-            == R"(<worksheet><sheetData><row r="1"><c r="A1"><v>old-a</v></c><c r="B1"><v>new-b</v></c><c r="C1"><v>old-c</v></c></row></sheetData></worksheet>)",
+            == R"(<worksheet><sheetData><row r="1"><c r="A1"><v>old-a</v></c><c r="B1"><v>new-b</v></c><c r="C1"><v>old-c</v></c><c r="D1" t="s" s="2"><f>C1+1</f><v>3</v></c></row></sheetData></worksheet>)",
         "Patch coalescing should preserve source bytes around inserted cells");
 }
 

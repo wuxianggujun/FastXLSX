@@ -114,12 +114,28 @@ struct WorksheetTransformAction {
     std::uint32_t source_cell_column = 0;
     bool complete_cell = false;
     bool contains_formula = false;
+    /// Audit summary for source cells represented by this action.
+    ///
+    /// A pass-through action may cover many exact-byte complete cells from one
+    /// reader window. The extrema are sufficient for dimension refresh while
+    /// the flags preserve dependency diagnostics without replaying each cell.
+    std::uint64_t source_cell_count = 0;
+    std::uint32_t source_cell_min_row = 0;
+    std::uint32_t source_cell_min_column = 0;
+    std::uint32_t source_cell_max_row = 0;
+    std::uint32_t source_cell_max_column = 0;
+    bool uses_shared_string_index = false;
+    bool has_style_reference = false;
 };
 
 struct WorksheetTransformSummary {
     std::size_t matched_replacement_count = 0;
     std::size_t inserted_cell_count = 0;
     std::vector<std::string> missing_cell_references;
+    std::uint64_t pass_through_batch_count = 0;
+    std::uint64_t pass_through_batched_cell_count = 0;
+    std::uint64_t pass_through_batched_bytes = 0;
+    std::uint64_t pass_through_batch_peak_cell_count = 0;
 };
 
 struct WorksheetCellReplacementCoordinate {

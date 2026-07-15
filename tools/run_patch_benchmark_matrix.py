@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "10"
+BENCHMARK_SCHEMA_VERSION = "11"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -51,6 +51,10 @@ METRICS = [
     "single_pass_source_complete_cell_coalesced_bytes",
     "single_pass_source_complete_cell_fallback_count",
     "single_pass_transform_action_callback_count",
+    "single_pass_transform_pass_through_batch_count",
+    "single_pass_transform_pass_through_batched_cell_count",
+    "single_pass_transform_pass_through_batched_bytes",
+    "single_pass_transform_pass_through_batch_peak_cell_count",
     "single_pass_relationship_scan_us",
     "single_pass_relationship_scan_input_call_count",
     "single_pass_relationship_scan_input_bytes",
@@ -398,6 +402,28 @@ def verify_result(
             "coalesced complete-cell bytes should exceed its cell count")
         require(complete_cell_fallback_count < complete_cell_count,
             "complete-cell fallbacks should stay below coalesced cells")
+        pass_through_batch_count = int(
+            result.get("single_pass_transform_pass_through_batch_count")
+        )
+        pass_through_batched_cell_count = int(
+            result.get("single_pass_transform_pass_through_batched_cell_count")
+        )
+        pass_through_batched_bytes = int(
+            result.get("single_pass_transform_pass_through_batched_bytes")
+        )
+        pass_through_batch_peak_cell_count = int(
+            result.get("single_pass_transform_pass_through_batch_peak_cell_count")
+        )
+        require(0 < pass_through_batch_count < pass_through_batched_cell_count,
+            "patch-upsert should combine consecutive pass-through cells")
+        require(pass_through_batched_cell_count <= rows * cols,
+            "pass-through batch cell count should fit the source worksheet")
+        require(pass_through_batched_bytes > pass_through_batched_cell_count,
+            "pass-through batch bytes should exceed its source cell count")
+        require(pass_through_batch_peak_cell_count > 1,
+            "patch-upsert should expose a multi-cell pass-through batch")
+        require(action_callbacks < callback_events,
+            "transform batching should reduce reader callbacks before output")
         require(int(result.get("single_pass_output_append_call_count")) > 0,
             "patch-upsert should report output append calls")
         require(int(result.get("single_pass_output_flush_count")) > 0,
@@ -858,6 +884,10 @@ def run_self_test() -> None:
                 "single_pass_source_complete_cell_coalesced_bytes": 10000,
                 "single_pass_source_complete_cell_fallback_count": 1,
                 "single_pass_transform_action_callback_count": 200,
+                "single_pass_transform_pass_through_batch_count": 20,
+                "single_pass_transform_pass_through_batched_cell_count": 100,
+                "single_pass_transform_pass_through_batched_bytes": 10000,
+                "single_pass_transform_pass_through_batch_peak_cell_count": 10,
                 "single_pass_relationship_scan_us": 200,
                 "single_pass_relationship_scan_input_call_count": 1,
                 "single_pass_relationship_scan_input_bytes": 100000,
@@ -1038,7 +1068,7 @@ def main() -> int:
             )
 
     matrix_report = {
-        "patch_benchmark_matrix_schema_version": "4",
+        "patch_benchmark_matrix_schema_version": "5",
         "benchmark_executable": str(bench_exe),
         "output_dir": str(output_dir),
         "rows": args.rows,

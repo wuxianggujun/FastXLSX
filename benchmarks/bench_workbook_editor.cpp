@@ -35,7 +35,7 @@ namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
-constexpr std::string_view kEditorBenchmarkSchemaVersion = "10";
+constexpr std::string_view kEditorBenchmarkSchemaVersion = "11";
 
 std::filesystem::path default_output_dir()
 {
@@ -113,6 +113,10 @@ struct RunStats {
     std::uint64_t single_pass_source_complete_cell_coalesced_bytes = 0;
     std::uint64_t single_pass_source_complete_cell_fallback_count = 0;
     std::uint64_t single_pass_transform_action_callback_count = 0;
+    std::uint64_t single_pass_transform_pass_through_batch_count = 0;
+    std::uint64_t single_pass_transform_pass_through_batched_cell_count = 0;
+    std::uint64_t single_pass_transform_pass_through_batched_bytes = 0;
+    std::uint64_t single_pass_transform_pass_through_batch_peak_cell_count = 0;
     std::uint64_t single_pass_output_append_call_count = 0;
     std::uint64_t single_pass_output_flush_count = 0;
     std::uint64_t single_pass_output_peak_buffer_bytes = 0;
@@ -697,6 +701,14 @@ void observe_output_plan(
                 entry.single_pass_source_complete_cell_fallback_count;
             stats.single_pass_transform_action_callback_count =
                 entry.single_pass_transform_action_callback_count;
+            stats.single_pass_transform_pass_through_batch_count =
+                entry.single_pass_transform_pass_through_batch_count;
+            stats.single_pass_transform_pass_through_batched_cell_count =
+                entry.single_pass_transform_pass_through_batched_cell_count;
+            stats.single_pass_transform_pass_through_batched_bytes =
+                entry.single_pass_transform_pass_through_batched_bytes;
+            stats.single_pass_transform_pass_through_batch_peak_cell_count =
+                entry.single_pass_transform_pass_through_batch_peak_cell_count;
             stats.single_pass_output_append_call_count =
                 entry.single_pass_output_append_call_count;
             stats.single_pass_output_flush_count =
@@ -879,6 +891,14 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.single_pass_source_complete_cell_fallback_count << ",\n";
     out << "  \"single_pass_transform_action_callback_count\": "
         << stats.single_pass_transform_action_callback_count << ",\n";
+    out << "  \"single_pass_transform_pass_through_batch_count\": "
+        << stats.single_pass_transform_pass_through_batch_count << ",\n";
+    out << "  \"single_pass_transform_pass_through_batched_cell_count\": "
+        << stats.single_pass_transform_pass_through_batched_cell_count << ",\n";
+    out << "  \"single_pass_transform_pass_through_batched_bytes\": "
+        << stats.single_pass_transform_pass_through_batched_bytes << ",\n";
+    out << "  \"single_pass_transform_pass_through_batch_peak_cell_count\": "
+        << stats.single_pass_transform_pass_through_batch_peak_cell_count << ",\n";
     out << "  \"single_pass_output_append_call_count\": "
         << stats.single_pass_output_append_call_count << ",\n";
     out << "  \"single_pass_output_flush_count\": "

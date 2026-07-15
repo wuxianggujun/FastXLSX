@@ -571,7 +571,7 @@ void emit_pass_through(const WorksheetTransformActionCallback& callback,
     const WorksheetEvent& event,
     std::optional<WorksheetCellReplacementCoordinate> source_coordinate = std::nullopt)
 {
-    callback(WorksheetTransformAction { WorksheetTransformActionKind::PassThrough,
+    WorksheetTransformAction action { WorksheetTransformActionKind::PassThrough,
         event.kind,
         event.raw_xml,
         event.element_name,
@@ -583,7 +583,19 @@ void emit_pass_through(const WorksheetTransformActionCallback& callback,
         source_coordinate.has_value() ? source_coordinate->row : 0,
         source_coordinate.has_value() ? source_coordinate->column : 0,
         event.complete_cell,
-        event.contains_formula });
+        event.contains_formula };
+    if (event.kind == WorksheetEventKind::CellStart) {
+        action.source_cell_count = 1;
+        if (source_coordinate.has_value()) {
+            action.source_cell_min_row = source_coordinate->row;
+            action.source_cell_min_column = source_coordinate->column;
+            action.source_cell_max_row = source_coordinate->row;
+            action.source_cell_max_column = source_coordinate->column;
+        }
+        action.uses_shared_string_index = event.uses_shared_string_index;
+        action.has_style_reference = event.has_style_reference;
+    }
+    callback(action);
 }
 
 void emit_synthetic_pass_through(const WorksheetTransformActionCallback& callback,
@@ -611,9 +623,14 @@ bool can_coalesce_pass_through_event(const WorksheetEvent& event) noexcept
         return false;
     }
     if (event.kind == WorksheetEventKind::RawText
+        || event.kind == WorksheetEventKind::RowStart
+        || event.kind == WorksheetEventKind::RowEnd
         || event.kind == WorksheetEventKind::CellValue
         || event.kind == WorksheetEventKind::CellEnd) {
         return true;
+    }
+    if (event.kind == WorksheetEventKind::CellStart) {
+        return event.complete_cell;
     }
     return event.kind == WorksheetEventKind::CellValueMarkup
         && event.element_name != "f";
@@ -622,17 +639,17 @@ bool can_coalesce_pass_through_event(const WorksheetEvent& event) noexcept
 class WorksheetPassThroughActionEmitter {
 public:
     WorksheetPassThroughActionEmitter(const WorksheetTransformActionCallback& callback,
-        bool coalesce_cell_value_events)
+        bool coalesce_pass_through_events)
         : callback_(callback)
-        , coalesce_cell_value_events_(coalesce_cell_value_events)
+        , coalesce_pass_through_events_(coalesce_pass_through_events)
     {
     }
 
     void emit_pass_through(const WorksheetEvent& event,
         std::optional<WorksheetCellReplacementCoordinate> source_coordinate = std::nullopt)
     {
-        if (coalesce_cell_value_events_ && can_coalesce_pass_through_event(event)) {
-            append_coalesced(event);
+        if (coalesce_pass_through_events_ && can_coalesce_pass_through_event(event)) {
+            append_coalesced(event, source_coordinate);
             return;
         }
         flush();
@@ -662,7 +679,7 @@ public:
         if (coalesced_raw_xml_.empty()) {
             return;
         }
-        callback_(WorksheetTransformAction { WorksheetTransformActionKind::PassThrough,
+        WorksheetTransformAction action { WorksheetTransformActionKind::PassThrough,
             WorksheetEventKind::RawText,
             coalesced_raw_xml_,
             {},
@@ -670,13 +687,46 @@ public:
             {},
             {},
             false,
-            coalesced_raw_xml_offset_ });
+            coalesced_raw_xml_offset_ };
+        action.contains_formula = coalesced_contains_formula_;
+        action.source_cell_count = coalesced_source_cell_count_;
+        action.source_cell_min_row = coalesced_source_cell_min_row_;
+        action.source_cell_min_column = coalesced_source_cell_min_column_;
+        action.source_cell_max_row = coalesced_source_cell_max_row_;
+        action.source_cell_max_column = coalesced_source_cell_max_column_;
+        action.uses_shared_string_index = coalesced_uses_shared_string_index_;
+        action.has_style_reference = coalesced_has_style_reference_;
+        callback_(action);
+        ++pass_through_batch_count_;
+        pass_through_batched_cell_count_ += coalesced_source_cell_count_;
+        pass_through_batched_bytes_ +=
+            static_cast<std::uint64_t>(coalesced_raw_xml_.size());
+        pass_through_batch_peak_cell_count_ = std::max(
+            pass_through_batch_peak_cell_count_, coalesced_source_cell_count_);
         coalesced_raw_xml_ = {};
         coalesced_raw_xml_offset_ = 0;
+        coalesced_source_cell_count_ = 0;
+        coalesced_source_cell_min_row_ = 0;
+        coalesced_source_cell_min_column_ = 0;
+        coalesced_source_cell_max_row_ = 0;
+        coalesced_source_cell_max_column_ = 0;
+        coalesced_contains_formula_ = false;
+        coalesced_uses_shared_string_index_ = false;
+        coalesced_has_style_reference_ = false;
+    }
+
+    void apply_telemetry(WorksheetTransformSummary& summary) const noexcept
+    {
+        summary.pass_through_batch_count = pass_through_batch_count_;
+        summary.pass_through_batched_cell_count = pass_through_batched_cell_count_;
+        summary.pass_through_batched_bytes = pass_through_batched_bytes_;
+        summary.pass_through_batch_peak_cell_count =
+            pass_through_batch_peak_cell_count_;
     }
 
 private:
-    void append_coalesced(const WorksheetEvent& event)
+    void append_coalesced(const WorksheetEvent& event,
+        std::optional<WorksheetCellReplacementCoordinate> source_coordinate)
     {
         if (!coalesced_raw_xml_.empty()) {
             const char* expected = coalesced_raw_xml_.data() + coalesced_raw_xml_.size();
@@ -693,12 +743,52 @@ private:
             coalesced_raw_xml_ = std::string_view(coalesced_raw_xml_.data(),
                 coalesced_raw_xml_.size() + event.raw_xml.size());
         }
+        if (event.kind == WorksheetEventKind::CellStart) {
+            if (!source_coordinate.has_value()) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet transformer pass-through cell has an invalid reference");
+            }
+            ++coalesced_source_cell_count_;
+            if (coalesced_source_cell_count_ == 1) {
+                coalesced_source_cell_min_row_ = source_coordinate->row;
+                coalesced_source_cell_min_column_ = source_coordinate->column;
+                coalesced_source_cell_max_row_ = source_coordinate->row;
+                coalesced_source_cell_max_column_ = source_coordinate->column;
+            } else {
+                coalesced_source_cell_min_row_ =
+                    std::min(coalesced_source_cell_min_row_, source_coordinate->row);
+                coalesced_source_cell_min_column_ =
+                    std::min(coalesced_source_cell_min_column_, source_coordinate->column);
+                coalesced_source_cell_max_row_ =
+                    std::max(coalesced_source_cell_max_row_, source_coordinate->row);
+                coalesced_source_cell_max_column_ =
+                    std::max(coalesced_source_cell_max_column_, source_coordinate->column);
+            }
+            coalesced_contains_formula_ =
+                coalesced_contains_formula_ || event.contains_formula;
+            coalesced_uses_shared_string_index_ =
+                coalesced_uses_shared_string_index_ || event.uses_shared_string_index;
+            coalesced_has_style_reference_ =
+                coalesced_has_style_reference_ || event.has_style_reference;
+        }
     }
 
     const WorksheetTransformActionCallback& callback_;
-    bool coalesce_cell_value_events_ = false;
+    bool coalesce_pass_through_events_ = false;
     std::string_view coalesced_raw_xml_;
     std::uint64_t coalesced_raw_xml_offset_ = 0;
+    std::uint64_t coalesced_source_cell_count_ = 0;
+    std::uint32_t coalesced_source_cell_min_row_ = 0;
+    std::uint32_t coalesced_source_cell_min_column_ = 0;
+    std::uint32_t coalesced_source_cell_max_row_ = 0;
+    std::uint32_t coalesced_source_cell_max_column_ = 0;
+    bool coalesced_contains_formula_ = false;
+    bool coalesced_uses_shared_string_index_ = false;
+    bool coalesced_has_style_reference_ = false;
+    std::uint64_t pass_through_batch_count_ = 0;
+    std::uint64_t pass_through_batched_cell_count_ = 0;
+    std::uint64_t pass_through_batched_bytes_ = 0;
+    std::uint64_t pass_through_batch_peak_cell_count_ = 0;
 };
 
 bool all_replacements_matched(const WorksheetCellReplacementPlan& replacement_plan,
@@ -772,6 +862,10 @@ void consume_replacement_event(const WorksheetEvent& event,
     bool& replacing_current_cell,
     WorksheetPassThroughActionEmitter& action_emitter)
 {
+    std::optional<WorksheetCellReplacementCoordinate> source_coordinate;
+    if (event.kind == WorksheetEventKind::CellStart) {
+        source_coordinate = try_parse_source_cell_coordinate(event.cell_reference);
+    }
     if (event.kind == WorksheetEventKind::CellStart
         && !should_skip_completed_replacement_lookup(event, replacement_plan, scan_state)) {
         const auto replacement =
@@ -786,8 +880,8 @@ void consume_replacement_event(const WorksheetEvent& event,
                 replacement->second,
                 event.self_closing,
                 event.raw_xml_offset,
-                0,
-                0,
+                source_coordinate.has_value() ? source_coordinate->row : 0,
+                source_coordinate.has_value() ? source_coordinate->column : 0,
                 event.complete_cell,
                 event.contains_formula });
             scan_state.matched_replacements.insert(replacement->first);
@@ -803,7 +897,7 @@ void consume_replacement_event(const WorksheetEvent& event,
         return;
     }
 
-    action_emitter.emit_pass_through(event);
+    action_emitter.emit_pass_through(event, source_coordinate);
 }
 
 WorksheetTransformSummary build_summary(const WorksheetCellReplacementPlan& replacement_plan,
@@ -860,8 +954,10 @@ public:
 
     [[nodiscard]] WorksheetTransformSummary summary() const
     {
-        return build_summary(replacement_plan_, matched_replacements_,
+        WorksheetTransformSummary result = build_summary(replacement_plan_, matched_replacements_,
             inserted_replacements_, WorksheetCellReplacementMode::ReplaceOrInsert);
+        action_emitter_.apply_telemetry(result);
+        return result;
     }
 
     void flush_window()
@@ -1356,7 +1452,9 @@ WorksheetTransformSummary scan_cell_replacement_actions_from_chunk_source(
 
     if (mode == WorksheetCellReplacementMode::ReplaceOrInsert) {
         WorksheetCellUpsertActionEmitter emitter(
-            replacement_plan, callback, reader_options.coalesce_cell_value_events);
+            replacement_plan, callback,
+            reader_options.coalesce_cell_value_events
+                || reader_options.coalesce_complete_cell_events);
         scan_worksheet_events_from_chunk_source(
             read_next_chunk,
             [&](const WorksheetEvent& event) {
@@ -1372,7 +1470,8 @@ WorksheetTransformSummary scan_cell_replacement_actions_from_chunk_source(
     std::set<std::string_view, std::less<>> inserted_replacements;
     bool replacing_current_cell = false;
     WorksheetPassThroughActionEmitter action_emitter(
-        callback, reader_options.coalesce_cell_value_events);
+        callback, reader_options.coalesce_cell_value_events
+            || reader_options.coalesce_complete_cell_events);
 
     scan_worksheet_events_from_chunk_source(
         read_next_chunk,
@@ -1384,8 +1483,10 @@ WorksheetTransformSummary scan_cell_replacement_actions_from_chunk_source(
         [&]() { action_emitter.flush(); });
     action_emitter.flush();
 
-    return build_summary(
+    WorksheetTransformSummary summary = build_summary(
         replacement_plan, scan_state.matched_replacements, inserted_replacements, mode);
+    action_emitter.apply_telemetry(summary);
+    return summary;
 }
 
 WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunk_source(

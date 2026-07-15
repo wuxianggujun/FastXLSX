@@ -55,6 +55,10 @@ struct WorksheetEvent {
     bool complete_cell = false;
     /// True when a coalesced complete-cell event contained formula markup.
     bool contains_formula = false;
+    /// True when the source cell start tag uses a shared-string index.
+    bool uses_shared_string_index = false;
+    /// True when the source cell start tag carries a style id reference.
+    bool has_style_reference = false;
 };
 
 using WorksheetEventCallback = std::function<void(const WorksheetEvent&)>;

@@ -79,6 +79,10 @@ struct SinglePassWorksheetTransformStats {
     std::uint64_t source_complete_cell_coalesced_bytes = 0;
     std::uint64_t source_complete_cell_fallback_count = 0;
     std::uint64_t transform_action_callback_count = 0;
+    std::uint64_t transform_pass_through_batch_count = 0;
+    std::uint64_t transform_pass_through_batched_cell_count = 0;
+    std::uint64_t transform_pass_through_batched_bytes = 0;
+    std::uint64_t transform_pass_through_batch_peak_cell_count = 0;
     std::uint64_t output_append_call_count = 0;
     std::uint64_t output_flush_count = 0;
     std::uint64_t output_peak_buffer_bytes = 0;
@@ -125,6 +129,10 @@ struct PackagePartReplacement {
     std::uint64_t single_pass_source_complete_cell_coalesced_bytes = 0;
     std::uint64_t single_pass_source_complete_cell_fallback_count = 0;
     std::uint64_t single_pass_transform_action_callback_count = 0;
+    std::uint64_t single_pass_transform_pass_through_batch_count = 0;
+    std::uint64_t single_pass_transform_pass_through_batched_cell_count = 0;
+    std::uint64_t single_pass_transform_pass_through_batched_bytes = 0;
+    std::uint64_t single_pass_transform_pass_through_batch_peak_cell_count = 0;
     std::uint64_t single_pass_output_append_call_count = 0;
     std::uint64_t single_pass_output_flush_count = 0;
     std::uint64_t single_pass_output_peak_buffer_bytes = 0;
@@ -195,6 +203,10 @@ struct PackageEditorOutputEntryPlan {
     std::uint64_t single_pass_source_complete_cell_coalesced_bytes = 0;
     std::uint64_t single_pass_source_complete_cell_fallback_count = 0;
     std::uint64_t single_pass_transform_action_callback_count = 0;
+    std::uint64_t single_pass_transform_pass_through_batch_count = 0;
+    std::uint64_t single_pass_transform_pass_through_batched_cell_count = 0;
+    std::uint64_t single_pass_transform_pass_through_batched_bytes = 0;
+    std::uint64_t single_pass_transform_pass_through_batch_peak_cell_count = 0;
     std::uint64_t single_pass_output_append_call_count = 0;
     std::uint64_t single_pass_output_flush_count = 0;
     std::uint64_t single_pass_output_peak_buffer_bytes = 0;

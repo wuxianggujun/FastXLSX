@@ -3031,6 +3031,10 @@ void clear_indexed_source_entry_direct_range_stats(PackagePartReplacement& repla
     replacement.single_pass_source_complete_cell_coalesced_bytes = 0;
     replacement.single_pass_source_complete_cell_fallback_count = 0;
     replacement.single_pass_transform_action_callback_count = 0;
+    replacement.single_pass_transform_pass_through_batch_count = 0;
+    replacement.single_pass_transform_pass_through_batched_cell_count = 0;
+    replacement.single_pass_transform_pass_through_batched_bytes = 0;
+    replacement.single_pass_transform_pass_through_batch_peak_cell_count = 0;
     replacement.single_pass_output_append_call_count = 0;
     replacement.single_pass_output_flush_count = 0;
     replacement.single_pass_output_peak_buffer_bytes = 0;
@@ -4090,6 +4094,41 @@ void consume_worksheet_cell_replacement_analysis_action(
         return;
     }
 
+    if (action.source_cell_count > 0) {
+        if (action.source_cell_count
+            > std::numeric_limits<std::uint64_t>::max()
+                - analysis.scanned_source_cell_count) {
+            throw FastXlsxError("worksheet source cell count overflow");
+        }
+        analysis.scanned_source_cell_count += action.source_cell_count;
+        if (action.source_cell_min_row != 0 && action.source_cell_min_column != 0
+            && action.source_cell_max_row != 0 && action.source_cell_max_column != 0) {
+            include_dimension_cell(analysis.dimension_scan, CellReferenceCoordinate {
+                action.source_cell_min_row,
+                action.source_cell_min_column,
+            });
+            include_dimension_cell(analysis.dimension_scan, CellReferenceCoordinate {
+                action.source_cell_max_row,
+                action.source_cell_max_column,
+            });
+        } else if (!action.cell_reference.empty()) {
+            include_dimension_cell(analysis.dimension_scan, action_coordinate());
+        }
+        if (action.uses_shared_string_index) {
+            append_worksheet_replacement_shared_strings_audit(
+                analysis.payload_audit, worksheet_part);
+        }
+        if (action.has_style_reference) {
+            append_worksheet_replacement_styles_audit(
+                analysis.payload_audit, worksheet_part);
+        }
+        if (action.contains_formula) {
+            append_worksheet_replacement_formula_audit(
+                analysis.payload_audit, worksheet_part);
+        }
+        return;
+    }
+
     if (action.event_kind == WorksheetEventKind::WorksheetStart
         && analysis.worksheet_start_end == std::string_view::npos) {
         analysis.worksheet_start_end = 0;
@@ -4123,11 +4162,11 @@ void consume_worksheet_cell_replacement_analysis_action(
         if (!action.cell_reference.empty()) {
             include_dimension_cell(analysis.dimension_scan, action_coordinate());
         }
-        if (cell_start_attribute_equals_for_audit(action.raw_xml, "t", "s")) {
+        if (action.uses_shared_string_index) {
             append_worksheet_replacement_shared_strings_audit(
                 analysis.payload_audit, worksheet_part);
         }
-        if (cell_start_has_attribute_for_audit(action.raw_xml, "s")) {
+        if (action.has_style_reference) {
             append_worksheet_replacement_styles_audit(
                 analysis.payload_audit, worksheet_part);
         }
@@ -5269,6 +5308,14 @@ PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
             replacement->single_pass_source_complete_cell_fallback_count;
         plan.single_pass_transform_action_callback_count =
             replacement->single_pass_transform_action_callback_count;
+        plan.single_pass_transform_pass_through_batch_count =
+            replacement->single_pass_transform_pass_through_batch_count;
+        plan.single_pass_transform_pass_through_batched_cell_count =
+            replacement->single_pass_transform_pass_through_batched_cell_count;
+        plan.single_pass_transform_pass_through_batched_bytes =
+            replacement->single_pass_transform_pass_through_batched_bytes;
+        plan.single_pass_transform_pass_through_batch_peak_cell_count =
+            replacement->single_pass_transform_pass_through_batch_peak_cell_count;
         plan.single_pass_output_append_call_count =
             replacement->single_pass_output_append_call_count;
         plan.single_pass_output_flush_count =
@@ -7626,6 +7673,14 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             single_pass_stats->source_complete_cell_fallback_count;
         replacement->single_pass_transform_action_callback_count =
             single_pass_stats->transform_action_callback_count;
+        replacement->single_pass_transform_pass_through_batch_count =
+            single_pass_stats->transform_pass_through_batch_count;
+        replacement->single_pass_transform_pass_through_batched_cell_count =
+            single_pass_stats->transform_pass_through_batched_cell_count;
+        replacement->single_pass_transform_pass_through_batched_bytes =
+            single_pass_stats->transform_pass_through_batched_bytes;
+        replacement->single_pass_transform_pass_through_batch_peak_cell_count =
+            single_pass_stats->transform_pass_through_batch_peak_cell_count;
         replacement->single_pass_output_append_call_count =
             single_pass_stats->output_append_call_count;
         replacement->single_pass_output_flush_count =
@@ -8220,6 +8275,14 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
         transform_result.source_event_telemetry.complete_cell_fallback_count;
     single_pass_stats.transform_action_callback_count =
         transform_result.transform_action_callback_count;
+    single_pass_stats.transform_pass_through_batch_count =
+        transform_result.analysis.summary.pass_through_batch_count;
+    single_pass_stats.transform_pass_through_batched_cell_count =
+        transform_result.analysis.summary.pass_through_batched_cell_count;
+    single_pass_stats.transform_pass_through_batched_bytes =
+        transform_result.analysis.summary.pass_through_batched_bytes;
+    single_pass_stats.transform_pass_through_batch_peak_cell_count =
+        transform_result.analysis.summary.pass_through_batch_peak_cell_count;
     single_pass_stats.output_append_call_count =
         transform_result.output_append_call_count;
     single_pass_stats.output_flush_count = transform_result.output_flush_count;

@@ -36,6 +36,8 @@ struct CopiedWorksheetEvent {
     std::uint64_t raw_xml_offset = 0;
     bool complete_cell = false;
     bool contains_formula = false;
+    bool uses_shared_string_index = false;
+    bool has_style_reference = false;
 };
 
 CopiedWorksheetEvent copy_event(const WorksheetEvent& event)
@@ -49,7 +51,9 @@ CopiedWorksheetEvent copy_event(const WorksheetEvent& event)
         event.self_closing,
         event.raw_xml_offset,
         event.complete_cell,
-        event.contains_formula };
+        event.contains_formula,
+        event.uses_shared_string_index,
+        event.has_style_reference };
 }
 
 std::vector<CopiedWorksheetEvent> read_source_events(
@@ -444,8 +448,8 @@ void test_event_reader_coalesces_complete_cells_and_preserves_fallbacks()
 {
     const std::string xml =
         R"(<worksheet><sheetData><row r="1">)"
-        R"(<c r="A1"><v>1</v></c>)"
-        R"(<c r="B1" t="inlineStr"><is><t>text</t></is></c>)"
+        R"(<c r="A1" t="s"><v>1</v></c>)"
+        R"(<c r="B1" s="3" t="inlineStr"><is><t>text</t></is></c>)"
         R"(<c r="C1"><f>A1+1</f><v>2</v></c>)"
         R"(<c r="D1" t="inlineStr"><is><r><t>rich</t></r></is></c>)"
         R"(</row></sheetData></worksheet>)";
@@ -479,6 +483,18 @@ void test_event_reader_coalesces_complete_cells_and_preserves_fallbacks()
         });
     check(formula != events.end() && formula->complete_cell && formula->contains_formula,
         "coalesced formula cells should retain formula audit metadata");
+    const auto shared_string = std::find_if(events.begin(), events.end(),
+        [](const CopiedWorksheetEvent& event) {
+            return event.cell_reference == "A1";
+        });
+    check(shared_string != events.end() && shared_string->uses_shared_string_index,
+        "coalesced cells should retain shared-string audit metadata");
+    const auto styled = std::find_if(events.begin(), events.end(),
+        [](const CopiedWorksheetEvent& event) {
+            return event.cell_reference == "B1";
+        });
+    check(styled != events.end() && styled->has_style_reference,
+        "coalesced cells should retain style audit metadata");
 
     fastxlsx::detail::WorksheetEventReaderTelemetry boundary_telemetry;
     options.max_window_bytes = 32;

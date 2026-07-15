@@ -130,8 +130,8 @@ bool is_self_closing_tag(std::string_view raw_tag)
     return raw_tag[index] == '/';
 }
 
-std::string_view unqualified_attribute_value(
-    std::string_view raw_tag, std::string_view attribute_name)
+template <typename Visitor>
+void visit_attributes(std::string_view raw_tag, Visitor&& visitor)
 {
     std::string_view body = tag_body(raw_tag);
     std::size_t position = 0;
@@ -144,7 +144,7 @@ std::string_view unqualified_attribute_value(
             ++position;
         }
         if (position >= body.size() || body[position] == '/' || body[position] == '?') {
-            return {};
+            return;
         }
 
         const std::size_t name_begin = position;
@@ -180,13 +180,58 @@ std::string_view unqualified_attribute_value(
                 "worksheet event reader found an unterminated attribute value");
         }
 
-        if (name == attribute_name) {
-            return body.substr(value_begin, position - value_begin);
+        const std::string_view value = body.substr(value_begin, position - value_begin);
+        if (!visitor(name, value)) {
+            return;
         }
         ++position;
     }
+}
 
-    return {};
+std::string_view unqualified_attribute_value(
+    std::string_view raw_tag, std::string_view attribute_name)
+{
+    std::string_view result;
+    visit_attributes(raw_tag, [&](std::string_view name, std::string_view value) {
+        if (name != attribute_name) {
+            return true;
+        }
+        result = value;
+        return false;
+    });
+    return result;
+}
+
+struct CellStartAttributes {
+    std::string_view reference;
+    bool uses_shared_string_index = false;
+    bool has_style_reference = false;
+};
+
+CellStartAttributes cell_start_attributes(std::string_view raw_tag)
+{
+    CellStartAttributes attributes;
+    bool saw_reference = false;
+    try {
+        visit_attributes(raw_tag, [&](std::string_view name, std::string_view value) {
+            if (name == "r" && !saw_reference) {
+                attributes.reference = value;
+                saw_reference = true;
+            }
+            const std::string_view attribute_local_name = local_name(name);
+            if (attribute_local_name == "t" && value == "s") {
+                attributes.uses_shared_string_index = true;
+            } else if (attribute_local_name == "s") {
+                attributes.has_style_reference = true;
+            }
+            return true;
+        });
+    } catch (const fastxlsx::FastXlsxError&) {
+        if (!saw_reference) {
+            throw;
+        }
+    }
+    return attributes;
 }
 
 bool has_non_whitespace(std::string_view value)
@@ -796,16 +841,19 @@ private:
                 throw fastxlsx::FastXlsxError(
                     "worksheet event reader found an invalid cell boundary");
             }
-            set_current_cell(unqualified_attribute_value(raw, "r"));
+            const CellStartAttributes attributes = cell_start_attributes(raw);
+            set_current_cell(attributes.reference);
             in_cell_ = true;
-            emit(WorksheetEvent { WorksheetEventKind::CellStart,
+            WorksheetEvent event { WorksheetEventKind::CellStart,
                 raw,
                 name,
                 current_row_,
                 current_cell_,
                 {},
-                self_closing },
-                offset);
+                self_closing };
+            event.uses_shared_string_index = attributes.uses_shared_string_index;
+            event.has_style_reference = attributes.has_style_reference;
+            emit(event, offset);
             clear_transient_cell_context();
             if (self_closing) {
                 emit(WorksheetEvent { WorksheetEventKind::CellEnd,

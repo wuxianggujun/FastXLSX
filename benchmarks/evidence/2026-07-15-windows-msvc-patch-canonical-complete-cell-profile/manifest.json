@@ -1,0 +1,149 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-15-windows-msvc-patch-canonical-complete-cell-profile",
+  "created_utc": "2026-07-15T16:55:39Z",
+  "git_revision": "9d38de3b343e69e7b6a5bd81e56dfede41e86f13",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "reverse-optimized-v13-numeric-matrix.json",
+      "sha256": "bd90f83fa48068893db4ecd32ffddaea2f04123771fc7066062550c4cb309008",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-baseline-v12-numeric-matrix.json",
+      "sha256": "338db4f14bbf145bb89180d8673ff6fc5ace381fcb11933d49b432c1c0227db1",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-optimized-v13-mixed-inline-matrix.json",
+      "sha256": "e290574d826813b745fd8656946c56908399781083b7c12ed9a56a06eac304e7",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-baseline-v12-mixed-inline-matrix.json",
+      "sha256": "9a48bc4908409ea78d5c51aff100fc4d52ab7837bbbb511050b1529042954003",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-optimized-v13-formula-hyperlink-matrix.json",
+      "sha256": "c3920e0006fe153c9d0b4bf1db323c2b551805ec3594ec61c7795a07070c5f21",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-baseline-v12-formula-hyperlink-matrix.json",
+      "sha256": "37a524956722c942a231637762288c89e013951be4b4771221eac9991383828a",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-baseline-v12-numeric-matrix.json",
+      "sha256": "8293bcee598628c3a4e4eb005e790d4b84a5452b80bbefceff104831d29e70c6",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-optimized-v13-numeric-matrix.json",
+      "sha256": "dbd263531445c3a10fb0781b96e1ec0715d20407a65d9d035ca5d05e9f633654",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-baseline-v12-mixed-inline-matrix.json",
+      "sha256": "72028e337e7c1575539d56e58b590674a24a758fd9a8022901c93edfa924ff98",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-optimized-v13-mixed-inline-matrix.json",
+      "sha256": "257fa76f6416fe1e315379a0c25353d4b0de2bbb7692506c44cba50f0b008c67",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-baseline-v12-formula-hyperlink-matrix.json",
+      "sha256": "c579b2d34c4de01b98434ef71e760157267c1fe97ef6ee7405b75a30075a152e",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-optimized-v13-formula-hyperlink-matrix.json",
+      "sha256": "8078dbfec2c971e95b6ec0a941807a0c917575fbb2578d76bcfdf0aeae800e5d",
+      "role": "matrix-report"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "241df630331f87a0dbdc15e1d9ca5206627fb1ecadc6795ee32d630c017d2663",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "695701d55ca181d5c0d780bdbed857433a791daea4a432075885ab8de704ebea",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "Patch benchmark schema v13 and matrix schema v7 add canonical complete-cell count, bytes, formula count and inline-string count while retaining all schema-v12/v6 parser, pass-through, relationship, CRC, package-writer and compression telemetry.",
+      "artifact_paths": [
+        "reverse-optimized-v13-numeric-matrix.json",
+        "reverse-optimized-v13-mixed-inline-matrix.json",
+        "reverse-optimized-v13-formula-hyperlink-matrix.json",
+        "summary.json"
+      ]
+    },
+    {
+      "statement": "On byte-identical one-million-cell sources, canonical complete-cell recognition reduced parsed-event traffic by 73.53% to 76.92% and coalescer input traffic by 76.92% to 80.00% without increasing source callback or transform action counts.",
+      "artifact_paths": [
+        "reverse-baseline-v12-numeric-matrix.json",
+        "reverse-optimized-v13-numeric-matrix.json",
+        "reverse-baseline-v12-mixed-inline-matrix.json",
+        "reverse-optimized-v13-mixed-inline-matrix.json",
+        "reverse-baseline-v12-formula-hyperlink-matrix.json",
+        "reverse-optimized-v13-formula-hyperlink-matrix.json",
+        "summary.json"
+      ]
+    },
+    {
+      "statement": "Across both execution orders, numeric transform/source-scan medians decreased by 27.26%-52.72% and 30.01%-54.85%; mixed-inline by 27.44%-46.12% and 27.99%-47.39%; formula-plus-hyperlink by 34.95%-35.35% and 36.34%-37.18%.",
+      "artifact_paths": [
+        "reverse-optimized-v13-numeric-matrix.json",
+        "reverse-baseline-v12-numeric-matrix.json",
+        "reverse-optimized-v13-mixed-inline-matrix.json",
+        "reverse-baseline-v12-mixed-inline-matrix.json",
+        "reverse-optimized-v13-formula-hyperlink-matrix.json",
+        "reverse-baseline-v12-formula-hyperlink-matrix.json",
+        "forward-baseline-v12-numeric-matrix.json",
+        "forward-optimized-v13-numeric-matrix.json",
+        "forward-baseline-v12-mixed-inline-matrix.json",
+        "forward-optimized-v13-mixed-inline-matrix.json",
+        "forward-baseline-v12-formula-hyperlink-matrix.json",
+        "forward-optimized-v13-formula-hyperlink-matrix.json",
+        "summary.json",
+        "run-context.json"
+      ]
+    },
+    {
+      "statement": "Optimized median process peak working set did not exceed its paired baseline in either order; all optimized representative outputs opened with openpyxl 3.1.2 and formula profiles preserved https://example.com/fastxlsx-benchmark.",
+      "artifact_paths": [
+        "reverse-optimized-v13-numeric-matrix.json",
+        "reverse-optimized-v13-mixed-inline-matrix.json",
+        "reverse-optimized-v13-formula-hyperlink-matrix.json",
+        "forward-optimized-v13-numeric-matrix.json",
+        "forward-optimized-v13-mixed-inline-matrix.json",
+        "forward-optimized-v13-formula-hyperlink-matrix.json",
+        "summary.json"
+      ]
+    },
+    {
+      "statement": "Production and stored CTest each passed 132/132, no-images build/runtime smoke passed, production/stored/no-images install consumers passed, and benchmark/evidence self-tests passed. Package-writer timing varied by order, so no generic total-editor, arbitrary-workbook, Office, cross-machine, full-feature or OpenXLSX-superiority claim is made.",
+      "artifact_paths": [
+        "run-context.json",
+        "summary.json",
+        "forward-baseline-v12-numeric-matrix.json",
+        "forward-optimized-v13-numeric-matrix.json"
+      ]
+    }
+  ]
+}

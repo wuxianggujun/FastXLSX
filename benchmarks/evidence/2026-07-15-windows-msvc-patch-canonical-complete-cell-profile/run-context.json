@@ -1,0 +1,53 @@
+{
+  "run_context_schema_version": "1",
+  "git_revision": "9d38de3b343e69e7b6a5bd81e56dfede41e86f13",
+  "baseline_git_revision": "344b92d6f95c8e02c43fb529c1638361e97c229d",
+  "date_local": "2026-07-15",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680,
+    "openpyxl_version": "3.1.2"
+  },
+  "benchmark_protocol": {
+    "runner": "tools/run_patch_benchmark_matrix.py",
+    "baseline_runner": "schema-v12/matrix-v6 runner from detached baseline revision",
+    "optimized_runner": "schema-v13/matrix-v7 runner from the recorded git revision",
+    "orders": [
+      {
+        "name": "optimized-then-baseline",
+        "numeric_and_mixed": "optimized v13 2+5 followed by baseline v12 2+5",
+        "formula_hyperlink": "optimized v13 1+3 followed by baseline v12 1+3"
+      },
+      {
+        "name": "baseline-then-optimized",
+        "numeric_and_mixed": "baseline v12 2+5 followed by optimized v13 2+5",
+        "formula_hyperlink": "baseline v12 1+3 followed by optimized v13 1+3"
+      }
+    ],
+    "common_arguments": "--rows 100000 --cols 10 --case patch-upsert:1000 --source-compression-level 6 --output-compression-level 1 --verify-openpyxl",
+    "source_patterns": [
+      "numeric",
+      "mixed-inline",
+      "formula --source-external-hyperlink"
+    ],
+    "source_generation": "Each matrix generated one deterministic source in a separate process and reused it for every warm-up and measured run. Paired baseline and optimized source SHA-256 values were identical for all profiles and both orders.",
+    "representative_policy": "Measured run nearest total_editor_ms median; earliest run breaks ties.",
+    "verification": "Every optimized run passed schema-v13/matrix-v7 telemetry validation, output-plan byte accounting and planned raw compressed-payload equality. Every baseline run passed its schema-v12/matrix-v6 validator. Representative outputs were checked with openpyxl after benchmark timing.",
+    "discarded_runs": "An earlier preliminary baseline-then-optimized round overlapped unrelated Tina/FeatherDoc/Gradle builds and showed package/temporary-IO scheduling pollution. It is not copied into this bundle and supports no claim."
+  },
+  "validation": {
+    "focused_tests": "6/6 passed: worksheet event reader, public Patch cells, worksheet transformer, package editor c5, sheetdata guards and malformed source failures",
+    "production_ctest": "132/132 passed",
+    "stored_ctest": "132/132 passed",
+    "no_images_profile": "build and image-disabled runtime smoke passed",
+    "install_consumer_smoke": "passed for production, stored-only and no-images installations; FASTXLSX_HAS_IMAGES was 1, 1 and 0",
+    "benchmark_runner_self_test": "passed",
+    "evidence_validator_self_test": "passed",
+    "evidence_bundle_validation": "passed: 19 bundles",
+    "office_open": "not_run"
+  },
+  "qualification": "Only transform/source-scan stage medians and deterministic traffic changes that held in both execution orders are claimed. Total editor, save, temporary-file and package-writer elapsed values remain system-sensitive and are not generalized."
+}

@@ -1,0 +1,166 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "13",
+  "patch_matrix_schema_version": "7",
+  "git_revision": "9d38de3b343e69e7b6a5bd81e56dfede41e86f13",
+  "baseline_git_revision": "344b92d6f95c8e02c43fb529c1638361e97c229d",
+  "workload": {
+    "rows": 100000,
+    "columns": 10,
+    "source_cells": 1000000,
+    "requested_patch_cells": 1000,
+    "matched_existing_cells": 500,
+    "inserted_cells": 500,
+    "source_compression_level": 6,
+    "output_compression_level": 1,
+    "numeric_source_sha256": "44e26a49ea3441bbe7b5a8f1518b8b1449c57b85778f8ad79971b439e312c4eb",
+    "mixed_inline_source_sha256": "73ca18068426994fb595702075607d00841df2bbcd6913d0d92b8716aff534c9",
+    "formula_hyperlink_source_sha256": "4ac554edeb9f63ba919a0da9bf5911237fba9a5e7bac208b4fe1a7a0915ecdce",
+    "numeric_and_mixed_warmup_measured_runs": [2, 5],
+    "formula_hyperlink_warmup_measured_runs": [1, 3],
+    "execution_orders": [
+      "optimized-v13 then baseline-v12",
+      "baseline-v12 then optimized-v13"
+    ]
+  },
+  "implementation": {
+    "canonical_complete_cell_path": "Before the generic tag parser, the bounded reader recognizes exact writer-compatible complete value, formula, cached-formula and simple inline-string cells and emits one callback-lifetime complete-cell event over the exact source span.",
+    "safe_fallback": "Attribute variants, rich or unsupported metadata, malformed markup and reader-window splits continue through the prior structural parser and retain its diagnostics.",
+    "audit_contract": "The direct event retains coordinate, formula, shared-string, style and inline-string audit metadata. The transformer still owns replacement lookup, dimension extrema, relationship scanning and pass-through batching.",
+    "lifetime_and_memory": "The path returns string_view data only for the current bounded callback, copies no cell payload and retains no view after window consumption.",
+    "telemetry": "Schema v13 adds canonical complete-cell count, bytes, formula count and inline-string count. Matrix v7 validates positive canonical traffic and profile-specific type counters while preserving every schema-v12/v6 field.",
+    "public_api_change": false
+  },
+  "deterministic_traffic": {
+    "numeric": {
+      "baseline_parsed_events": 5200006,
+      "optimized_parsed_events": 1200066,
+      "parsed_event_decrease_percent": 76.92,
+      "baseline_coalescer_input_events": 4999985,
+      "optimized_coalescer_input_events": 1000045,
+      "coalescer_input_decrease_percent": 80.00,
+      "source_callbacks": 1200036,
+      "transform_actions": 2105,
+      "canonical_complete_cells": 999985,
+      "canonical_complete_cell_bytes": 32777407,
+      "structural_fallback_cells": 15
+    },
+    "mixed_inline": {
+      "baseline_parsed_events": 4533364,
+      "optimized_parsed_events": 1200078,
+      "parsed_event_decrease_percent": 73.53,
+      "baseline_coalescer_input_events": 4333325,
+      "optimized_coalescer_input_events": 1000039,
+      "coalescer_input_decrease_percent": 76.92,
+      "source_callbacks": 1200056,
+      "transform_actions": 2137,
+      "canonical_complete_cells": 999983,
+      "canonical_complete_inline_strings": 333323,
+      "canonical_complete_cell_bytes": 40376623,
+      "structural_fallback_cells": 17
+    },
+    "formula_hyperlink": {
+      "baseline_parsed_events": 5200009,
+      "optimized_parsed_events": 1200081,
+      "parsed_event_decrease_percent": 76.92,
+      "baseline_coalescer_input_events": 4999982,
+      "optimized_coalescer_input_events": 1000054,
+      "coalescer_input_decrease_percent": 80.00,
+      "source_callbacks": 1200039,
+      "transform_actions": 2111,
+      "canonical_complete_cells": 999982,
+      "canonical_complete_formulas": 200000,
+      "canonical_complete_cell_bytes": 32777312,
+      "structural_fallback_cells": 18
+    }
+  },
+  "bidirectional_ab": {
+    "optimized_then_baseline": {
+      "numeric": {
+        "baseline_total_editor_ms": 1554,
+        "optimized_total_editor_ms": 1025,
+        "baseline_transform_ms": 810,
+        "optimized_transform_ms": 383,
+        "transform_decrease_percent": 52.72,
+        "baseline_source_scan_action_us": 793353,
+        "optimized_source_scan_action_us": 358164,
+        "source_scan_action_decrease_percent": 54.85
+      },
+      "mixed_inline": {
+        "baseline_total_editor_ms": 1108,
+        "optimized_total_editor_ms": 936,
+        "baseline_transform_ms": 543,
+        "optimized_transform_ms": 394,
+        "transform_decrease_percent": 27.44,
+        "baseline_source_scan_action_us": 514205,
+        "optimized_source_scan_action_us": 370291,
+        "source_scan_action_decrease_percent": 27.99
+      },
+      "formula_hyperlink": {
+        "baseline_total_editor_ms": 884,
+        "optimized_total_editor_ms": 796,
+        "baseline_transform_ms": 447,
+        "optimized_transform_ms": 289,
+        "transform_decrease_percent": 35.35,
+        "baseline_source_scan_action_us": 433477,
+        "optimized_source_scan_action_us": 272324,
+        "source_scan_action_decrease_percent": 37.18
+      }
+    },
+    "baseline_then_optimized": {
+      "numeric": {
+        "baseline_total_editor_ms": 1180,
+        "optimized_total_editor_ms": 1245,
+        "baseline_transform_ms": 642,
+        "optimized_transform_ms": 467,
+        "transform_decrease_percent": 27.26,
+        "baseline_source_scan_action_us": 626853,
+        "optimized_source_scan_action_us": 438716,
+        "source_scan_action_decrease_percent": 30.01
+      },
+      "mixed_inline": {
+        "baseline_total_editor_ms": 1978,
+        "optimized_total_editor_ms": 1655,
+        "baseline_transform_ms": 993,
+        "optimized_transform_ms": 535,
+        "transform_decrease_percent": 46.12,
+        "baseline_source_scan_action_us": 964184,
+        "optimized_source_scan_action_us": 507295,
+        "source_scan_action_decrease_percent": 47.39
+      },
+      "formula_hyperlink": {
+        "baseline_total_editor_ms": 1520,
+        "optimized_total_editor_ms": 1437,
+        "baseline_transform_ms": 824,
+        "optimized_transform_ms": 536,
+        "transform_decrease_percent": 34.95,
+        "baseline_source_scan_action_us": 801330,
+        "optimized_source_scan_action_us": 510125,
+        "source_scan_action_decrease_percent": 36.34
+      }
+    },
+    "stable_decrease_ranges_percent": {
+      "numeric_transform": [27.26, 52.72],
+      "numeric_source_scan_action": [30.01, 54.85],
+      "mixed_inline_transform": [27.44, 46.12],
+      "mixed_inline_source_scan_action": [27.99, 47.39],
+      "formula_hyperlink_transform": [34.95, 35.35],
+      "formula_hyperlink_source_scan_action": [36.34, 37.18]
+    }
+  },
+  "compatibility_and_memory": {
+    "optimized_peak_working_set_range_mb": [8.58203, 9.58594],
+    "peak_working_set_increase_observed": false,
+    "representative_openpyxl": "opened with openpyxl 3.1.2 for all six optimized matrices",
+    "verified_external_hyperlink_target": "https://example.com/fastxlsx-benchmark",
+    "office_open": "not_run"
+  },
+  "interpretation": {
+    "supported_claim": "Across both execution orders and byte-identical one-million-cell sources, schema v13 reduced the measured transform and source scan/action medians for numeric, mixed-inline and formula-plus-hyperlink workloads. The deterministic parser-event reduction was 73.53% to 76.92%, without increasing source callback or transform action traffic.",
+    "total_editor_policy": "No generic total-editor reduction is claimed. Package-writer and temporary-file timing varied with execution order; numeric total improved in the optimized-first round but regressed 5.51% in the baseline-first round even though its transform and source scan/action stages improved in both rounds.",
+    "memory": "Optimized representative peak working set remained between 8.58203 MB and 9.58594 MB and did not exceed its paired baseline median in either execution order.",
+    "compatibility": "Representative outputs opened with openpyxl 3.1.2, and both optimized formula matrices preserved the external hyperlink target.",
+    "next_hotspot": "After reducing generic cell parsing, the recorded single-pass source scan remains material while package target-entry and temporary-file timing can dominate total elapsed. The next pass should profile their handoff and IO behavior under an isolated host before changing compression or transaction semantics."
+  },
+  "scope": "Single Windows/MSVC machine, deterministic one-million-cell 10-column sources, 1000 targeted upserts, source DEFLATE level 6 and output DEFLATE level 1. Claims are limited to the recorded stage medians and traffic counters and do not generalize to arbitrary workbooks, Office, cross-machine performance, full-feature superiority or OpenXLSX superiority."
+}

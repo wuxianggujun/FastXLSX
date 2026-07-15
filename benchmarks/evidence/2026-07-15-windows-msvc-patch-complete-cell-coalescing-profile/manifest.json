@@ -1,0 +1,59 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-15-windows-msvc-patch-complete-cell-coalescing-profile",
+  "created_utc": "2026-07-15T08:34:37Z",
+  "git_revision": "4c092c6808ca50d025565eb739f966e437a699e0",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "numeric-matrix.json",
+      "sha256": "70c7d04c4c7ae5ebbdec500de0b59ecd4940209c0267539482846fd55396fa5e",
+      "role": "matrix-report"
+    },
+    {
+      "path": "mixed-inline-matrix.json",
+      "sha256": "9ae6c07c264ca5f1010f692e390adc3fbc19b46ddceaf5e6324f00817a13cda0",
+      "role": "matrix-report"
+    },
+    {
+      "path": "formula-hyperlink-matrix.json",
+      "sha256": "e6fd08ad4843da327bd8089e99f12dfb458062446f001fcebe562536ebaf20cb",
+      "role": "matrix-report"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "c6d6738badf1645efe2451812fd550f66954bc083902da8c92545bb8e4601460",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "63cc9f854d988604ab178f0714c4921a64367bf2aedf6d3b5a2fb7c7b228e553",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "Patch benchmark schema v10 and matrix schema v4 add complete-cell coalesced count, exact-byte traffic and fallback telemetry while retaining prior parser, callback, action, batching, relationship, staged CRC, compression CPU and raw-copy evidence fields.",
+      "artifact_paths": ["numeric-matrix.json", "mixed-inline-matrix.json", "formula-hyperlink-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "On this machine and the recorded one-million-cell level-1 targeted-upsert workloads, complete-cell coalescing reduced total editor median by 51.18% for numeric, 33.13% for mixed-inline and 25.85% for formula plus external hyperlink while median process peak working set changed by less than 0.03 MB.",
+      "artifact_paths": ["numeric-matrix.json", "mixed-inline-matrix.json", "formula-hyperlink-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "The optimized profiles coalesced at least 999982 of one million source cells with at most 18 boundary or metadata fallbacks; all representative outputs opened with openpyxl 3.1.5 and the formula profile preserved https://example.com/fastxlsx-benchmark.",
+      "artifact_paths": ["numeric-matrix.json", "mixed-inline-matrix.json", "formula-hyperlink-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "Production and stored-only CTest passed 132/132; no-images runtime and production/stored/no-images install-consumer profiles passed. Office was not run, and no cross-machine, arbitrary-workbook, full-feature or OpenXLSX-superiority claim is made.",
+      "artifact_paths": ["run-context.json", "summary.json"]
+    }
+  ]
+}

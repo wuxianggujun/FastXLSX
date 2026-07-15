@@ -1,0 +1,147 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "10",
+  "patch_matrix_schema_version": "4",
+  "git_revision": "4c092c6808ca50d025565eb739f966e437a699e0",
+  "baseline_evidence_id": "2026-07-15-windows-msvc-patch-compression-cpu-profile",
+  "workload": {
+    "rows": 100000,
+    "columns": 10,
+    "source_cells": 1000000,
+    "requested_patch_cells": 1000,
+    "matched_existing_cells": 500,
+    "inserted_cells": 500,
+    "source_compression_level": 6,
+    "output_compression_level": 1,
+    "numeric_warmup_measured_runs": [2, 5],
+    "mixed_inline_warmup_measured_runs": [2, 5],
+    "formula_hyperlink_warmup_measured_runs": [1, 3]
+  },
+  "implementation": {
+    "complete_cell_coalescing": "The internal Patch single-pass reader emits a structurally validated numeric, simple inline-string or formula cell already contained in the bounded input window as one callback-lifetime exact-byte span.",
+    "fallback": "Rich metadata, unsupported nested cell markup and boundary-split cells retain the ordinary detailed event stream and diagnostics.",
+    "formula_boundary": "Coalesced formula cells carry explicit formula metadata so dependency audit behavior remains visible to PackageEditor.",
+    "ordered_upsert_cursor": "Source-order targets advance through one cursor; a bounded ordered set is retained only for out-of-order source fallback semantics.",
+    "public_api_change": false
+  },
+  "results": {
+    "numeric": {
+      "baseline": {
+        "total_editor_median_ms": 2202,
+        "mutation_median_ms": 1707,
+        "transform_median_ms": 1375,
+        "source_scan_action_median_us": 1307536,
+        "save_median_ms": 488,
+        "source_callbacks": 3200017,
+        "transform_actions": 2201017,
+        "peak_working_set_median_mb": 8.84375
+      },
+      "optimized": {
+        "total_editor_median_ms": 1075,
+        "mutation_median_ms": 800,
+        "transform_median_ms": 611,
+        "source_scan_action_median_us": 593621,
+        "save_median_ms": 254,
+        "parsed_events": 5200006,
+        "source_callbacks": 1200036,
+        "transform_actions": 1201521,
+        "complete_cell_count": 999985,
+        "complete_cell_bytes": 32777407,
+        "complete_cell_fallback_count": 15,
+        "peak_working_set_median_mb": 8.81641,
+        "output_bytes": 3438241,
+        "representative_openpyxl": "opened"
+      },
+      "decrease_percent": {
+        "total_editor_ms": 51.18,
+        "mutation_ms": 53.13,
+        "transform_ms": 55.56,
+        "source_scan_action_us": 54.60,
+        "source_callbacks": 62.50,
+        "transform_actions": 45.41
+      },
+      "peak_working_set_delta_mb": -0.02734
+    },
+    "mixed_inline": {
+      "baseline": {
+        "total_editor_median_ms": 1802,
+        "mutation_median_ms": 1385,
+        "transform_median_ms": 1055,
+        "source_scan_action_median_us": 1026404,
+        "save_median_ms": 408,
+        "source_callbacks": 3200028,
+        "transform_actions": 2201035,
+        "peak_working_set_median_mb": 9.81250
+      },
+      "optimized": {
+        "total_editor_median_ms": 1205,
+        "mutation_median_ms": 915,
+        "transform_median_ms": 691,
+        "source_scan_action_median_us": 668133,
+        "save_median_ms": 325,
+        "parsed_events": 4533364,
+        "source_callbacks": 1200056,
+        "transform_actions": 1201546,
+        "complete_cell_count": 999983,
+        "complete_cell_bytes": 40376623,
+        "complete_cell_fallback_count": 17,
+        "peak_working_set_median_mb": 9.83203,
+        "output_bytes": 5030208,
+        "representative_openpyxl": "opened"
+      },
+      "decrease_percent": {
+        "total_editor_ms": 33.13,
+        "mutation_ms": 33.94,
+        "transform_ms": 34.50,
+        "source_scan_action_us": 34.91,
+        "source_callbacks": 62.50,
+        "transform_actions": 45.41
+      },
+      "peak_working_set_delta_mb": 0.01953
+    },
+    "formula_hyperlink": {
+      "baseline": {
+        "total_editor_median_ms": 1358,
+        "mutation_median_ms": 1037,
+        "transform_median_ms": 834,
+        "source_scan_action_median_us": 811104,
+        "save_median_ms": 315,
+        "source_callbacks": 3600016,
+        "transform_actions": 2800722,
+        "peak_working_set_median_mb": 8.84375
+      },
+      "optimized": {
+        "total_editor_median_ms": 1007,
+        "mutation_median_ms": 766,
+        "transform_median_ms": 591,
+        "source_scan_action_median_us": 573629,
+        "save_median_ms": 221,
+        "parsed_events": 5200009,
+        "source_callbacks": 1200039,
+        "transform_actions": 1201527,
+        "complete_cell_count": 999982,
+        "complete_cell_bytes": 32777312,
+        "complete_cell_fallback_count": 18,
+        "peak_working_set_median_mb": 8.82031,
+        "output_bytes": 4454227,
+        "representative_openpyxl": "opened",
+        "verified_external_hyperlink_target": "https://example.com/fastxlsx-benchmark"
+      },
+      "decrease_percent": {
+        "total_editor_ms": 25.85,
+        "mutation_ms": 26.13,
+        "transform_ms": 29.14,
+        "source_scan_action_us": 29.28,
+        "source_callbacks": 66.67,
+        "transform_actions": 57.10
+      },
+      "peak_working_set_delta_mb": -0.02344
+    }
+  },
+  "interpretation": {
+    "supported_claim": "On this machine and the recorded one-million-cell level-1 targeted-upsert workloads, complete-cell coalescing reduced total editor median by 51.18% for numeric, 33.13% for mixed-inline and 25.85% for formula plus external hyperlink while median process peak working set changed by less than 0.03 MB.",
+    "compatibility": "All representative outputs opened with openpyxl 3.1.5; the formula profile preserved the recorded external hyperlink target, and production plus stored-only CTest passed 132/132.",
+    "next_hotspot": "The remaining level-1 residual is split between the parser/source scan, output action traffic and package write; another optimization requires a new profile rather than inference from this bundle."
+  },
+  "scope": "Single Windows/MSVC machine, one-million-cell 10-column numeric, mixed-inline and formula distributions, 1000 targeted upserts, source DEFLATE level 6 and output DEFLATE level 1. No cross-machine, arbitrary-workbook, Office, full-feature or OpenXLSX-superiority claim."
+}

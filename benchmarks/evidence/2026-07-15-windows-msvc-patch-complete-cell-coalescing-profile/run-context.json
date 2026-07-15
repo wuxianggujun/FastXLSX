@@ -1,0 +1,35 @@
+{
+  "run_context_schema_version": "1",
+  "git_revision": "4c092c6808ca50d025565eb739f966e437a699e0",
+  "date_local": "2026-07-15",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680,
+    "openpyxl_version": "3.1.5"
+  },
+  "benchmark_protocol": {
+    "runner": "tools/run_patch_benchmark_matrix.py",
+    "source_generation": "Separate process; every warm-up and measured run reused one deterministic source workbook per profile.",
+    "profiles": [
+      "numeric schema-v10/matrix-v4: 2 warm-up plus 5 measured runs",
+      "mixed-inline schema-v10/matrix-v4: 2 warm-up plus 5 measured runs",
+      "formula plus external hyperlink schema-v10/matrix-v4: 1 warm-up plus 3 measured runs"
+    ],
+    "representative_policy": "Measured run nearest total_editor_ms median; earliest run breaks ties.",
+    "verification": "Every run passed output-plan byte accounting and planned raw compressed-payload equality; representative outputs were checked with openpyxl after benchmark timing."
+  },
+  "validation": {
+    "focused_tests": "7/7 passed: worksheet event reader, worksheet transformer and five PackageEditor C5 shards",
+    "production_ctest": "132/132 passed",
+    "stored_only_ctest": "132/132 passed",
+    "no_images_smoke": "passed",
+    "install_consumer_profiles": ["production", "stored-only", "no-images"],
+    "benchmark_runner_self_test": "passed",
+    "evidence_validator_self_test": "passed",
+    "office_open": "not_run"
+  },
+  "qualification": "Elapsed time is system-sensitive. Claims are limited to the recorded same-machine warmed protocol and are not generalized to arbitrary workbooks, other machines, Office compatibility or full-feature superiority."
+}

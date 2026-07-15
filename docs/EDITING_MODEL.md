@@ -24,7 +24,7 @@ source package -> part index/relationships -> staged edits -> part-level rewrite
 - Production minizip-ng 且 source/output compression method 匹配时，unchanged entry 直接复制 exact compressed payload；stored bootstrap、method-changing 与 changed entries 走 logical/encoding 路径。该优化不保留完整 ZIP record 或 package layout。
 - Changed part 选择 stream rewrite、small-part rewrite 或 remove。
 - Relationship-free DEFLATE worksheet 的 strict existing-cell replace 可走 one-inflate target-only direct-range：解压后的 worksheet 放在 owned temporary file，未触碰 XML 以 file ranges replay，replacement payload 使用小型 memory chunks。
-- Missing-cell upsert、relationship-bearing worksheet 与其他 direct-range 不适用场景走 single-pass source-order transform：一次扫描完成 replacement/insertion、精确 dimension、relationship audit 和 telemetry，输出由 transformed temporary file ranges 与 bounded dimension memory chunk 组成。该路径同样不物化 DOM/dense matrix，但仍重写完整 worksheet part。
+- Missing-cell upsert、relationship-bearing worksheet 与其他 direct-range 不适用场景走 single-pass source-order transform：一次扫描完成 replacement/insertion、精确 dimension、relationship audit 和 telemetry，输出由 transformed temporary file ranges 与 bounded dimension memory chunk 组成。Internal opt-in reader 可把当前 bounded window 内结构完整的 numeric、simple inline-string 与 formula cell 合并为 callback-lifetime exact-byte span；rich metadata、unsupported nested markup 与跨窗口 cell 保留详细事件流，formula audit 继续可见。有序 upsert 以单游标推进，仅乱序 source 使用 set fallback。该路径同样不物化 DOM/dense matrix，但仍重写完整 worksheet part。
 - 每个功能必须明确 preserve/audit/fail/edit，以及 relationships/content types/calc metadata 联动。
 - `save_as()` 成功后 staged plan 可继续用于另一个输出或后续编辑；因此 `has_pending_changes()` 不等于“未保存”。
 - `has_unsaved_changes()` 是保存水位：只表示最近一次成功保存之后的新变化。

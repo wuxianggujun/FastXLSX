@@ -1,0 +1,98 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "12",
+  "patch_matrix_schema_version": "6",
+  "git_revision": "aeac85ae78233f4050f4311bf7db29e8929ccde1",
+  "baseline_git_revision": "4d170d65",
+  "workload": {
+    "rows": 100000,
+    "columns": 10,
+    "source_cells": 1000000,
+    "requested_patch_cells": 1000,
+    "matched_existing_cells": 500,
+    "inserted_cells": 500,
+    "source_compression_level": 6,
+    "output_compression_level": 1,
+    "mixed_inline_source_sha256": "73ca18068426994fb595702075607d00841df2bbcd6913d0d92b8716aff534c9",
+    "mixed_inline_baseline_warmup_measured_runs": [2, 5],
+    "mixed_inline_optimized_warmup_measured_runs": [2, 5],
+    "numeric_guard_warmup_measured_runs": [2, 5],
+    "formula_hyperlink_guard_warmup_measured_runs": [1, 3]
+  },
+  "implementation": {
+    "canonical_literal_path": "Before the existing structural simple-inline-string matcher, the reader recognizes exact <is><t>...</t></is> and <is><t xml:space=\"preserve\">...</t></is> payloads with one raw-text terminator search and one literal suffix check.",
+    "safe_fallback": "Attribute variants, self-closing text, rich or unsupported nested markup, namespace variants, malformed candidates and reader-window splits continue through the prior structural parser and retain its diagnostics.",
+    "lifetime_and_memory": "The fast path returns a callback-lifetime view into the current bounded reader window, copies no payload and retains no string_view after window consumption.",
+    "telemetry": "Schema v12 adds canonical inline-string count and bytes beneath the existing aggregate simple-inline-string count, bytes and fallback telemetry; matrix v6 validates positive canonical traffic for mixed-inline and zero traffic for non-inline guards.",
+    "public_api_change": false
+  },
+  "results": {
+    "mixed_inline_back_to_back_ab": {
+      "baseline": {
+        "benchmark_schema_version": "11",
+        "matrix_schema_version": "5",
+        "total_editor_median_ms": 1525,
+        "mutation_median_ms": 1108,
+        "save_median_ms": 411,
+        "transform_median_ms": 789,
+        "source_scan_action_median_us": 740456,
+        "peak_working_set_median_mb": 9.03516
+      },
+      "optimized": {
+        "benchmark_schema_version": "12",
+        "matrix_schema_version": "6",
+        "total_editor_median_ms": 1306,
+        "mutation_median_ms": 927,
+        "save_median_ms": 344,
+        "transform_median_ms": 594,
+        "source_scan_action_median_us": 572988,
+        "peak_working_set_median_mb": 9.03906,
+        "parsed_events": 4533364,
+        "source_callbacks": 1200056,
+        "transform_actions": 2137,
+        "aggregate_inline_fast_path_count": 333327,
+        "canonical_inline_fast_path_count": 333327,
+        "canonical_inline_fast_path_bytes": 7895685,
+        "inline_fallback_count": 6,
+        "complete_cells": 999983,
+        "pass_through_batches": 102,
+        "pass_through_batched_cells": 999483,
+        "output_append_calls": 2136,
+        "output_peak_buffer_bytes": 28524,
+        "representative_openpyxl": "opened"
+      },
+      "decrease_percent": {
+        "total_editor_ms": 14.36,
+        "mutation_ms": 16.34,
+        "save_ms": 16.30,
+        "transform_ms": 24.71,
+        "source_scan_action_us": 22.62
+      },
+      "peak_working_set_delta_mb": 0.00390
+    },
+    "guards": {
+      "numeric": {
+        "canonical_inline_fast_path_count": 0,
+        "canonical_inline_fast_path_bytes": 0,
+        "complete_cells": 999985,
+        "representative_openpyxl": "opened"
+      },
+      "formula_hyperlink": {
+        "canonical_inline_fast_path_count": 0,
+        "canonical_inline_fast_path_bytes": 0,
+        "complete_cells": 999982,
+        "representative_openpyxl": "opened",
+        "verified_external_hyperlink_target": "https://example.com/fastxlsx-benchmark"
+      },
+      "timing_policy": "Guard elapsed values remain in their matrix artifacts but are excluded from performance claims because unrelated local jobs caused system-sensitive scheduling variation during those runs."
+    }
+  },
+  "interpretation": {
+    "supported_claim": "In the recorded same-machine back-to-back mixed-inline A/B over byte-identical source workbooks, schema v12 reduced total editor, transform and source scan/action medians by 14.36%, 24.71% and 22.62% relative to the exact schema-v11 baseline binary.",
+    "coverage": "All 333327 completed simple inline-string payloads used the canonical literal path; six reader-window candidates retained the structural fallback. Numeric and formula-plus-hyperlink guards reported zero canonical traffic.",
+    "memory": "Median process peak working set changed by approximately +0.004 MB, so the recorded gain did not require materialized worksheet state or payload copies.",
+    "compatibility": "Representative outputs opened with openpyxl 3.1.2, and the formula guard preserved the recorded external hyperlink target.",
+    "next_hotspot": "After the canonical mixed-inline parser improvement, source scan/action still occupies approximately 0.573 seconds in the optimized A/B median. Further work should profile generic worksheet tag and cell-boundary scanning before changing compression or introducing parallelism."
+  },
+  "scope": "Single Windows/MSVC machine, one-million-cell 10-column deterministic workloads, 1000 targeted upserts, source DEFLATE level 6 and output DEFLATE level 1. The claim is limited to the recorded back-to-back mixed-inline A/B and does not generalize to arbitrary workbooks, Office, cross-machine performance, full-feature superiority or OpenXLSX superiority."
+}

@@ -1,0 +1,64 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-15-windows-msvc-patch-canonical-inline-string-profile",
+  "created_utc": "2026-07-15T14:12:40Z",
+  "git_revision": "aeac85ae78233f4050f4311bf7db29e8929ccde1",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "baseline-v11-mixed-inline-matrix.json",
+      "sha256": "0d4040db1a824a12fcb351b64ebd67b66646c6b5494ae37a940a9453c2ae03f1",
+      "role": "matrix-report"
+    },
+    {
+      "path": "optimized-v12-mixed-inline-matrix.json",
+      "sha256": "272f40c34d66fcc0c77c53e6cd5775ae8ad432b6b0f4c31916cce046d1b3dbf0",
+      "role": "matrix-report"
+    },
+    {
+      "path": "numeric-guard-v12-matrix.json",
+      "sha256": "79c4159275bfe1f6c23e87d50525867cf51a8438b8a04b037d52b0ca88f760ab",
+      "role": "matrix-report"
+    },
+    {
+      "path": "formula-hyperlink-guard-v12-matrix.json",
+      "sha256": "be2b5a2c66924db1458eb503a3dc9e76633340927fef6a41293a8f9626d28da9",
+      "role": "matrix-report"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "6d61569fd7e541adc7e8ada229748f8519ab0c815fbd7c2376c3f995e87a0555",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "fdb94abe7b11570359d257cb6a394e785a03f69ffda5ffca605a594569dcc2e4",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "Patch benchmark schema v12 and matrix schema v6 add canonical inline-string count and bytes while retaining aggregate inline-string, parser, complete-cell, pass-through batching, output, relationship, temporary-IO, CRC and package-writer telemetry.",
+      "artifact_paths": ["optimized-v12-mixed-inline-matrix.json", "numeric-guard-v12-matrix.json", "formula-hyperlink-guard-v12-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "On this machine and byte-identical one-million-cell mixed-inline sources, the recorded back-to-back schema-v11 to schema-v12 A/B reduced total editor, transform and source scan/action medians by 14.36%, 24.71% and 22.62%.",
+      "artifact_paths": ["baseline-v11-mixed-inline-matrix.json", "optimized-v12-mixed-inline-matrix.json", "summary.json", "run-context.json"]
+    },
+    {
+      "statement": "All 333327 completed simple inline-string payloads in the optimized mixed-inline representative used the canonical literal path, six window-boundary candidates retained fallback, median process peak working set changed by approximately +0.004 MB, and numeric plus formula-hyperlink guards reported zero canonical traffic.",
+      "artifact_paths": ["optimized-v12-mixed-inline-matrix.json", "numeric-guard-v12-matrix.json", "formula-hyperlink-guard-v12-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "Production test coverage passed all 132 cases across split runs, stored CTest passed 132/132 in one run, and the no-images runtime smoke passed. Representative outputs opened with openpyxl 3.1.2 and the formula guard preserved https://example.com/fastxlsx-benchmark. Office was not run; numeric and formula guard timings are excluded, and no cross-machine, arbitrary-workbook, full-feature or OpenXLSX-superiority claim is made.",
+      "artifact_paths": ["run-context.json", "summary.json", "formula-hyperlink-guard-v12-matrix.json"]
+    }
+  ]
+}

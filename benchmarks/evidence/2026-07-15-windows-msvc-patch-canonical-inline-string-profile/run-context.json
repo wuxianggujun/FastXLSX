@@ -1,0 +1,42 @@
+{
+  "run_context_schema_version": "1",
+  "git_revision": "aeac85ae78233f4050f4311bf7db29e8929ccde1",
+  "baseline_git_revision": "4d170d65",
+  "date_local": "2026-07-15",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680,
+    "openpyxl_version": "3.1.2"
+  },
+  "benchmark_protocol": {
+    "runner": "tools/run_patch_benchmark_matrix.py",
+    "commands": [
+      "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/qa/patch-v11-runner-worktree/build/baseline-reuse/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-canonical-ab-v11-mixed-inline --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-pattern mixed-inline --source-compression-level 6 --output-compression-level 1 --verify-openpyxl",
+      "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-canonical-ab-v12-mixed-inline --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-pattern mixed-inline --source-compression-level 6 --output-compression-level 1 --verify-openpyxl",
+      "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-canonical-inline-v12-numeric-1m-l1 --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-pattern numeric --source-compression-level 6 --output-compression-level 1 --verify-openpyxl",
+      "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-canonical-v12-formula-hyperlink-guard-final --rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 1 --measured-runs 3 --source-pattern formula --source-external-hyperlink --source-compression-level 6 --output-compression-level 1 --verify-openpyxl"
+    ],
+    "baseline_build": "A detached worktree at revision 4d170d65 built the schema-v11 benchmark executable against the same existing production vcpkg installed tree; no source files from the optimized revision were copied into that worktree.",
+    "source_generation": "Separate process per matrix. The baseline and optimized mixed-inline sources were deterministic and byte-identical: SHA-256 73ca18068426994fb595702075607d00841df2bbcd6913d0d92b8716aff534c9.",
+    "representative_policy": "Measured run nearest total_editor_ms median; earliest run breaks ties.",
+    "verification": "Every selected matrix passed its schema validation, output-plan byte accounting and planned raw compressed-payload equality checks. Representative outputs were checked with openpyxl after benchmark timing; the formula guard also verified the external hyperlink target.",
+    "timing_policy": "Only the same-machine back-to-back mixed-inline A/B is used for performance claims. Numeric and formula-plus-hyperlink elapsed values remain recorded but are excluded because unrelated local jobs caused scheduling variation."
+  },
+  "validation": {
+    "production_build": "passed",
+    "focused_tests": "production 2/2 and stored 2/2 passed: worksheet event reader and public Patch cells",
+    "production_ctest": "132/132 test cases passed across split sequential coverage; two monolithic attempts were invalidated by unrelated local CPU saturation at tests 96 and 98, which both passed when run directly, and tests 99-132 passed as one tail run",
+    "stored_build": "passed",
+    "stored_ctest": "132/132 passed in one sequential run",
+    "no_images_profile": "FastXLSX library plus image-disabled smoke target rebuilt and runtime smoke passed",
+    "install_consumer_smoke": "not rerun because this revision changes no public header, CMake, dependency, export or profile contract; the immediately preceding schema-v11 bundle records passing production, stored-only and no-images consumers",
+    "benchmark_runner_self_test": "passed",
+    "evidence_validator_self_test": "passed",
+    "evidence_bundle_validation": "passed: 18 bundles",
+    "office_open": "not_run"
+  },
+  "qualification": "Elapsed time is system-sensitive. Claims are limited to the recorded byte-identical-source, same-machine, back-to-back mixed-inline protocol and are not generalized to arbitrary workbooks, other machines, Office compatibility, full-feature superiority or OpenXLSX superiority."
+}

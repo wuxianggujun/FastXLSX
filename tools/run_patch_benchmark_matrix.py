@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "9"
+BENCHMARK_SCHEMA_VERSION = "10"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -47,6 +47,9 @@ METRICS = [
     "single_pass_source_simple_inline_string_fast_path_count",
     "single_pass_source_simple_inline_string_fast_path_bytes",
     "single_pass_source_simple_inline_string_fallback_count",
+    "single_pass_source_complete_cell_coalesced_count",
+    "single_pass_source_complete_cell_coalesced_bytes",
+    "single_pass_source_complete_cell_fallback_count",
     "single_pass_transform_action_callback_count",
     "single_pass_relationship_scan_us",
     "single_pass_relationship_scan_input_call_count",
@@ -356,7 +359,8 @@ def verify_result(
             result.get("single_pass_source_coalesced_output_event_count")
         )
         action_callbacks = int(result.get("single_pass_transform_action_callback_count"))
-        require(parsed_events > callback_events > action_callbacks > 0,
+        require(parsed_events > callback_events > 0
+                and parsed_events > action_callbacks > 0,
             "patch-upsert should reduce parser events before transform actions")
         require(coalesced_input_events > coalesced_output_events > 0,
             "patch-upsert should report value-event coalescing")
@@ -379,6 +383,21 @@ def verify_result(
         else:
             require(inline_fast_path_count == 0 and inline_fast_path_bytes == 0,
                 "non-inline source should not report simple inline-string fast-path traffic")
+        complete_cell_count = int(
+            result.get("single_pass_source_complete_cell_coalesced_count")
+        )
+        complete_cell_bytes = int(
+            result.get("single_pass_source_complete_cell_coalesced_bytes")
+        )
+        complete_cell_fallback_count = int(
+            result.get("single_pass_source_complete_cell_fallback_count")
+        )
+        require(complete_cell_count > 0,
+            "patch-upsert should coalesce complete source cells")
+        require(complete_cell_bytes > complete_cell_count,
+            "coalesced complete-cell bytes should exceed its cell count")
+        require(complete_cell_fallback_count < complete_cell_count,
+            "complete-cell fallbacks should stay below coalesced cells")
         require(int(result.get("single_pass_output_append_call_count")) > 0,
             "patch-upsert should report output append calls")
         require(int(result.get("single_pass_output_flush_count")) > 0,
@@ -835,6 +854,9 @@ def run_self_test() -> None:
                 "single_pass_source_simple_inline_string_fast_path_count": 0,
                 "single_pass_source_simple_inline_string_fast_path_bytes": 0,
                 "single_pass_source_simple_inline_string_fallback_count": 0,
+                "single_pass_source_complete_cell_coalesced_count": 100,
+                "single_pass_source_complete_cell_coalesced_bytes": 10000,
+                "single_pass_source_complete_cell_fallback_count": 1,
                 "single_pass_transform_action_callback_count": 200,
                 "single_pass_relationship_scan_us": 200,
                 "single_pass_relationship_scan_input_call_count": 1,
@@ -1016,7 +1038,7 @@ def main() -> int:
             )
 
     matrix_report = {
-        "patch_benchmark_matrix_schema_version": "3",
+        "patch_benchmark_matrix_schema_version": "4",
         "benchmark_executable": str(bench_exe),
         "output_dir": str(output_dir),
         "rows": args.rows,

@@ -1837,7 +1837,8 @@ void finish_xml_relationship_references(
 }
 
 WorksheetEventReaderOptions package_editor_cell_replacement_reader_options(
-    WorksheetEventReaderTelemetry* telemetry = nullptr);
+    WorksheetEventReaderTelemetry* telemetry = nullptr,
+    bool coalesce_complete_cell_events = false);
 
 void scan_worksheet_relationship_references_from_chunk_source(
     WorksheetRelationshipReferenceScanner& scanner,
@@ -2090,10 +2091,14 @@ bool cell_start_attribute_equals_for_audit(std::string_view cell_xml,
     std::string_view attribute_name, std::string_view expected_value) noexcept
 {
     try {
-        if (cell_xml.size() < 2 || cell_xml.front() != '<' || cell_xml.back() != '>') {
+        if (cell_xml.size() < 2 || cell_xml.front() != '<') {
             return false;
         }
-        const XmlTagRange cell {0, cell_xml.size() - 1};
+        const std::size_t close = find_xml_tag_end_or_npos(cell_xml, 0);
+        if (close == std::string_view::npos) {
+            return false;
+        }
+        const XmlTagRange cell {0, close};
         std::size_t value_begin = 0;
         std::size_t value_end = 0;
         return find_attribute_value(cell_xml, cell, attribute_name, value_begin, value_end)
@@ -2107,10 +2112,14 @@ bool cell_start_has_attribute_for_audit(
     std::string_view cell_xml, std::string_view attribute_name) noexcept
 {
     try {
-        if (cell_xml.size() < 2 || cell_xml.front() != '<' || cell_xml.back() != '>') {
+        if (cell_xml.size() < 2 || cell_xml.front() != '<') {
             return false;
         }
-        const XmlTagRange cell {0, cell_xml.size() - 1};
+        const std::size_t close = find_xml_tag_end_or_npos(cell_xml, 0);
+        if (close == std::string_view::npos) {
+            return false;
+        }
+        const XmlTagRange cell {0, close};
         std::size_t value_begin = 0;
         std::size_t value_end = 0;
         return find_attribute_value(cell_xml, cell, attribute_name, value_begin, value_end);
@@ -3018,6 +3027,9 @@ void clear_indexed_source_entry_direct_range_stats(PackagePartReplacement& repla
     replacement.single_pass_source_simple_inline_string_fast_path_count = 0;
     replacement.single_pass_source_simple_inline_string_fast_path_bytes = 0;
     replacement.single_pass_source_simple_inline_string_fallback_count = 0;
+    replacement.single_pass_source_complete_cell_coalesced_count = 0;
+    replacement.single_pass_source_complete_cell_coalesced_bytes = 0;
+    replacement.single_pass_source_complete_cell_fallback_count = 0;
     replacement.single_pass_transform_action_callback_count = 0;
     replacement.single_pass_output_append_call_count = 0;
     replacement.single_pass_output_flush_count = 0;
@@ -4000,12 +4012,14 @@ std::string dimension_tag(std::string_view prefix, std::string_view reference)
 }
 
 WorksheetEventReaderOptions package_editor_cell_replacement_reader_options(
-    WorksheetEventReaderTelemetry* telemetry)
+    WorksheetEventReaderTelemetry* telemetry,
+    bool coalesce_complete_cell_events)
 {
     WorksheetEventReaderOptions options;
     options.max_window_bytes = package_editor_cell_replacement_event_window_byte_limit;
     options.copy_context_attributes = false;
     options.coalesce_cell_value_events = true;
+    options.coalesce_complete_cell_events = coalesce_complete_cell_events;
     options.telemetry = telemetry;
     return options;
 }
@@ -4117,10 +4131,15 @@ void consume_worksheet_cell_replacement_analysis_action(
             append_worksheet_replacement_styles_audit(
                 analysis.payload_audit, worksheet_part);
         }
+        if (action.contains_formula) {
+            append_worksheet_replacement_formula_audit(
+                analysis.payload_audit, worksheet_part);
+        }
         return;
     }
-    if (action.event_kind == WorksheetEventKind::CellValueMarkup
-        && action.element_name == "f") {
+    if (action.contains_formula
+        || (action.event_kind == WorksheetEventKind::CellValueMarkup
+            && action.element_name == "f")) {
         append_worksheet_replacement_formula_audit(
             analysis.payload_audit, worksheet_part);
     }
@@ -4809,7 +4828,9 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
                 worksheet_root_end = output.output_bytes();
             }
         },
-        package_editor_cell_replacement_reader_options(&result.source_event_telemetry), mode);
+        package_editor_cell_replacement_reader_options(
+            &result.source_event_telemetry, true),
+        mode);
 
     finalize_worksheet_cell_replacement_stream_analysis(result.analysis, worksheet_part);
     output.finish();
@@ -5240,6 +5261,12 @@ PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
             replacement->single_pass_source_simple_inline_string_fast_path_bytes;
         plan.single_pass_source_simple_inline_string_fallback_count =
             replacement->single_pass_source_simple_inline_string_fallback_count;
+        plan.single_pass_source_complete_cell_coalesced_count =
+            replacement->single_pass_source_complete_cell_coalesced_count;
+        plan.single_pass_source_complete_cell_coalesced_bytes =
+            replacement->single_pass_source_complete_cell_coalesced_bytes;
+        plan.single_pass_source_complete_cell_fallback_count =
+            replacement->single_pass_source_complete_cell_fallback_count;
         plan.single_pass_transform_action_callback_count =
             replacement->single_pass_transform_action_callback_count;
         plan.single_pass_output_append_call_count =
@@ -7591,6 +7618,12 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             single_pass_stats->source_simple_inline_string_fast_path_bytes;
         replacement->single_pass_source_simple_inline_string_fallback_count =
             single_pass_stats->source_simple_inline_string_fallback_count;
+        replacement->single_pass_source_complete_cell_coalesced_count =
+            single_pass_stats->source_complete_cell_coalesced_count;
+        replacement->single_pass_source_complete_cell_coalesced_bytes =
+            single_pass_stats->source_complete_cell_coalesced_bytes;
+        replacement->single_pass_source_complete_cell_fallback_count =
+            single_pass_stats->source_complete_cell_fallback_count;
         replacement->single_pass_transform_action_callback_count =
             single_pass_stats->transform_action_callback_count;
         replacement->single_pass_output_append_call_count =
@@ -8179,6 +8212,12 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
         transform_result.source_event_telemetry.simple_inline_string_fast_path_bytes;
     single_pass_stats.source_simple_inline_string_fallback_count =
         transform_result.source_event_telemetry.simple_inline_string_fallback_count;
+    single_pass_stats.source_complete_cell_coalesced_count =
+        transform_result.source_event_telemetry.complete_cell_coalesced_count;
+    single_pass_stats.source_complete_cell_coalesced_bytes =
+        transform_result.source_event_telemetry.complete_cell_coalesced_bytes;
+    single_pass_stats.source_complete_cell_fallback_count =
+        transform_result.source_event_telemetry.complete_cell_fallback_count;
     single_pass_stats.transform_action_callback_count =
         transform_result.transform_action_callback_count;
     single_pass_stats.output_append_call_count =

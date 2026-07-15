@@ -112,6 +112,8 @@ struct WorksheetTransformAction {
     /// source-order upsert decisions. Zero means the action did not carry one.
     std::uint32_t source_cell_row = 0;
     std::uint32_t source_cell_column = 0;
+    bool complete_cell = false;
+    bool contains_formula = false;
 };
 
 struct WorksheetTransformSummary {

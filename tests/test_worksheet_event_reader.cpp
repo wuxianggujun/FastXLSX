@@ -34,6 +34,8 @@ struct CopiedWorksheetEvent {
     std::string text;
     bool self_closing = false;
     std::uint64_t raw_xml_offset = 0;
+    bool complete_cell = false;
+    bool contains_formula = false;
 };
 
 CopiedWorksheetEvent copy_event(const WorksheetEvent& event)
@@ -45,7 +47,9 @@ CopiedWorksheetEvent copy_event(const WorksheetEvent& event)
         std::string(event.cell_reference),
         std::string(event.text),
         event.self_closing,
-        event.raw_xml_offset };
+        event.raw_xml_offset,
+        event.complete_cell,
+        event.contains_formula };
 }
 
 std::vector<CopiedWorksheetEvent> read_source_events(
@@ -436,6 +440,61 @@ void test_event_reader_fast_paths_simple_inline_strings_and_falls_back_safely()
         "detailed mode should retain inline-string metadata events");
 }
 
+void test_event_reader_coalesces_complete_cells_and_preserves_fallbacks()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1"><v>1</v></c>)"
+        R"(<c r="B1" t="inlineStr"><is><t>text</t></is></c>)"
+        R"(<c r="C1"><f>A1+1</f><v>2</v></c>)"
+        R"(<c r="D1" t="inlineStr"><is><r><t>rich</t></r></is></c>)"
+        R"(</row></sheetData></worksheet>)";
+
+    fastxlsx::detail::WorksheetEventReaderTelemetry telemetry;
+    fastxlsx::detail::WorksheetEventReaderOptions options;
+    options.copy_context_attributes = false;
+    options.coalesce_cell_value_events = true;
+    options.coalesce_complete_cell_events = true;
+    options.telemetry = &telemetry;
+    const std::vector<CopiedWorksheetEvent> events =
+        read_source_events(xml, xml.size(), options);
+
+    std::string reconstructed;
+    for (const CopiedWorksheetEvent& event : events) {
+        reconstructed += event.raw_xml;
+    }
+    check(reconstructed == xml,
+        "complete-cell coalescing should preserve exact worksheet bytes");
+    check(telemetry.complete_cell_coalesced_count == 3,
+        "numeric, simple inline-string, and formula cells should coalesce");
+    check(telemetry.complete_cell_fallback_count == 1,
+        "rich inline-string metadata should retain the detailed fallback path");
+    check(telemetry.complete_cell_coalesced_bytes
+            > telemetry.complete_cell_coalesced_count,
+        "complete-cell telemetry should report exact-byte traffic");
+
+    const auto formula = std::find_if(events.begin(), events.end(),
+        [](const CopiedWorksheetEvent& event) {
+            return event.cell_reference == "C1";
+        });
+    check(formula != events.end() && formula->complete_cell && formula->contains_formula,
+        "coalesced formula cells should retain formula audit metadata");
+
+    fastxlsx::detail::WorksheetEventReaderTelemetry boundary_telemetry;
+    options.max_window_bytes = 32;
+    options.telemetry = &boundary_telemetry;
+    const std::vector<CopiedWorksheetEvent> boundary_events =
+        read_source_events(xml, 1, options);
+    std::string boundary_reconstructed;
+    for (const CopiedWorksheetEvent& event : boundary_events) {
+        boundary_reconstructed += event.raw_xml;
+    }
+    check(boundary_reconstructed == xml,
+        "window-split complete cells should preserve bytes through fallback");
+    check(boundary_telemetry.complete_cell_fallback_count > 0,
+        "window-split cells should report complete-cell fallback traffic");
+}
+
 void test_event_reader_inline_string_fast_path_preserves_chunked_fallback_diagnostics()
 {
     const std::string xml =
@@ -755,6 +814,7 @@ int main()
         test_event_reader_can_skip_context_attribute_copies();
         test_event_reader_coalesces_patch_value_events_with_telemetry();
         test_event_reader_fast_paths_simple_inline_strings_and_falls_back_safely();
+        test_event_reader_coalesces_complete_cells_and_preserves_fallbacks();
         test_event_reader_inline_string_fast_path_preserves_chunked_fallback_diagnostics();
         test_event_reader_rejects_xml_declaration_after_root_start();
         test_event_reader_rejects_mismatched_cell_value_boundaries();

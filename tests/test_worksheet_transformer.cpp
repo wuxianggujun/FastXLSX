@@ -1053,7 +1053,8 @@ void test_transformer_patch_coalescing_reduces_actions_without_changing_output()
     fastxlsx::detail::WorksheetEventReaderOptions options;
     options.copy_context_attributes = false;
     options.coalesce_cell_value_events = true;
-    options.max_window_bytes = 32;
+    options.coalesce_complete_cell_events = true;
+    options.max_window_bytes = 256;
     options.telemetry = &telemetry;
     const CapturedTransform coalesced = collect_upsert_actions(xml, replacements, options);
     const EmittedWorksheet emitted =
@@ -1063,6 +1064,8 @@ void test_transformer_patch_coalescing_reduces_actions_without_changing_output()
         "Patch coalescing should reduce transform action callbacks");
     check(telemetry.parsed_event_count > telemetry.callback_event_count,
         "Patch coalescing should reduce event-reader callbacks");
+    check(telemetry.complete_cell_coalesced_count == 2,
+        "Patch coalescing should emit each untouched source cell once");
     check(emitted.xml
             == R"(<worksheet><sheetData><row r="1"><c r="A1"><v>old-a</v></c><c r="B1"><v>new-b</v></c><c r="C1"><v>old-c</v></c></row></sheetData></worksheet>)",
         "Patch coalescing should preserve source bytes around inserted cells");

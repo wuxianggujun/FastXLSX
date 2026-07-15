@@ -581,7 +581,9 @@ void emit_pass_through(const WorksheetTransformActionCallback& callback,
         event.self_closing,
         event.raw_xml_offset,
         source_coordinate.has_value() ? source_coordinate->row : 0,
-        source_coordinate.has_value() ? source_coordinate->column : 0 });
+        source_coordinate.has_value() ? source_coordinate->column : 0,
+        event.complete_cell,
+        event.contains_formula });
 }
 
 void emit_synthetic_pass_through(const WorksheetTransformActionCallback& callback,
@@ -783,9 +785,13 @@ void consume_replacement_event(const WorksheetEvent& event,
                 event.cell_reference,
                 replacement->second,
                 event.self_closing,
-                event.raw_xml_offset });
+                event.raw_xml_offset,
+                0,
+                0,
+                event.complete_cell,
+                event.contains_formula });
             scan_state.matched_replacements.insert(replacement->first);
-            replacing_current_cell = true;
+            replacing_current_cell = !event.complete_cell;
             return;
         }
     }
@@ -876,18 +882,35 @@ private:
             < replacement_plan_.targets_by_position.size();
     }
 
-    void advance_emitted_targets()
+    void advance_out_of_order_emitted_targets()
     {
-        while (next_target_index_ < replacement_plan_.targets_by_position.size()
-            && target_was_emitted(
-                replacement_plan_.targets_by_position[next_target_index_].cell_reference)) {
+        while (!out_of_order_emitted_targets_.empty()
+            && next_target_index_ < replacement_plan_.targets_by_position.size()) {
+            const std::string_view reference =
+                replacement_plan_.targets_by_position[next_target_index_].cell_reference;
+            const auto emitted = out_of_order_emitted_targets_.find(reference);
+            if (emitted == out_of_order_emitted_targets_.end()) {
+                return;
+            }
+            out_of_order_emitted_targets_.erase(emitted);
             ++next_target_index_;
         }
     }
 
+    void mark_target_emitted(std::string_view cell_reference)
+    {
+        if (next_target_index_ < replacement_plan_.targets_by_position.size()
+            && replacement_plan_.targets_by_position[next_target_index_].cell_reference
+                == cell_reference) {
+            ++next_target_index_;
+            advance_out_of_order_emitted_targets();
+            return;
+        }
+        out_of_order_emitted_targets_.insert(cell_reference);
+    }
+
     [[nodiscard]] const WorksheetCellReplacementTarget* next_pending_target()
     {
-        advance_emitted_targets();
         if (next_target_index_ >= replacement_plan_.targets_by_position.size()) {
             return nullptr;
         }
@@ -942,7 +965,7 @@ private:
             target.coordinate.row,
             target.coordinate.column });
         inserted_replacements_.insert(target.cell_reference);
-        advance_emitted_targets();
+        mark_target_emitted(target.cell_reference);
     }
 
     void emit_pending_cells_before_column(std::uint32_t row, std::uint32_t column)
@@ -1162,16 +1185,19 @@ private:
             event.self_closing,
             event.raw_xml_offset,
             source_coordinate.row,
-            source_coordinate.column });
+            source_coordinate.column,
+            event.complete_cell,
+            event.contains_formula });
         matched_replacements_.insert(matched_reference);
-        advance_emitted_targets();
-        replacing_current_cell_ = true;
+        mark_target_emitted(matched_reference);
+        replacing_current_cell_ = !event.complete_cell;
     }
 
     const WorksheetCellReplacementPlan& replacement_plan_;
     WorksheetPassThroughActionEmitter action_emitter_;
     std::set<std::string_view, std::less<>> matched_replacements_;
     std::set<std::string_view, std::less<>> inserted_replacements_;
+    std::set<std::string_view, std::less<>> out_of_order_emitted_targets_;
     std::size_t next_target_index_ = 0;
     bool replacing_current_cell_ = false;
     bool seen_sheet_data_ = false;

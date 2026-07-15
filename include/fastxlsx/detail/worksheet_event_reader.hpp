@@ -51,6 +51,10 @@ struct WorksheetEvent {
     /// They are intended for internal staged/indexed rewrite foundations; they
     /// are not ZIP-entry offsets and do not imply source package seekability.
     std::uint64_t raw_xml_offset = 0;
+    /// True when an opt-in coalescing reader emitted one complete source cell.
+    bool complete_cell = false;
+    /// True when a coalesced complete-cell event contained formula markup.
+    bool contains_formula = false;
 };
 
 using WorksheetEventCallback = std::function<void(const WorksheetEvent&)>;
@@ -64,6 +68,9 @@ struct WorksheetEventReaderTelemetry {
     std::uint64_t simple_inline_string_fast_path_count = 0;
     std::uint64_t simple_inline_string_fast_path_bytes = 0;
     std::uint64_t simple_inline_string_fallback_count = 0;
+    std::uint64_t complete_cell_coalesced_count = 0;
+    std::uint64_t complete_cell_coalesced_bytes = 0;
+    std::uint64_t complete_cell_fallback_count = 0;
 };
 
 /// Internal pull-based worksheet XML chunk source.
@@ -98,6 +105,14 @@ struct WorksheetEventReaderOptions {
     /// callback traffic for Patch rewrite hot paths. The default remains false
     /// so general event consumers keep the detailed event contract.
     bool coalesce_cell_value_events = false;
+
+    /// Coalesces a structurally parsed simple cell into one callback-lifetime event.
+    ///
+    /// Formula/value markup remains validated before emission. Cells containing
+    /// other nested metadata or crossing a consumed input window fall back to
+    /// the ordinary event stream. The default remains false so general event
+    /// consumers retain the detailed event contract.
+    bool coalesce_complete_cell_events = false;
 
     /// Optional internal counters for profiling parser/callback traffic.
     WorksheetEventReaderTelemetry* telemetry = nullptr;

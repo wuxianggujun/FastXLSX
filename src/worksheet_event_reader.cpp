@@ -316,6 +316,7 @@ public:
         : callback_(callback)
         , copy_context_attributes_(options.copy_context_attributes)
         , coalesce_cell_value_events_(options.coalesce_cell_value_events)
+        , coalesce_complete_cell_events_(options.coalesce_complete_cell_events)
         , telemetry_(options.telemetry)
     {
     }
@@ -439,18 +440,30 @@ public:
             return;
         }
 
-        WorksheetEvent event {
-            WorksheetEventKind::RawText,
-            coalesced_raw_xml_,
-        };
+        WorksheetEvent event = coalesced_event_;
+        event.raw_xml = coalesced_raw_xml_;
         event.raw_xml_offset = coalesced_raw_xml_offset_;
+        event.complete_cell = coalesced_cell_complete_;
+        event.contains_formula = coalesced_cell_contains_formula_;
         callback_(event);
         if (telemetry_ != nullptr) {
             ++telemetry_->callback_event_count;
             ++telemetry_->coalesced_output_event_count;
+            if (event.kind == WorksheetEventKind::CellStart) {
+                if (event.complete_cell) {
+                    ++telemetry_->complete_cell_coalesced_count;
+                    telemetry_->complete_cell_coalesced_bytes +=
+                        static_cast<std::uint64_t>(event.raw_xml.size());
+                } else {
+                    ++telemetry_->complete_cell_fallback_count;
+                }
+            }
         }
+        coalesced_event_ = {};
         coalesced_raw_xml_ = {};
         coalesced_raw_xml_offset_ = 0;
+        coalesced_cell_complete_ = false;
+        coalesced_cell_contains_formula_ = false;
     }
 
     void finish() const
@@ -471,6 +484,18 @@ public:
 private:
     [[nodiscard]] bool should_coalesce(const WorksheetEvent& event) const noexcept
     {
+        if (coalesce_complete_cell_events_) {
+            if (event.kind == WorksheetEventKind::CellStart && !event.self_closing) {
+                return true;
+            }
+            if (coalesced_event_.kind == WorksheetEventKind::CellStart
+                && !coalesced_cell_complete_) {
+                return event.kind == WorksheetEventKind::RawText
+                    || event.kind == WorksheetEventKind::CellValue
+                    || event.kind == WorksheetEventKind::CellValueMarkup
+                    || event.kind == WorksheetEventKind::CellEnd;
+            }
+        }
         if (!coalesce_cell_value_events_) {
             return false;
         }
@@ -483,6 +508,10 @@ private:
 
     void append_coalesced_event(const WorksheetEvent& event, std::uint64_t offset)
     {
+        if (event.kind == WorksheetEventKind::CellStart
+            && !coalesced_raw_xml_.empty()) {
+            flush_coalesced_event();
+        }
         if (!coalesced_raw_xml_.empty()) {
             const char* expected = coalesced_raw_xml_.data() + coalesced_raw_xml_.size();
             if (event.raw_xml.data() != expected
@@ -491,11 +520,23 @@ private:
             }
         }
         if (coalesced_raw_xml_.empty()) {
+            coalesced_event_ = event.kind == WorksheetEventKind::CellStart
+                ? event
+                : WorksheetEvent { WorksheetEventKind::RawText };
             coalesced_raw_xml_ = event.raw_xml;
             coalesced_raw_xml_offset_ = offset;
         } else {
             coalesced_raw_xml_ = std::string_view(
                 coalesced_raw_xml_.data(), coalesced_raw_xml_.size() + event.raw_xml.size());
+        }
+        if (coalesced_event_.kind == WorksheetEventKind::CellStart) {
+            if (event.kind == WorksheetEventKind::CellValueMarkup
+                && event.element_name == "f") {
+                coalesced_cell_contains_formula_ = true;
+            }
+            if (event.kind == WorksheetEventKind::CellEnd) {
+                coalesced_cell_complete_ = true;
+            }
         }
         if (telemetry_ != nullptr) {
             ++telemetry_->coalesced_input_event_count;
@@ -831,9 +872,13 @@ private:
     std::string_view current_row_;
     std::string_view current_cell_;
     bool coalesce_cell_value_events_ = false;
+    bool coalesce_complete_cell_events_ = false;
     fastxlsx::detail::WorksheetEventReaderTelemetry* telemetry_ = nullptr;
+    WorksheetEvent coalesced_event_;
     std::string_view coalesced_raw_xml_;
     std::uint64_t coalesced_raw_xml_offset_ = 0;
+    bool coalesced_cell_complete_ = false;
+    bool coalesced_cell_contains_formula_ = false;
 };
 
 std::uint64_t add_source_offset(std::uint64_t base, std::size_t relative)

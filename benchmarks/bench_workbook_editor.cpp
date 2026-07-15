@@ -35,7 +35,7 @@ namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
-constexpr std::string_view kEditorBenchmarkSchemaVersion = "8";
+constexpr std::string_view kEditorBenchmarkSchemaVersion = "9";
 
 std::filesystem::path default_output_dir()
 {
@@ -121,22 +121,29 @@ struct RunStats {
     std::uint64_t single_pass_temporary_write_us = 0;
     std::uint64_t single_pass_commit_ms = 0;
     std::uint64_t package_writer_total_us = 0;
+    std::uint64_t package_writer_total_process_cpu_us = 0;
     std::uint64_t package_writer_open_us = 0;
     std::uint64_t package_writer_close_us = 0;
     bool target_worksheet_entry_telemetry = false;
     bool target_worksheet_entry_raw_compressed_copy = false;
     bool target_worksheet_entry_reused_staged_crc32 = false;
+    int target_worksheet_entry_requested_compression_level =
+        fastxlsx::default_zip_compression_level;
     std::uint64_t target_worksheet_entry_uncompressed_bytes = 0;
     std::uint64_t target_worksheet_entry_input_bytes = 0;
     std::uint64_t target_worksheet_entry_input_read_calls = 0;
     std::uint64_t target_worksheet_entry_writer_write_calls = 0;
     std::uint64_t target_worksheet_entry_reused_staged_file_chunk_count = 0;
     std::uint64_t target_worksheet_entry_total_us = 0;
+    std::uint64_t target_worksheet_entry_total_process_cpu_us = 0;
     std::uint64_t target_worksheet_entry_open_us = 0;
     std::uint64_t target_worksheet_entry_input_read_us = 0;
     std::uint64_t target_worksheet_entry_writer_write_us = 0;
+    std::uint64_t target_worksheet_entry_writer_write_process_cpu_us = 0;
     std::uint64_t target_worksheet_entry_staged_crc_validation_us = 0;
     std::uint64_t target_worksheet_entry_close_us = 0;
+    std::uint64_t target_worksheet_entry_close_process_cpu_us = 0;
+    std::uint64_t target_worksheet_entry_deflate_writer_process_cpu_us = 0;
 };
 
 [[noreturn]] void fail(std::string_view message)
@@ -738,6 +745,7 @@ void observe_package_writer_telemetry(
     const fastxlsx::detail::PackageWriterTelemetry& telemetry, RunStats& stats)
 {
     stats.package_writer_total_us = telemetry.total_us;
+    stats.package_writer_total_process_cpu_us = telemetry.total_process_cpu_us;
     stats.package_writer_open_us = telemetry.open_us;
     stats.package_writer_close_us = telemetry.close_us;
     const auto target = std::find_if(telemetry.entries.begin(), telemetry.entries.end(),
@@ -751,6 +759,8 @@ void observe_package_writer_telemetry(
     stats.target_worksheet_entry_telemetry = true;
     stats.target_worksheet_entry_raw_compressed_copy = target->raw_compressed_copy;
     stats.target_worksheet_entry_reused_staged_crc32 = target->reused_staged_crc32;
+    stats.target_worksheet_entry_requested_compression_level =
+        target->requested_compression_level;
     stats.target_worksheet_entry_uncompressed_bytes = target->uncompressed_bytes;
     stats.target_worksheet_entry_input_bytes = target->input_bytes;
     stats.target_worksheet_entry_input_read_calls = target->input_read_calls;
@@ -758,12 +768,18 @@ void observe_package_writer_telemetry(
     stats.target_worksheet_entry_reused_staged_file_chunk_count =
         target->reused_staged_file_chunk_count;
     stats.target_worksheet_entry_total_us = target->total_us;
+    stats.target_worksheet_entry_total_process_cpu_us = target->total_process_cpu_us;
     stats.target_worksheet_entry_open_us = target->open_us;
     stats.target_worksheet_entry_input_read_us = target->input_read_us;
     stats.target_worksheet_entry_writer_write_us = target->writer_write_us;
+    stats.target_worksheet_entry_writer_write_process_cpu_us =
+        target->writer_write_process_cpu_us;
     stats.target_worksheet_entry_staged_crc_validation_us =
         target->staged_crc_validation_us;
     stats.target_worksheet_entry_close_us = target->close_us;
+    stats.target_worksheet_entry_close_process_cpu_us = target->close_process_cpu_us;
+    stats.target_worksheet_entry_deflate_writer_process_cpu_us =
+        target->deflate_writer_process_cpu_us;
 }
 
 void write_result_json(const Options& options, const RunStats& stats)
@@ -869,6 +885,8 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"single_pass_commit_ms\": "
         << stats.single_pass_commit_ms << ",\n";
     out << "  \"package_writer_total_us\": " << stats.package_writer_total_us << ",\n";
+    out << "  \"package_writer_total_process_cpu_us\": "
+        << stats.package_writer_total_process_cpu_us << ",\n";
     out << "  \"package_writer_open_us\": " << stats.package_writer_open_us << ",\n";
     out << "  \"package_writer_close_us\": " << stats.package_writer_close_us << ",\n";
     out << "  \"target_worksheet_entry_telemetry\": "
@@ -878,6 +896,8 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"target_worksheet_entry_reused_staged_crc32\": "
         << (stats.target_worksheet_entry_reused_staged_crc32 ? "true" : "false")
         << ",\n";
+    out << "  \"target_worksheet_entry_requested_compression_level\": "
+        << stats.target_worksheet_entry_requested_compression_level << ",\n";
     out << "  \"target_worksheet_entry_uncompressed_bytes\": "
         << stats.target_worksheet_entry_uncompressed_bytes << ",\n";
     out << "  \"target_worksheet_entry_input_bytes\": "
@@ -890,16 +910,24 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.target_worksheet_entry_reused_staged_file_chunk_count << ",\n";
     out << "  \"target_worksheet_entry_total_us\": "
         << stats.target_worksheet_entry_total_us << ",\n";
+    out << "  \"target_worksheet_entry_total_process_cpu_us\": "
+        << stats.target_worksheet_entry_total_process_cpu_us << ",\n";
     out << "  \"target_worksheet_entry_open_us\": "
         << stats.target_worksheet_entry_open_us << ",\n";
     out << "  \"target_worksheet_entry_input_read_us\": "
         << stats.target_worksheet_entry_input_read_us << ",\n";
     out << "  \"target_worksheet_entry_writer_write_us\": "
         << stats.target_worksheet_entry_writer_write_us << ",\n";
+    out << "  \"target_worksheet_entry_writer_write_process_cpu_us\": "
+        << stats.target_worksheet_entry_writer_write_process_cpu_us << ",\n";
     out << "  \"target_worksheet_entry_staged_crc_validation_us\": "
         << stats.target_worksheet_entry_staged_crc_validation_us << ",\n";
     out << "  \"target_worksheet_entry_close_us\": "
         << stats.target_worksheet_entry_close_us << ",\n";
+    out << "  \"target_worksheet_entry_close_process_cpu_us\": "
+        << stats.target_worksheet_entry_close_process_cpu_us << ",\n";
+    out << "  \"target_worksheet_entry_deflate_writer_process_cpu_us\": "
+        << stats.target_worksheet_entry_deflate_writer_process_cpu_us << ",\n";
     write_json_string_array(out, "copied_entry_names", stats.copied_entry_names, true);
     write_json_string_array(out, "raw_compressed_copy_entry_names",
         stats.raw_compressed_copy_entry_names, true);

@@ -5,6 +5,13 @@
 
 #include <fastxlsx/workbook.hpp>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
+
 #ifdef FASTXLSX_HAS_MINIZIP_NG
 #include <mz.h>
 #include <mz_strm.h>
@@ -16,6 +23,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <ctime>
 #include <fstream>
 #include <limits>
 #include <map>
@@ -39,6 +47,41 @@ std::uint64_t elapsed_microseconds(std::chrono::steady_clock::time_point started
 {
     return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - started).count());
+}
+
+std::uint64_t process_cpu_microseconds() noexcept
+{
+#ifdef _WIN32
+    FILETIME created {};
+    FILETIME exited {};
+    FILETIME kernel {};
+    FILETIME user {};
+    if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user) == 0) {
+        return 0;
+    }
+
+    ULARGE_INTEGER kernel_ticks {};
+    kernel_ticks.LowPart = kernel.dwLowDateTime;
+    kernel_ticks.HighPart = kernel.dwHighDateTime;
+    ULARGE_INTEGER user_ticks {};
+    user_ticks.LowPart = user.dwLowDateTime;
+    user_ticks.HighPart = user.dwHighDateTime;
+    return (kernel_ticks.QuadPart + user_ticks.QuadPart) / 10U;
+#else
+    const std::clock_t finished = std::clock();
+    if (finished == static_cast<std::clock_t>(-1)) {
+        return 0;
+    }
+    return static_cast<std::uint64_t>(
+        static_cast<long double>(finished) * 1'000'000.0L
+        / static_cast<long double>(CLOCKS_PER_SEC));
+#endif
+}
+
+std::uint64_t elapsed_process_cpu_microseconds(std::uint64_t started) noexcept
+{
+    const std::uint64_t finished = process_cpu_microseconds();
+    return finished >= started ? finished - started : 0;
 }
 
 PackageWriterBackend resolve_backend(PackageWriterBackend backend)
@@ -630,10 +673,15 @@ void write_minizip_memory_chunk(void* writer, std::string_view data,
         const auto write_started = telemetry != nullptr
             ? std::chrono::steady_clock::now()
             : std::chrono::steady_clock::time_point {};
+        const std::uint64_t write_process_cpu_started = telemetry != nullptr
+            ? process_cpu_microseconds()
+            : 0;
         const int written = mz_zip_writer_entry_write(
             writer, data.data() + offset, chunk_size);
         if (telemetry != nullptr) {
             telemetry->writer_write_us += elapsed_microseconds(write_started);
+            telemetry->writer_write_process_cpu_us +=
+                elapsed_process_cpu_microseconds(write_process_cpu_started);
             ++telemetry->writer_write_calls;
             telemetry->input_bytes += static_cast<std::uint64_t>(chunk_size);
         }
@@ -714,9 +762,14 @@ void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cach
         const auto write_started = telemetry != nullptr
             ? std::chrono::steady_clock::now()
             : std::chrono::steady_clock::time_point {};
+        const std::uint64_t write_process_cpu_started = telemetry != nullptr
+            ? process_cpu_microseconds()
+            : 0;
         const int written = mz_zip_writer_entry_write(writer, data.data(), chunk_size);
         if (telemetry != nullptr) {
             telemetry->writer_write_us += elapsed_microseconds(write_started);
+            telemetry->writer_write_process_cpu_us +=
+                elapsed_process_cpu_microseconds(write_process_cpu_started);
             ++telemetry->writer_write_calls;
             telemetry->input_bytes += static_cast<std::uint64_t>(data.size());
         }
@@ -872,11 +925,15 @@ void write_minizip_package(
             if (telemetry != nullptr) {
                 entry_telemetry.entry_name = entry.name;
                 entry_telemetry.raw_compressed_copy = entry.raw_compressed_source.has_value();
+                entry_telemetry.requested_compression_level = compression_level;
                 active_entry_telemetry = &entry_telemetry;
             }
             const auto entry_started = active_entry_telemetry != nullptr
                 ? std::chrono::steady_clock::now()
                 : std::chrono::steady_clock::time_point {};
+            const std::uint64_t entry_process_cpu_started = active_entry_telemetry != nullptr
+                ? process_cpu_microseconds()
+                : 0;
             const auto crc_plan_started = active_entry_telemetry != nullptr
                 ? std::chrono::steady_clock::now()
                 : std::chrono::steady_clock::time_point {};
@@ -932,9 +989,13 @@ void write_minizip_package(
             const auto entry_close_started = active_entry_telemetry != nullptr
                 ? std::chrono::steady_clock::now()
                 : std::chrono::steady_clock::time_point {};
+            const std::uint64_t entry_close_process_cpu_started =
+                active_entry_telemetry != nullptr ? process_cpu_microseconds() : 0;
             check_minizip_result(mz_zip_writer_entry_close(writer.get()), "close ZIP entry");
             if (active_entry_telemetry != nullptr) {
                 active_entry_telemetry->close_us = elapsed_microseconds(entry_close_started);
+                active_entry_telemetry->close_process_cpu_us =
+                    elapsed_process_cpu_microseconds(entry_close_process_cpu_started);
             }
             if (crc_plan.reuse_staged_crc32) {
                 const auto crc_validation_started = active_entry_telemetry != nullptr
@@ -947,7 +1008,15 @@ void write_minizip_package(
                 }
             }
             if (active_entry_telemetry != nullptr) {
+                if (!active_entry_telemetry->raw_compressed_copy
+                    && compression_level != package_writer_min_compression_level) {
+                    active_entry_telemetry->deflate_writer_process_cpu_us =
+                        active_entry_telemetry->writer_write_process_cpu_us
+                        + active_entry_telemetry->close_process_cpu_us;
+                }
                 active_entry_telemetry->total_us = elapsed_microseconds(entry_started);
+                active_entry_telemetry->total_process_cpu_us =
+                    elapsed_process_cpu_microseconds(entry_process_cpu_started);
                 telemetry->entries.push_back(std::move(entry_telemetry));
             }
         }
@@ -994,6 +1063,9 @@ void write_package(const std::filesystem::path& path, const std::vector<PackageE
     const auto total_started = options.telemetry != nullptr
         ? std::chrono::steady_clock::now()
         : std::chrono::steady_clock::time_point {};
+    const std::uint64_t total_process_cpu_started = options.telemetry != nullptr
+        ? process_cpu_microseconds()
+        : 0;
     validate_options(options);
     validate_package_entries_zip32(entries);
 
@@ -1014,6 +1086,8 @@ void write_package(const std::filesystem::path& path, const std::vector<PackageE
         write_stored_zip(path, entries);
         if (options.telemetry != nullptr) {
             options.telemetry->total_us = elapsed_microseconds(total_started);
+            options.telemetry->total_process_cpu_us =
+                elapsed_process_cpu_microseconds(total_process_cpu_started);
         }
         return;
     case PackageWriterBackend::MinizipNg:
@@ -1022,6 +1096,8 @@ void write_package(const std::filesystem::path& path, const std::vector<PackageE
             path, entries, options.compression_level, options.telemetry);
         if (options.telemetry != nullptr) {
             options.telemetry->total_us = elapsed_microseconds(total_started);
+            options.telemetry->total_process_cpu_us =
+                elapsed_process_cpu_microseconds(total_process_cpu_started);
         }
         return;
 #else

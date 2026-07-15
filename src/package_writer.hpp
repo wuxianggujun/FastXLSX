@@ -104,34 +104,41 @@ enum class PackageWriterBackend {
     MinizipNg,
 };
 
+inline constexpr int package_writer_default_compression_level = -1;
+inline constexpr int package_writer_min_compression_level = 0;
+inline constexpr int package_writer_max_compression_level = 9;
+
 struct PackageWriterEntryTelemetry {
     std::string entry_name;
     bool raw_compressed_copy = false;
     bool reused_staged_crc32 = false;
+    int requested_compression_level = package_writer_default_compression_level;
     std::uint64_t uncompressed_bytes = 0;
     std::uint64_t input_bytes = 0;
     std::uint64_t input_read_calls = 0;
     std::uint64_t writer_write_calls = 0;
     std::uint64_t reused_staged_file_chunk_count = 0;
     std::uint64_t total_us = 0;
+    std::uint64_t total_process_cpu_us = 0;
     std::uint64_t open_us = 0;
     std::uint64_t input_read_us = 0;
     std::uint64_t writer_write_us = 0;
+    std::uint64_t writer_write_process_cpu_us = 0;
     std::uint64_t staged_crc_validation_us = 0;
     std::uint64_t close_us = 0;
+    std::uint64_t close_process_cpu_us = 0;
+    // CPU envelope of minizip DEFLATE write/close calls, including backend bookkeeping.
+    std::uint64_t deflate_writer_process_cpu_us = 0;
 };
 
 struct PackageWriterTelemetry {
     PackageWriterBackend backend = PackageWriterBackend::Auto;
     std::uint64_t total_us = 0;
+    std::uint64_t total_process_cpu_us = 0;
     std::uint64_t open_us = 0;
     std::uint64_t close_us = 0;
     std::vector<PackageWriterEntryTelemetry> entries;
 };
-
-inline constexpr int package_writer_default_compression_level = -1;
-inline constexpr int package_writer_min_compression_level = 0;
-inline constexpr int package_writer_max_compression_level = 9;
 
 struct PackageWriterOptions {
     PackageWriterBackend backend = PackageWriterBackend::Auto;

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "8"
+BENCHMARK_SCHEMA_VERSION = "9"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -58,11 +58,16 @@ METRICS = [
     "single_pass_output_flush_count",
     "single_pass_output_peak_buffer_bytes",
     "package_writer_total_us",
+    "package_writer_total_process_cpu_us",
     "target_worksheet_entry_total_us",
+    "target_worksheet_entry_total_process_cpu_us",
     "target_worksheet_entry_input_read_us",
     "target_worksheet_entry_writer_write_us",
+    "target_worksheet_entry_writer_write_process_cpu_us",
     "target_worksheet_entry_staged_crc_validation_us",
     "target_worksheet_entry_close_us",
+    "target_worksheet_entry_close_process_cpu_us",
+    "target_worksheet_entry_deflate_writer_process_cpu_us",
 ]
 
 
@@ -118,6 +123,11 @@ def indexed_run_name(base_name: str, run_kind: str, run_index: int, run_count: i
     require(run_count >= 1, "run count must be positive")
     width = max(2, len(str(run_count)))
     return f"{base_name}-{run_kind}-{run_index:0{width}d}"
+
+
+def compression_case_name(case: PatchCase, compression_level: int) -> str:
+    level = "default" if compression_level == -1 else str(compression_level)
+    return f"{case.name}-compression-{level}"
 
 
 def metric_summary(values: list[int | float]) -> dict[str, int | float]:
@@ -434,9 +444,16 @@ def verify_result(
     require(int(result.get("total_editor_ms")) >= 0, "total editor time must be non-negative")
     require(int(result.get("package_writer_total_us")) > 0,
         "package writer telemetry should report positive total time")
-    if output_compression_level > 0:
+    require(int(result.get("package_writer_total_process_cpu_us")) >= 0,
+        "package writer process CPU time must be non-negative")
+    if output_compression_level != 0:
         require(result.get("target_worksheet_entry_telemetry") is True,
             "minizip Patch output should report target worksheet entry telemetry")
+        require(
+            int(result.get("target_worksheet_entry_requested_compression_level"))
+            == output_compression_level,
+            "target worksheet compression level mismatch",
+        )
         require(int(result.get("target_worksheet_entry_input_bytes")) > 0,
             "target worksheet entry input bytes should be positive")
         require(int(result.get("target_worksheet_entry_input_read_calls")) > 0,
@@ -445,6 +462,33 @@ def verify_result(
             "target worksheet entry should report writer calls")
         require(int(result.get("target_worksheet_entry_total_us")) > 0,
             "target worksheet entry should report positive total time")
+        writer_process_cpu_us = int(
+            result.get("target_worksheet_entry_writer_write_process_cpu_us")
+        )
+        close_process_cpu_us = int(
+            result.get("target_worksheet_entry_close_process_cpu_us")
+        )
+        deflate_writer_process_cpu_us = int(
+            result.get("target_worksheet_entry_deflate_writer_process_cpu_us")
+        )
+        require(
+            int(result.get("target_worksheet_entry_total_process_cpu_us")) >= 0
+            and writer_process_cpu_us >= 0
+            and close_process_cpu_us >= 0,
+            "target worksheet process CPU timings must be non-negative",
+        )
+        if result.get("target_worksheet_entry_raw_compressed_copy") is True:
+            require(deflate_writer_process_cpu_us == 0,
+                "raw-copy target should not report DEFLATE process CPU")
+        else:
+            require(
+                deflate_writer_process_cpu_us
+                == writer_process_cpu_us + close_process_cpu_us,
+                "rewritten target DEFLATE process CPU accounting mismatch",
+            )
+            if int(result.get("target_worksheet_entry_uncompressed_bytes")) >= 1024 * 1024:
+                require(deflate_writer_process_cpu_us > 0,
+                    "large rewritten target should report positive DEFLATE process CPU")
         if case.scenario == "patch-upsert":
             require(result.get("target_worksheet_entry_reused_staged_crc32") is True,
                 "patch-upsert should reuse staged CRC32 metadata")
@@ -683,6 +727,7 @@ def run_case(
     measured_runs: int,
     verify_openpyxl: bool,
 ) -> dict[str, Any]:
+    base_name = compression_case_name(case, output_compression_level)
     for run_index in range(1, warmup_runs + 1):
         run_single_case(
             bench_exe,
@@ -695,7 +740,7 @@ def run_case(
             output_compression_level,
             source_pattern,
             source_external_hyperlink,
-            indexed_run_name(case.name, "warmup", run_index, warmup_runs),
+            indexed_run_name(base_name, "warmup", run_index, warmup_runs),
             True,
         )
 
@@ -711,7 +756,7 @@ def run_case(
             output_compression_level,
             source_pattern,
             source_external_hyperlink,
-            indexed_run_name(case.name, "run", run_index, measured_runs),
+            indexed_run_name(base_name, "run", run_index, measured_runs),
             True,
         )
         for run_index in range(1, measured_runs + 1)
@@ -731,8 +776,9 @@ def run_case(
         else {"status": "not_requested"}
     )
     return {
-        "name": case.name,
+        "name": base_name,
         "scenario": case.scenario,
+        "output_compression_level": output_compression_level,
         "requested_edits": case.edits,
         "warmup_runs": warmup_runs,
         "measured_runs": measured_runs,
@@ -800,11 +846,16 @@ def run_self_test() -> None:
                 "single_pass_output_flush_count": 2,
                 "single_pass_output_peak_buffer_bytes": 262144,
                 "package_writer_total_us": 1000,
+                "package_writer_total_process_cpu_us": 900,
                 "target_worksheet_entry_total_us": 500,
+                "target_worksheet_entry_total_process_cpu_us": 450,
                 "target_worksheet_entry_input_read_us": 50,
                 "target_worksheet_entry_writer_write_us": 400,
+                "target_worksheet_entry_writer_write_process_cpu_us": 350,
                 "target_worksheet_entry_staged_crc_validation_us": 1,
                 "target_worksheet_entry_close_us": 50,
+                "target_worksheet_entry_close_process_cpu_us": 40,
+                "target_worksheet_entry_deflate_writer_process_cpu_us": 390,
             },
             "byte_accounting": {
                 "copied_uncompressed_bytes": 1000,
@@ -822,6 +873,11 @@ def run_self_test() -> None:
     require(statistics_report["total_editor_ms"] == {"min": 10, "median": 20, "max": 30},
         "elapsed statistics mismatch")
     require(indexed_run_name("case", "run", 1, 3) == "case-run-01", "run name mismatch")
+    require(
+        compression_case_name(PatchCase("patch-upsert", 1000), 6)
+        == "patch-upsert-compression-6",
+        "compression case name mismatch",
+    )
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -862,7 +918,13 @@ def main() -> int:
     parser.add_argument("--rows", type=int, default=100000)
     parser.add_argument("--cols", type=int, default=10)
     parser.add_argument("--source-compression-level", type=int, default=6)
-    parser.add_argument("--output-compression-level", type=int, default=6)
+    parser.add_argument(
+        "--output-compression-level",
+        action="append",
+        dest="output_compression_levels",
+        type=int,
+        help="Output ZIP compression level. May be passed multiple times. Default: 6.",
+    )
     parser.add_argument(
         "--source-pattern",
         choices=["numeric", "mixed-inline", "mixed-shared", "formula"],
@@ -884,8 +946,15 @@ def main() -> int:
     require(args.cols > 0, "--cols must be positive")
     require(0 <= args.source_compression_level <= 9,
         "source compression level must be 0..9")
-    require(-1 <= args.output_compression_level <= 9,
-        "output compression level must be -1..9")
+    output_compression_levels = args.output_compression_levels or [6]
+    require(
+        all(-1 <= level <= 9 for level in output_compression_levels),
+        "output compression level must be -1..9",
+    )
+    require(
+        len(output_compression_levels) == len(set(output_compression_levels)),
+        "output compression levels must be unique",
+    )
     require(args.warmup_runs >= 0, "--warmup-runs must be non-negative")
     require(args.measured_runs > 0, "--measured-runs must be positive")
 
@@ -895,6 +964,12 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     cases = [parse_case(text) for text in (args.cases or DEFAULT_CASES)]
     require(len({case.name for case in cases}) == len(cases), "case scenarios must be unique")
+    case_names = [
+        compression_case_name(case, compression_level)
+        for compression_level in output_compression_levels
+        for case in cases
+    ]
+    require(len(case_names) == len(set(case_names)), "matrix case names must be unique")
 
     source_path = output_dir / "patch-matrix-source.xlsx"
     preparation = run_single_case(
@@ -905,7 +980,7 @@ def main() -> int:
         args.rows,
         args.cols,
         args.source_compression_level,
-        args.output_compression_level,
+        output_compression_levels[0],
         args.source_pattern,
         args.source_external_hyperlink,
         "source-preparation",
@@ -914,40 +989,41 @@ def main() -> int:
     source_archive = inspect_archive(source_path, args.source_compression_level, "source")
 
     case_reports = []
-    for case in cases:
-        report = run_case(
-            bench_exe,
-            output_dir,
-            source_path,
-            case,
-            args.rows,
-            args.cols,
-            args.source_compression_level,
-            args.output_compression_level,
-            args.source_pattern,
-            args.source_external_hyperlink,
-            args.warmup_runs,
-            args.measured_runs,
-            args.verify_openpyxl,
-        )
-        case_reports.append(report)
-        median = report["statistics"]["total_editor_ms"]["median"]
-        peak = report["statistics"]["peak_memory_mb"]["median"]
-        rewritten = report["statistics"]["rewritten_uncompressed_bytes"]["median"]
-        print(
-            f"{case.name}: median={median} ms, peak={peak} MB, "
-            f"rewritten={rewritten} logical bytes"
-        )
+    for output_compression_level in output_compression_levels:
+        for case in cases:
+            report = run_case(
+                bench_exe,
+                output_dir,
+                source_path,
+                case,
+                args.rows,
+                args.cols,
+                args.source_compression_level,
+                output_compression_level,
+                args.source_pattern,
+                args.source_external_hyperlink,
+                args.warmup_runs,
+                args.measured_runs,
+                args.verify_openpyxl,
+            )
+            case_reports.append(report)
+            median = report["statistics"]["total_editor_ms"]["median"]
+            peak = report["statistics"]["peak_memory_mb"]["median"]
+            rewritten = report["statistics"]["rewritten_uncompressed_bytes"]["median"]
+            print(
+                f"{report['name']}: median={median} ms, peak={peak} MB, "
+                f"rewritten={rewritten} logical bytes"
+            )
 
     matrix_report = {
-        "patch_benchmark_matrix_schema_version": "2",
+        "patch_benchmark_matrix_schema_version": "3",
         "benchmark_executable": str(bench_exe),
         "output_dir": str(output_dir),
         "rows": args.rows,
         "cols": args.cols,
         "source_cells": args.rows * args.cols,
         "source_compression_level": args.source_compression_level,
-        "output_compression_level": args.output_compression_level,
+        "output_compression_levels": output_compression_levels,
         "source_pattern": args.source_pattern,
         "source_external_hyperlink": args.source_external_hyperlink,
         "source": str(source_path),

@@ -344,6 +344,13 @@ void test_package_writer_applies_explicit_minizip_compression_levels()
         check(workbook_telemetry->writer_write_calls > 0
                 && workbook_telemetry->total_us > 0,
             "workbook telemetry should report minizip write calls and elapsed time");
+        check(workbook_telemetry->requested_compression_level
+                == fastxlsx::detail::package_writer_max_compression_level,
+            "workbook telemetry should report the requested compression level");
+        check(workbook_telemetry->deflate_writer_process_cpu_us
+                == workbook_telemetry->writer_write_process_cpu_us
+                    + workbook_telemetry->close_process_cpu_us,
+            "workbook telemetry should separate the DEFLATE writer CPU envelope");
     }
 }
 
@@ -513,6 +520,8 @@ void test_package_writer_raw_copies_matching_compressed_entries()
         check(raw_workbook_telemetry->input_read_calls > 0
                 && raw_workbook_telemetry->writer_write_calls > 0,
             "raw-copy telemetry should report file reads and writer calls");
+        check(raw_workbook_telemetry->deflate_writer_process_cpu_us == 0,
+            "raw-copy telemetry should not report DEFLATE process CPU");
     }
 
     const fastxlsx::detail::PackageReader written =

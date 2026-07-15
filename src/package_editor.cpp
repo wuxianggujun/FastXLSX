@@ -3026,6 +3026,8 @@ void clear_indexed_source_entry_direct_range_stats(PackagePartReplacement& repla
     replacement.single_pass_source_coalesced_output_event_count = 0;
     replacement.single_pass_source_simple_inline_string_fast_path_count = 0;
     replacement.single_pass_source_simple_inline_string_fast_path_bytes = 0;
+    replacement.single_pass_source_canonical_inline_string_fast_path_count = 0;
+    replacement.single_pass_source_canonical_inline_string_fast_path_bytes = 0;
     replacement.single_pass_source_simple_inline_string_fallback_count = 0;
     replacement.single_pass_source_complete_cell_coalesced_count = 0;
     replacement.single_pass_source_complete_cell_coalesced_bytes = 0;
@@ -5298,6 +5300,10 @@ PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
             replacement->single_pass_source_simple_inline_string_fast_path_count;
         plan.single_pass_source_simple_inline_string_fast_path_bytes =
             replacement->single_pass_source_simple_inline_string_fast_path_bytes;
+        plan.single_pass_source_canonical_inline_string_fast_path_count =
+            replacement->single_pass_source_canonical_inline_string_fast_path_count;
+        plan.single_pass_source_canonical_inline_string_fast_path_bytes =
+            replacement->single_pass_source_canonical_inline_string_fast_path_bytes;
         plan.single_pass_source_simple_inline_string_fallback_count =
             replacement->single_pass_source_simple_inline_string_fallback_count;
         plan.single_pass_source_complete_cell_coalesced_count =
@@ -7663,6 +7669,10 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             single_pass_stats->source_simple_inline_string_fast_path_count;
         replacement->single_pass_source_simple_inline_string_fast_path_bytes =
             single_pass_stats->source_simple_inline_string_fast_path_bytes;
+        replacement->single_pass_source_canonical_inline_string_fast_path_count =
+            single_pass_stats->source_canonical_inline_string_fast_path_count;
+        replacement->single_pass_source_canonical_inline_string_fast_path_bytes =
+            single_pass_stats->source_canonical_inline_string_fast_path_bytes;
         replacement->single_pass_source_simple_inline_string_fallback_count =
             single_pass_stats->source_simple_inline_string_fallback_count;
         replacement->single_pass_source_complete_cell_coalesced_count =
@@ -8265,6 +8275,10 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
         transform_result.source_event_telemetry.simple_inline_string_fast_path_count;
     single_pass_stats.source_simple_inline_string_fast_path_bytes =
         transform_result.source_event_telemetry.simple_inline_string_fast_path_bytes;
+    single_pass_stats.source_canonical_inline_string_fast_path_count =
+        transform_result.source_event_telemetry.canonical_inline_string_fast_path_count;
+    single_pass_stats.source_canonical_inline_string_fast_path_bytes =
+        transform_result.source_event_telemetry.canonical_inline_string_fast_path_bytes;
     single_pass_stats.source_simple_inline_string_fallback_count =
         transform_result.source_event_telemetry.simple_inline_string_fallback_count;
     single_pass_stats.source_complete_cell_coalesced_count =

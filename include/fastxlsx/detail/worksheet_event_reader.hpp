@@ -71,6 +71,8 @@ struct WorksheetEventReaderTelemetry {
     std::uint64_t coalesced_output_event_count = 0;
     std::uint64_t simple_inline_string_fast_path_count = 0;
     std::uint64_t simple_inline_string_fast_path_bytes = 0;
+    std::uint64_t canonical_inline_string_fast_path_count = 0;
+    std::uint64_t canonical_inline_string_fast_path_bytes = 0;
     std::uint64_t simple_inline_string_fallback_count = 0;
     std::uint64_t complete_cell_coalesced_count = 0;
     std::uint64_t complete_cell_coalesced_bytes = 0;

@@ -405,6 +405,8 @@ void test_event_reader_fast_paths_simple_inline_strings_and_falls_back_safely()
         R"(<c r="B1" t="inlineStr"><is><t/></is></c>)"
         R"(<c r="C1" t="inlineStr"><is><r><t>rich</t></r></is></c>)"
         R"(<c r="D1"><f>A1&amp;"!"</f><v>0</v></c>)"
+        R"(<c r="E1" t="inlineStr"><is><t>plain</t></is></c>)"
+        R"(<c r="F1" t="inlineStr"><is><t xml:space='preserve'>single quote</t></is></c>)"
         R"(</row></sheetData></worksheet>)";
 
     fastxlsx::detail::WorksheetEventReaderTelemetry detailed_telemetry;
@@ -427,12 +429,20 @@ void test_event_reader_fast_paths_simple_inline_strings_and_falls_back_safely()
     }
     check(reconstructed == xml,
         "inline-string fast path should preserve exact worksheet bytes");
-    check(telemetry.simple_inline_string_fast_path_count == 2,
+    check(telemetry.simple_inline_string_fast_path_count == 4,
         "simple inline strings should use the bounded fast path");
     check(telemetry.simple_inline_string_fast_path_bytes
             == std::string_view(R"(<is><t xml:space="preserve">alpha &amp; beta</t></is>)").size()
-                + std::string_view(R"(<is><t/></is>)").size(),
+                + std::string_view(R"(<is><t/></is>)").size()
+                + std::string_view(R"(<is><t>plain</t></is>)").size()
+                + std::string_view(R"(<is><t xml:space='preserve'>single quote</t></is>)").size(),
         "inline-string fast path should report exact consumed bytes");
+    check(telemetry.canonical_inline_string_fast_path_count == 2,
+        "canonical plain and xml:space inline strings should use the literal fast path");
+    check(telemetry.canonical_inline_string_fast_path_bytes
+            == std::string_view(R"(<is><t xml:space="preserve">alpha &amp; beta</t></is>)").size()
+                + std::string_view(R"(<is><t>plain</t></is>)").size(),
+        "canonical literal fast path should report exact consumed bytes");
     check(telemetry.simple_inline_string_fallback_count == 1,
         "rich inline strings should report one ordinary-parser fallback");
     check(telemetry.parsed_event_count < detailed_telemetry.parsed_event_count,
@@ -531,6 +541,8 @@ void test_event_reader_inline_string_fast_path_preserves_chunked_fallback_diagno
         "boundary-split inline strings should preserve exact bytes through fallback");
     check(telemetry.simple_inline_string_fast_path_count == 0,
         "boundary-split inline strings should retain the ordinary parser path");
+    check(telemetry.canonical_inline_string_fast_path_count == 0,
+        "boundary-split inline strings should not claim canonical fast-path traffic");
     check(telemetry.simple_inline_string_fallback_count == 1,
         "boundary-split inline strings should report one fallback");
 

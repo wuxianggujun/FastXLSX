@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "11"
+BENCHMARK_SCHEMA_VERSION = "12"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -46,6 +46,8 @@ METRICS = [
     "single_pass_source_coalesced_output_event_count",
     "single_pass_source_simple_inline_string_fast_path_count",
     "single_pass_source_simple_inline_string_fast_path_bytes",
+    "single_pass_source_canonical_inline_string_fast_path_count",
+    "single_pass_source_canonical_inline_string_fast_path_bytes",
     "single_pass_source_simple_inline_string_fallback_count",
     "single_pass_source_complete_cell_coalesced_count",
     "single_pass_source_complete_cell_coalesced_bytes",
@@ -374,6 +376,12 @@ def verify_result(
         inline_fast_path_bytes = int(
             result.get("single_pass_source_simple_inline_string_fast_path_bytes")
         )
+        canonical_inline_fast_path_count = int(
+            result.get("single_pass_source_canonical_inline_string_fast_path_count")
+        )
+        canonical_inline_fast_path_bytes = int(
+            result.get("single_pass_source_canonical_inline_string_fast_path_bytes")
+        )
         inline_fallback_count = int(
             result.get("single_pass_source_simple_inline_string_fallback_count")
         )
@@ -382,10 +390,17 @@ def verify_result(
                 "mixed-inline patch-upsert should use the simple inline-string fast path")
             require(inline_fast_path_bytes > inline_fast_path_count,
                 "mixed-inline fast-path bytes should exceed its payload count")
+            require(0 < canonical_inline_fast_path_count <= inline_fast_path_count,
+                "mixed-inline patch-upsert should use the canonical literal fast path")
+            require(canonical_inline_fast_path_count < canonical_inline_fast_path_bytes
+                    <= inline_fast_path_bytes,
+                "canonical inline-string bytes should fit aggregate fast-path traffic")
             require(inline_fallback_count < inline_fast_path_count,
                 "mixed-inline fast-path fallbacks should stay below completed payloads")
         else:
-            require(inline_fast_path_count == 0 and inline_fast_path_bytes == 0,
+            require(inline_fast_path_count == 0 and inline_fast_path_bytes == 0
+                    and canonical_inline_fast_path_count == 0
+                    and canonical_inline_fast_path_bytes == 0,
                 "non-inline source should not report simple inline-string fast-path traffic")
         complete_cell_count = int(
             result.get("single_pass_source_complete_cell_coalesced_count")
@@ -879,6 +894,8 @@ def run_self_test() -> None:
                 "single_pass_source_coalesced_output_event_count": 100,
                 "single_pass_source_simple_inline_string_fast_path_count": 0,
                 "single_pass_source_simple_inline_string_fast_path_bytes": 0,
+                "single_pass_source_canonical_inline_string_fast_path_count": 0,
+                "single_pass_source_canonical_inline_string_fast_path_bytes": 0,
                 "single_pass_source_simple_inline_string_fallback_count": 0,
                 "single_pass_source_complete_cell_coalesced_count": 100,
                 "single_pass_source_complete_cell_coalesced_bytes": 10000,
@@ -1068,7 +1085,7 @@ def main() -> int:
             )
 
     matrix_report = {
-        "patch_benchmark_matrix_schema_version": "5",
+        "patch_benchmark_matrix_schema_version": "6",
         "benchmark_executable": str(bench_exe),
         "output_dir": str(output_dir),
         "rows": args.rows,

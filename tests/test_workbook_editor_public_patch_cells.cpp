@@ -648,6 +648,15 @@ void test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells
             "replace_cells Insert policy should expose bounded pass-through traffic");
         check(data_sheet_plan->single_pass_transform_pass_through_batch_peak_cell_count > 1,
             "replace_cells Insert policy should expose a multi-cell pass-through batch");
+        check(data_sheet_plan->single_pass_source_canonical_inline_string_fast_path_count > 0
+                && data_sheet_plan->single_pass_source_canonical_inline_string_fast_path_count
+                    <= data_sheet_plan->single_pass_source_simple_inline_string_fast_path_count,
+            "replace_cells Insert policy should expose canonical inline-string fast-path traffic");
+        check(data_sheet_plan->single_pass_source_canonical_inline_string_fast_path_bytes
+                    > data_sheet_plan->single_pass_source_canonical_inline_string_fast_path_count
+                && data_sheet_plan->single_pass_source_canonical_inline_string_fast_path_bytes
+                    <= data_sheet_plan->single_pass_source_simple_inline_string_fast_path_bytes,
+            "replace_cells Insert policy canonical bytes should fit aggregate inline traffic");
         check(data_sheet_plan->single_pass_output_append_call_count
                 > data_sheet_plan->single_pass_output_flush_count,
             "replace_cells Insert policy should coalesce output event fragments");

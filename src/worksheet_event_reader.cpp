@@ -273,6 +273,7 @@ CellValueElementKind cell_value_element_kind(std::string_view name) noexcept
 struct SimpleInlineStringPayloadMatch {
     bool candidate = false;
     std::size_t byte_count = 0;
+    bool canonical = false;
 };
 
 bool starts_with_unqualified_element_candidate(
@@ -293,7 +294,26 @@ SimpleInlineStringPayloadMatch match_simple_inline_string_payload(std::string_vi
         return {};
     }
 
-    SimpleInlineStringPayloadMatch match { true, 0 };
+    constexpr std::string_view plain_prefix = "<is><t>";
+    constexpr std::string_view preserve_prefix = R"(<is><t xml:space="preserve">)";
+    constexpr std::string_view suffix = "</t></is>";
+    std::size_t content_begin = std::string_view::npos;
+    if (xml.starts_with(plain_prefix)) {
+        content_begin = plain_prefix.size();
+    } else if (xml.starts_with(preserve_prefix)) {
+        content_begin = preserve_prefix.size();
+    }
+    if (content_begin != std::string_view::npos) {
+        const std::size_t suffix_begin = xml.find('<', content_begin);
+        if (suffix_begin == std::string_view::npos) {
+            return { true, 0, false };
+        }
+        if (xml.substr(suffix_begin).starts_with(suffix)) {
+            return { true, suffix_begin + suffix.size(), true };
+        }
+    }
+
+    SimpleInlineStringPayloadMatch match { true, 0, false };
     const std::size_t inline_open_end = find_markup_end_or_npos(xml, 0);
     if (inline_open_end == std::string_view::npos) {
         return match;
@@ -475,6 +495,11 @@ public:
             ++telemetry_->simple_inline_string_fast_path_count;
             telemetry_->simple_inline_string_fast_path_bytes +=
                 static_cast<std::uint64_t>(match.byte_count);
+            if (match.canonical) {
+                ++telemetry_->canonical_inline_string_fast_path_count;
+                telemetry_->canonical_inline_string_fast_path_bytes +=
+                    static_cast<std::uint64_t>(match.byte_count);
+            }
         }
         return match.byte_count;
     }

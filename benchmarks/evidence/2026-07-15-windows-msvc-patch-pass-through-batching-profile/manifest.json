@@ -1,0 +1,59 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-15-windows-msvc-patch-pass-through-batching-profile",
+  "created_utc": "2026-07-15T09:54:36Z",
+  "git_revision": "96bc93cedffb51e6d2da16a3dff4c6f56209ab43",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "numeric-matrix.json",
+      "sha256": "37eabec984cdfba164e699865b2ad19697ec2cf529c0eff3b59284fe6ffaa0fb",
+      "role": "matrix-report"
+    },
+    {
+      "path": "mixed-inline-matrix.json",
+      "sha256": "59d472e2b825e59e73123927fa70d7f305f78b09c304f63a78f0ab6b3de0ef93",
+      "role": "matrix-report"
+    },
+    {
+      "path": "formula-hyperlink-matrix.json",
+      "sha256": "1e2510e9b40a71cec1c8ed5d312208e61464118f962bbc8d4df845e7b143ae24",
+      "role": "matrix-report"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "c25299ae3bd2dc8f9028eb4cd8fcbeb301f24da735d5711d781b8c0e52cb97c6",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "6179e6a18a79222851b4c964b783c99b15baf73ae75e6f775b17a9ad84667678",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "Patch benchmark schema v11 and matrix schema v5 add pass-through batch count, batched source-cell count and bytes, peak cells per batch and their existing parser/action/output telemetry context.",
+      "artifact_paths": ["numeric-matrix.json", "mixed-inline-matrix.json", "formula-hyperlink-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "On this machine and the recorded one-million-cell level-1 targeted-upsert workloads, pass-through batching reduced transform actions and output append calls by 99.82%; numeric and formula-plus-hyperlink total editor medians decreased by 21.21% and 15.69%, while mixed-inline changed from 1205 ms to 1222 ms and is not claimed as a throughput gain.",
+      "artifact_paths": ["numeric-matrix.json", "mixed-inline-matrix.json", "formula-hyperlink-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "The recorded profiles batched at least 999482 untouched source cells into 84-102 callback-lifetime spans with a peak of 25640-31974 cells per span; median process peak working set decreased by 0.21-0.22 MB and output pending buffers stayed below 29 KiB.",
+      "artifact_paths": ["numeric-matrix.json", "mixed-inline-matrix.json", "formula-hyperlink-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "Final production and stored CTest passed 132/132; the no-images runtime smoke and production/stored/no-images install consumers passed. All representative outputs opened with openpyxl 3.1.2, and the formula profile preserved https://example.com/fastxlsx-benchmark. Office was not run, and no cross-machine, arbitrary-workbook, full-feature or OpenXLSX-superiority claim is made.",
+      "artifact_paths": ["run-context.json", "summary.json", "formula-hyperlink-matrix.json"]
+    }
+  ]
+}

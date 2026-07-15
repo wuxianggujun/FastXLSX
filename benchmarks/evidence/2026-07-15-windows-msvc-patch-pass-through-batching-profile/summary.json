@@ -1,0 +1,160 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "benchmark_schema_version": "11",
+  "patch_matrix_schema_version": "5",
+  "git_revision": "96bc93cedffb51e6d2da16a3dff4c6f56209ab43",
+  "baseline_evidence_id": "2026-07-15-windows-msvc-patch-complete-cell-coalescing-profile",
+  "workload": {
+    "rows": 100000,
+    "columns": 10,
+    "source_cells": 1000000,
+    "requested_patch_cells": 1000,
+    "matched_existing_cells": 500,
+    "inserted_cells": 500,
+    "source_compression_level": 6,
+    "output_compression_level": 1,
+    "numeric_warmup_measured_runs": [2, 5],
+    "mixed_inline_warmup_measured_runs": [2, 5],
+    "formula_hyperlink_warmup_measured_runs": [1, 3]
+  },
+  "implementation": {
+    "pass_through_batching": "The internal transformer combines contiguous row wrappers, raw text and structurally complete untouched cells into one callback-lifetime exact-byte span inside the current reader window.",
+    "audit_summary": "Each batched action retains source cell count, independent coordinate extrema and shared-string, style and formula flags so PackageEditor can refresh dimensions and dependency diagnostics without replaying every cell action.",
+    "flush_boundaries": "Replacement or insertion actions, worksheet metadata, unsupported detailed events, non-contiguous offsets and reader-window consumption flush the current span; no string_view survives a reader window.",
+    "attribute_scan": "The reader extracts cell reference, shared-string and style attributes in one pass while preserving the prior malformed-source boundary after a valid cell reference.",
+    "public_api_change": false
+  },
+  "results": {
+    "numeric": {
+      "baseline": {
+        "total_editor_median_ms": 1075,
+        "mutation_median_ms": 800,
+        "transform_median_ms": 611,
+        "source_scan_action_median_us": 593621,
+        "transform_actions": 1201521,
+        "output_append_calls": 1201520,
+        "peak_working_set_median_mb": 8.81641
+      },
+      "optimized": {
+        "total_editor_median_ms": 847,
+        "mutation_median_ms": 613,
+        "save_median_ms": 213,
+        "transform_median_ms": 456,
+        "source_scan_action_median_us": 441271,
+        "parsed_events": 5200006,
+        "source_callbacks": 1200036,
+        "transform_actions": 2105,
+        "pass_through_batches": 84,
+        "pass_through_batched_cells": 999485,
+        "pass_through_batched_bytes": 34853193,
+        "pass_through_peak_batch_cells": 31974,
+        "output_append_calls": 2104,
+        "output_flushes": 51,
+        "output_peak_buffer_bytes": 28524,
+        "temporary_write_median_us": 16616,
+        "peak_working_set_median_mb": 8.60938,
+        "output_bytes": 3438241,
+        "representative_openpyxl": "opened"
+      },
+      "decrease_percent": {
+        "total_editor_ms": 21.21,
+        "mutation_ms": 23.38,
+        "transform_ms": 25.37,
+        "source_scan_action_us": 25.66,
+        "transform_actions": 99.82,
+        "output_append_calls": 99.82
+      },
+      "peak_working_set_delta_mb": -0.20703
+    },
+    "mixed_inline": {
+      "baseline": {
+        "total_editor_median_ms": 1205,
+        "mutation_median_ms": 915,
+        "transform_median_ms": 691,
+        "source_scan_action_median_us": 668133,
+        "transform_actions": 1201546,
+        "output_append_calls": 1201545,
+        "peak_working_set_median_mb": 9.83203
+      },
+      "optimized": {
+        "total_editor_median_ms": 1222,
+        "mutation_median_ms": 890,
+        "save_median_ms": 345,
+        "transform_median_ms": 678,
+        "source_scan_action_median_us": 634191,
+        "parsed_events": 4533364,
+        "source_callbacks": 1200056,
+        "transform_actions": 2137,
+        "pass_through_batches": 102,
+        "pass_through_batched_cells": 999483,
+        "pass_through_batched_bytes": 42448176,
+        "pass_through_peak_batch_cells": 25640,
+        "output_append_calls": 2136,
+        "output_flushes": 60,
+        "output_peak_buffer_bytes": 28524,
+        "temporary_write_median_us": 35070,
+        "peak_working_set_median_mb": 9.60938,
+        "output_bytes": 5030208,
+        "representative_openpyxl": "opened"
+      },
+      "decrease_percent": {
+        "total_editor_ms": -1.41,
+        "mutation_ms": 2.73,
+        "transform_ms": 1.88,
+        "source_scan_action_us": 5.08,
+        "transform_actions": 99.82,
+        "output_append_calls": 99.82
+      },
+      "peak_working_set_delta_mb": -0.22265
+    },
+    "formula_hyperlink": {
+      "baseline": {
+        "total_editor_median_ms": 1007,
+        "mutation_median_ms": 766,
+        "transform_median_ms": 591,
+        "source_scan_action_median_us": 573629,
+        "transform_actions": 1201527,
+        "output_append_calls": 1201526,
+        "peak_working_set_median_mb": 8.82031
+      },
+      "optimized": {
+        "total_editor_median_ms": 849,
+        "mutation_median_ms": 621,
+        "save_median_ms": 222,
+        "transform_median_ms": 457,
+        "source_scan_action_median_us": 443755,
+        "parsed_events": 5200009,
+        "source_callbacks": 1200039,
+        "transform_actions": 2111,
+        "pass_through_batches": 84,
+        "pass_through_batched_cells": 999482,
+        "pass_through_batched_bytes": 34853116,
+        "pass_through_peak_batch_cells": 31971,
+        "output_append_calls": 2110,
+        "output_flushes": 54,
+        "output_peak_buffer_bytes": 28582,
+        "temporary_write_median_us": 13592,
+        "peak_working_set_median_mb": 8.60938,
+        "output_bytes": 4454227,
+        "representative_openpyxl": "opened",
+        "verified_external_hyperlink_target": "https://example.com/fastxlsx-benchmark"
+      },
+      "decrease_percent": {
+        "total_editor_ms": 15.69,
+        "mutation_ms": 18.93,
+        "transform_ms": 22.67,
+        "source_scan_action_us": 22.64,
+        "transform_actions": 99.82,
+        "output_append_calls": 99.82
+      },
+      "peak_working_set_delta_mb": -0.21093
+    }
+  },
+  "interpretation": {
+    "supported_claim": "On this machine and the recorded one-million-cell level-1 targeted-upsert workloads, pass-through batching reduced transform actions and output append calls by 99.82%. Numeric and formula-plus-hyperlink total editor medians decreased by 21.21% and 15.69%; mixed-inline total median changed from 1205 ms to 1222 ms and is treated as unchanged rather than a throughput gain.",
+    "compatibility": "All representative outputs opened with openpyxl 3.1.2, the formula profile preserved the recorded external hyperlink target, and final production CTest passed 132/132.",
+    "memory": "Median process peak working set decreased by 0.21-0.22 MB and the transform output pending buffer stayed below 29 KiB in the recorded profiles.",
+    "next_hotspot": "After action and append traffic fell to roughly 2100 calls, 0.44-0.63 seconds remained in source scan/action time. Mixed-inline is now the priority parser fast-path profile; temporary output IO remains secondary."
+  },
+  "scope": "Single Windows/MSVC machine, one-million-cell 10-column numeric, mixed-inline and formula distributions, 1000 targeted upserts, source DEFLATE level 6 and output DEFLATE level 1. No cross-machine, arbitrary-workbook, Office, full-feature or OpenXLSX-superiority claim."
+}

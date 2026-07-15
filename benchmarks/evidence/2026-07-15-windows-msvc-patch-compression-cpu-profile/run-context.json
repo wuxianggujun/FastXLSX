@@ -1,0 +1,36 @@
+{
+  "run_context_schema_version": "1",
+  "git_revision": "0853db93d7128983faf61c8acdb0d37cc58c665c",
+  "date_local": "2026-07-15",
+  "measured_utc_completed": "2026-07-15T05:31:06Z",
+  "working_tree": "The benchmark executable was built from the implementation worktree later committed without content changes as 0853db93d7128983faf61c8acdb0d37cc58c665c. Full profile validation was run after that commit.",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680,
+    "openpyxl_version": "3.1.2"
+  },
+  "benchmark_protocol": {
+    "runner": "tools/run_patch_benchmark_matrix.py",
+    "source_generation": "Each source pattern was generated once in a separate process at DEFLATE level 6. Warm-up and measured benchmark processes reused that deterministic source.",
+    "numeric_command": "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-compression-cpu-numeric-1m --rows 100000 --cols 10 --source-compression-level 6 --output-compression-level 1 --output-compression-level 3 --output-compression-level 6 --output-compression-level 9 --source-pattern numeric --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --verify-openpyxl",
+    "mixed_inline_command": "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-compression-cpu-mixed-inline-1m --rows 100000 --cols 10 --source-compression-level 6 --output-compression-level 1 --output-compression-level 3 --output-compression-level 6 --output-compression-level 9 --source-pattern mixed-inline --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --verify-openpyxl",
+    "formula_hyperlink_command": "py -3 tools/run_patch_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe --output-dir build/qa/patch-compression-cpu-formula-hyperlink-1m --rows 100000 --cols 10 --source-compression-level 6 --output-compression-level 1 --output-compression-level 6 --source-pattern formula --source-external-hyperlink --case patch-upsert:1000 --warmup-runs 1 --measured-runs 3 --verify-openpyxl",
+    "representative_policy": "Measured run nearest total_editor_ms median; earliest run breaks ties. Metric medians are independently calculated from all measured runs.",
+    "verification": "Every warm-up and measured output passed output-plan accounting, source/output CRC and logical-size checks, and exact compressed-payload equality for planned raw-copy entries. The representative output for every case opened with openpyxl; formula cases also preserved the external hyperlink target."
+  },
+  "validation": {
+    "production_ctest": "132/132 passed",
+    "stored_only_ctest": "132/132 passed",
+    "no_images_build_and_runtime_smoke": "passed",
+    "install_consumer_profiles": ["production", "stored-only", "no-images"],
+    "install_consumer_image_macros": [1, 1, 0],
+    "benchmark_runner_self_test": "passed",
+    "evidence_validator_self_test": "passed",
+    "git_diff_check": "passed before the implementation commit",
+    "office_open": "not_run"
+  },
+  "qualification": "Elapsed wall time is system-sensitive. Process CPU is measured around process-wide writer intervals and minizip calls, includes backend bookkeeping, and is quantized by the Windows accounting source. Claims are restricted to medians from the recorded same-machine protocol."
+}

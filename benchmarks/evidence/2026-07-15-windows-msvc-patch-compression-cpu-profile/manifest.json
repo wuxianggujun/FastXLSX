@@ -1,0 +1,63 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-15-windows-msvc-patch-compression-cpu-profile",
+  "created_utc": "2026-07-15T05:31:06Z",
+  "git_revision": "0853db93d7128983faf61c8acdb0d37cc58c665c",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "numeric-matrix.json",
+      "sha256": "0647123a7bf9c7fcf98397a7a98583e93d1ce906e95bc44aac302f5cf22b50db",
+      "role": "matrix-report"
+    },
+    {
+      "path": "mixed-inline-matrix.json",
+      "sha256": "d2458eb178f6e93a70cc11b6acf66aeefebdcd9f481ba48c9851ac5ced62f896",
+      "role": "matrix-report"
+    },
+    {
+      "path": "formula-hyperlink-matrix.json",
+      "sha256": "31ee5f5a0d19a2143ed483f7d29de79b3a5f16c980117a35f1cc311a440da8aa",
+      "role": "matrix-report"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "6786c0554404fce19a4672f295e37b6c021721bbadfd2e8ed9223021eaaf66bd",
+      "role": "summary"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "2dd6d5e3381c49896c023ad5a04c8e6dab4836e27cf61de354c63c48b3995fcc",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "Patch benchmark schema v9 and matrix schema v3 record requested compression level, package and target-entry process CPU, and the rewritten target DEFLATE writer CPU envelope; raw compressed-copy entries report zero DEFLATE writer CPU.",
+      "artifact_paths": ["numeric-matrix.json", "mixed-inline-matrix.json", "formula-hyperlink-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "On this machine and the recorded one-million-cell numeric targeted-upsert workload, level 1 versus level 6 reduced median save time from 1033 ms to 488 ms and median DEFLATE writer CPU from 890625 us to 203125 us while output size grew 9.73%; level 9 reduced size only 0.11% versus level 6 while median save time rose to 9296 ms.",
+      "artifact_paths": ["numeric-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "On the recorded mixed-inline workload, level 1 versus level 6 reduced median save time from 1244 ms to 408 ms and median DEFLATE writer CPU from 953125 us to 218750 us while output size grew 14.51%; level 9 median save time was 6735 ms.",
+      "artifact_paths": ["mixed-inline-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "The formula plus external-hyperlink level 1 and level 6 representative outputs opened with openpyxl 3.1.2 and preserved https://example.com/fastxlsx-benchmark.",
+      "artifact_paths": ["formula-hyperlink-matrix.json", "summary.json"]
+    },
+    {
+      "statement": "Production and stored-only CTest passed 132/132; no-images runtime and production/stored/no-images install-consumer profiles passed. Office was not run, and no cross-machine, arbitrary-workbook, pure-encoder, backend-superiority or OpenXLSX-superiority claim is made.",
+      "artifact_paths": ["run-context.json", "summary.json"]
+    }
+  ]
+}

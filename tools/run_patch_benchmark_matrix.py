@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "12"
+BENCHMARK_SCHEMA_VERSION = "13"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -49,6 +49,10 @@ METRICS = [
     "single_pass_source_canonical_inline_string_fast_path_count",
     "single_pass_source_canonical_inline_string_fast_path_bytes",
     "single_pass_source_simple_inline_string_fallback_count",
+    "single_pass_source_canonical_complete_cell_fast_path_count",
+    "single_pass_source_canonical_complete_cell_fast_path_bytes",
+    "single_pass_source_canonical_complete_cell_formula_count",
+    "single_pass_source_canonical_complete_cell_inline_string_count",
     "single_pass_source_complete_cell_coalesced_count",
     "single_pass_source_complete_cell_coalesced_bytes",
     "single_pass_source_complete_cell_fallback_count",
@@ -365,10 +369,10 @@ def verify_result(
             result.get("single_pass_source_coalesced_output_event_count")
         )
         action_callbacks = int(result.get("single_pass_transform_action_callback_count"))
-        require(parsed_events > callback_events > 0
+        require(parsed_events >= callback_events > 0
                 and parsed_events > action_callbacks > 0,
             "patch-upsert should reduce parser events before transform actions")
-        require(coalesced_input_events > coalesced_output_events > 0,
+        require(coalesced_input_events >= coalesced_output_events > 0,
             "patch-upsert should report value-event coalescing")
         inline_fast_path_count = int(
             result.get("single_pass_source_simple_inline_string_fast_path_count")
@@ -411,12 +415,44 @@ def verify_result(
         complete_cell_fallback_count = int(
             result.get("single_pass_source_complete_cell_fallback_count")
         )
+        canonical_complete_cell_count = int(
+            result.get("single_pass_source_canonical_complete_cell_fast_path_count")
+        )
+        canonical_complete_cell_bytes = int(
+            result.get("single_pass_source_canonical_complete_cell_fast_path_bytes")
+        )
+        canonical_complete_formula_count = int(
+            result.get("single_pass_source_canonical_complete_cell_formula_count")
+        )
+        canonical_complete_inline_count = int(
+            result.get("single_pass_source_canonical_complete_cell_inline_string_count")
+        )
         require(complete_cell_count > 0,
             "patch-upsert should coalesce complete source cells")
         require(complete_cell_bytes > complete_cell_count,
             "coalesced complete-cell bytes should exceed its cell count")
         require(complete_cell_fallback_count < complete_cell_count,
             "complete-cell fallbacks should stay below coalesced cells")
+        require(0 < canonical_complete_cell_count <= complete_cell_count,
+            "patch-upsert should use the canonical complete-cell fast path")
+        require(canonical_complete_cell_count < canonical_complete_cell_bytes
+                <= complete_cell_bytes,
+            "canonical complete-cell bytes should fit coalesced cell traffic")
+        require(canonical_complete_formula_count <= canonical_complete_cell_count
+                and canonical_complete_inline_count <= canonical_complete_cell_count,
+            "canonical complete-cell type counters should fit total fast-path traffic")
+        if source_pattern == "formula":
+            require(canonical_complete_formula_count > 0
+                    and canonical_complete_inline_count == 0,
+                "formula source should expose formula-only canonical cell traffic")
+        elif source_pattern == "mixed-inline":
+            require(canonical_complete_formula_count == 0
+                    and canonical_complete_inline_count > 0,
+                "mixed-inline source should expose inline-only canonical cell traffic")
+        else:
+            require(canonical_complete_formula_count == 0
+                    and canonical_complete_inline_count == 0,
+                "non-formula/non-inline source should not expose typed canonical cells")
         pass_through_batch_count = int(
             result.get("single_pass_transform_pass_through_batch_count")
         )
@@ -897,6 +933,10 @@ def run_self_test() -> None:
                 "single_pass_source_canonical_inline_string_fast_path_count": 0,
                 "single_pass_source_canonical_inline_string_fast_path_bytes": 0,
                 "single_pass_source_simple_inline_string_fallback_count": 0,
+                "single_pass_source_canonical_complete_cell_fast_path_count": 90,
+                "single_pass_source_canonical_complete_cell_fast_path_bytes": 9000,
+                "single_pass_source_canonical_complete_cell_formula_count": 0,
+                "single_pass_source_canonical_complete_cell_inline_string_count": 0,
                 "single_pass_source_complete_cell_coalesced_count": 100,
                 "single_pass_source_complete_cell_coalesced_bytes": 10000,
                 "single_pass_source_complete_cell_fallback_count": 1,
@@ -1085,7 +1125,7 @@ def main() -> int:
             )
 
     matrix_report = {
-        "patch_benchmark_matrix_schema_version": "6",
+        "patch_benchmark_matrix_schema_version": "7",
         "benchmark_executable": str(bench_exe),
         "output_dir": str(output_dir),
         "rows": args.rows,

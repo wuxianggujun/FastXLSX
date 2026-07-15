@@ -35,7 +35,7 @@ namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
-constexpr std::string_view kEditorBenchmarkSchemaVersion = "12";
+constexpr std::string_view kEditorBenchmarkSchemaVersion = "13";
 
 std::filesystem::path default_output_dir()
 {
@@ -111,6 +111,10 @@ struct RunStats {
     std::uint64_t single_pass_source_canonical_inline_string_fast_path_count = 0;
     std::uint64_t single_pass_source_canonical_inline_string_fast_path_bytes = 0;
     std::uint64_t single_pass_source_simple_inline_string_fallback_count = 0;
+    std::uint64_t single_pass_source_canonical_complete_cell_fast_path_count = 0;
+    std::uint64_t single_pass_source_canonical_complete_cell_fast_path_bytes = 0;
+    std::uint64_t single_pass_source_canonical_complete_cell_formula_count = 0;
+    std::uint64_t single_pass_source_canonical_complete_cell_inline_string_count = 0;
     std::uint64_t single_pass_source_complete_cell_coalesced_count = 0;
     std::uint64_t single_pass_source_complete_cell_coalesced_bytes = 0;
     std::uint64_t single_pass_source_complete_cell_fallback_count = 0;
@@ -699,6 +703,14 @@ void observe_output_plan(
                 entry.single_pass_source_canonical_inline_string_fast_path_bytes;
             stats.single_pass_source_simple_inline_string_fallback_count =
                 entry.single_pass_source_simple_inline_string_fallback_count;
+            stats.single_pass_source_canonical_complete_cell_fast_path_count =
+                entry.single_pass_source_canonical_complete_cell_fast_path_count;
+            stats.single_pass_source_canonical_complete_cell_fast_path_bytes =
+                entry.single_pass_source_canonical_complete_cell_fast_path_bytes;
+            stats.single_pass_source_canonical_complete_cell_formula_count =
+                entry.single_pass_source_canonical_complete_cell_formula_count;
+            stats.single_pass_source_canonical_complete_cell_inline_string_count =
+                entry.single_pass_source_canonical_complete_cell_inline_string_count;
             stats.single_pass_source_complete_cell_coalesced_count =
                 entry.single_pass_source_complete_cell_coalesced_count;
             stats.single_pass_source_complete_cell_coalesced_bytes =
@@ -893,6 +905,14 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.single_pass_source_canonical_inline_string_fast_path_bytes << ",\n";
     out << "  \"single_pass_source_simple_inline_string_fallback_count\": "
         << stats.single_pass_source_simple_inline_string_fallback_count << ",\n";
+    out << "  \"single_pass_source_canonical_complete_cell_fast_path_count\": "
+        << stats.single_pass_source_canonical_complete_cell_fast_path_count << ",\n";
+    out << "  \"single_pass_source_canonical_complete_cell_fast_path_bytes\": "
+        << stats.single_pass_source_canonical_complete_cell_fast_path_bytes << ",\n";
+    out << "  \"single_pass_source_canonical_complete_cell_formula_count\": "
+        << stats.single_pass_source_canonical_complete_cell_formula_count << ",\n";
+    out << "  \"single_pass_source_canonical_complete_cell_inline_string_count\": "
+        << stats.single_pass_source_canonical_complete_cell_inline_string_count << ",\n";
     out << "  \"single_pass_source_complete_cell_coalesced_count\": "
         << stats.single_pass_source_complete_cell_coalesced_count << ",\n";
     out << "  \"single_pass_source_complete_cell_coalesced_bytes\": "

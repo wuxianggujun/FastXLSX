@@ -276,6 +276,168 @@ struct SimpleInlineStringPayloadMatch {
     bool canonical = false;
 };
 
+SimpleInlineStringPayloadMatch match_simple_inline_string_payload(std::string_view xml);
+
+struct CanonicalCellStartMatch {
+    std::size_t byte_count = 0;
+    std::string_view reference;
+    bool uses_shared_string_index = false;
+    bool has_style_reference = false;
+    bool uses_inline_string = false;
+};
+
+bool is_decimal_digits(std::string_view value) noexcept
+{
+    return !value.empty()
+        && std::all_of(value.begin(), value.end(), [](char ch) {
+               return ch >= '0' && ch <= '9';
+           });
+}
+
+bool is_canonical_cell_type(std::string_view value) noexcept
+{
+    return value == "n" || value == "s" || value == "str" || value == "inlineStr"
+        || value == "b" || value == "e" || value == "d";
+}
+
+CanonicalCellStartMatch match_canonical_cell_start(std::string_view xml)
+{
+    constexpr std::string_view prefix = R"(<c r=")";
+    if (!xml.starts_with(prefix)) {
+        return {};
+    }
+
+    const std::size_t reference_end = xml.find('"', prefix.size());
+    if (reference_end == std::string_view::npos || reference_end == prefix.size()) {
+        return {};
+    }
+
+    CanonicalCellStartMatch match;
+    match.reference = xml.substr(prefix.size(), reference_end - prefix.size());
+    std::size_t position = reference_end + 1;
+    bool saw_style = false;
+    bool saw_type = false;
+    while (position < xml.size() && xml[position] == ' ') {
+        if (!saw_style && xml.substr(position).starts_with(R"( s=")")) {
+            const std::size_t value_begin = position + 4;
+            const std::size_t value_end = xml.find('"', value_begin);
+            if (value_end == std::string_view::npos
+                || !is_decimal_digits(xml.substr(value_begin, value_end - value_begin))) {
+                return {};
+            }
+            saw_style = true;
+            match.has_style_reference = true;
+            position = value_end + 1;
+            continue;
+        }
+        if (!saw_type && xml.substr(position).starts_with(R"( t=")")) {
+            const std::size_t value_begin = position + 4;
+            const std::size_t value_end = xml.find('"', value_begin);
+            if (value_end == std::string_view::npos) {
+                return {};
+            }
+            const std::string_view value =
+                xml.substr(value_begin, value_end - value_begin);
+            if (!is_canonical_cell_type(value)) {
+                return {};
+            }
+            saw_type = true;
+            match.uses_shared_string_index = value == "s";
+            match.uses_inline_string = value == "inlineStr";
+            position = value_end + 1;
+            continue;
+        }
+        return {};
+    }
+
+    if (position >= xml.size() || xml[position] != '>') {
+        return {};
+    }
+    match.byte_count = position + 1;
+    return match;
+}
+
+struct CanonicalCompleteCellMatch {
+    std::size_t byte_count = 0;
+    std::size_t inline_string_payload_bytes = 0;
+    CanonicalCellStartMatch start;
+    bool contains_formula = false;
+    bool contains_inline_string = false;
+};
+
+std::size_t match_canonical_text_element_end(std::string_view xml,
+    std::size_t position,
+    std::string_view opening,
+    std::string_view closing)
+{
+    if (!xml.substr(position).starts_with(opening)) {
+        return 0;
+    }
+    const std::size_t close_begin = xml.find('<', position + opening.size());
+    if (close_begin == std::string_view::npos
+        || !xml.substr(close_begin).starts_with(closing)) {
+        return 0;
+    }
+    return close_begin + closing.size();
+}
+
+CanonicalCompleteCellMatch match_canonical_complete_cell(std::string_view xml)
+{
+    CanonicalCompleteCellMatch match;
+    match.start = match_canonical_cell_start(xml);
+    if (match.start.byte_count == 0) {
+        return match;
+    }
+
+    constexpr std::string_view cell_close = "</c>";
+    std::size_t position = match.start.byte_count;
+    if (!match.start.uses_inline_string && xml.substr(position).starts_with(cell_close)) {
+        match.byte_count = position + cell_close.size();
+        return match;
+    }
+
+    if (match.start.uses_inline_string) {
+        const SimpleInlineStringPayloadMatch inline_match =
+            match_simple_inline_string_payload(xml.substr(position));
+        if (!inline_match.canonical || inline_match.byte_count == 0) {
+            return match;
+        }
+        const std::size_t cell_close_begin = position + inline_match.byte_count;
+        if (!xml.substr(cell_close_begin).starts_with(cell_close)) {
+            return match;
+        }
+        match.byte_count = cell_close_begin + cell_close.size();
+        match.inline_string_payload_bytes = inline_match.byte_count;
+        match.contains_inline_string = true;
+        return match;
+    }
+
+    const std::size_t value_end =
+        match_canonical_text_element_end(xml, position, "<v>", "</v>");
+    if (value_end != 0 && xml.substr(value_end).starts_with(cell_close)) {
+        match.byte_count = value_end + cell_close.size();
+        return match;
+    }
+
+    const std::size_t formula_end =
+        match_canonical_text_element_end(xml, position, "<f>", "</f>");
+    if (formula_end == 0) {
+        return match;
+    }
+    if (xml.substr(formula_end).starts_with(cell_close)) {
+        match.byte_count = formula_end + cell_close.size();
+        match.contains_formula = true;
+        return match;
+    }
+    const std::size_t cached_value_end =
+        match_canonical_text_element_end(xml, formula_end, "<v>", "</v>");
+    if (cached_value_end != 0 && xml.substr(cached_value_end).starts_with(cell_close)) {
+        match.byte_count = cached_value_end + cell_close.size();
+        match.contains_formula = true;
+    }
+    return match;
+}
+
 bool starts_with_unqualified_element_candidate(
     std::string_view xml, std::string_view name) noexcept
 {
@@ -504,6 +666,49 @@ public:
         return match.byte_count;
     }
 
+    std::size_t try_emit_canonical_complete_cell(
+        std::string_view xml, std::uint64_t offset)
+    {
+        if (!coalesce_complete_cell_events_ || !in_row_ || in_cell_ || in_cell_value_) {
+            return 0;
+        }
+
+        const CanonicalCompleteCellMatch match = match_canonical_complete_cell(xml);
+        if (match.byte_count == 0) {
+            return 0;
+        }
+
+        WorksheetEvent event { WorksheetEventKind::CellStart,
+            xml.substr(0, match.byte_count),
+            "c",
+            current_row_,
+            match.start.reference };
+        event.complete_cell = true;
+        event.contains_formula = match.contains_formula;
+        event.uses_shared_string_index = match.start.uses_shared_string_index;
+        event.has_style_reference = match.start.has_style_reference;
+        emit(event, offset);
+
+        if (telemetry_ != nullptr) {
+            ++telemetry_->canonical_complete_cell_fast_path_count;
+            telemetry_->canonical_complete_cell_fast_path_bytes +=
+                static_cast<std::uint64_t>(match.byte_count);
+            if (match.contains_formula) {
+                ++telemetry_->canonical_complete_cell_formula_count;
+            }
+            if (match.contains_inline_string) {
+                ++telemetry_->canonical_complete_cell_inline_string_count;
+                ++telemetry_->simple_inline_string_fast_path_count;
+                telemetry_->simple_inline_string_fast_path_bytes +=
+                    static_cast<std::uint64_t>(match.inline_string_payload_bytes);
+                ++telemetry_->canonical_inline_string_fast_path_count;
+                telemetry_->canonical_inline_string_fast_path_bytes +=
+                    static_cast<std::uint64_t>(match.inline_string_payload_bytes);
+            }
+        }
+        return match.byte_count;
+    }
+
     void flush_coalesced_event()
     {
         if (coalesced_raw_xml_.empty()) {
@@ -595,6 +800,9 @@ private:
                 : WorksheetEvent { WorksheetEventKind::RawText };
             coalesced_raw_xml_ = event.raw_xml;
             coalesced_raw_xml_offset_ = offset;
+            coalesced_cell_complete_ =
+                event.kind == WorksheetEventKind::CellStart && event.complete_cell;
+            coalesced_cell_contains_formula_ = event.contains_formula;
         } else {
             coalesced_raw_xml_ = std::string_view(
                 coalesced_raw_xml_.data(), coalesced_raw_xml_.size() + event.raw_xml.size());
@@ -985,6 +1193,18 @@ std::size_t consume_available_events(std::string_view xml_window,
             state.emit_text(xml_window.substr(position, open - position),
                 add_source_offset(window_begin_offset, position));
             position = open;
+        }
+
+        if (starts_with_unqualified_element_candidate(
+                xml_window.substr(position), "c")) {
+            const std::size_t complete_cell_bytes =
+                state.try_emit_canonical_complete_cell(
+                    xml_window.substr(position),
+                    add_source_offset(window_begin_offset, position));
+            if (complete_cell_bytes != 0) {
+                position += complete_cell_bytes;
+                continue;
+            }
         }
 
         if (starts_with_unqualified_element_candidate(

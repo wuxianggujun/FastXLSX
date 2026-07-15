@@ -74,6 +74,10 @@ struct WorksheetEventReaderTelemetry {
     std::uint64_t canonical_inline_string_fast_path_count = 0;
     std::uint64_t canonical_inline_string_fast_path_bytes = 0;
     std::uint64_t simple_inline_string_fallback_count = 0;
+    std::uint64_t canonical_complete_cell_fast_path_count = 0;
+    std::uint64_t canonical_complete_cell_fast_path_bytes = 0;
+    std::uint64_t canonical_complete_cell_formula_count = 0;
+    std::uint64_t canonical_complete_cell_inline_string_count = 0;
     std::uint64_t complete_cell_coalesced_count = 0;
     std::uint64_t complete_cell_coalesced_bytes = 0;
     std::uint64_t complete_cell_fallback_count = 0;
@@ -112,12 +116,14 @@ struct WorksheetEventReaderOptions {
     /// so general event consumers keep the detailed event contract.
     bool coalesce_cell_value_events = false;
 
-    /// Coalesces a structurally parsed simple cell into one callback-lifetime event.
+    /// Coalesces a simple cell into one callback-lifetime event.
     ///
-    /// Formula/value markup remains validated before emission. Cells containing
-    /// other nested metadata or crossing a consumed input window fall back to
-    /// the ordinary event stream. The default remains false so general event
-    /// consumers retain the detailed event contract.
+    /// Exact writer-compatible value, inline-string and formula cells already
+    /// present in the bounded window may use a literal whole-cell path. Attribute
+    /// variants, other nested metadata, malformed candidates and cells crossing
+    /// a consumed input window retain structural parsing and diagnostics. The
+    /// default remains false so general event consumers keep the detailed event
+    /// contract.
     bool coalesce_complete_cell_events = false;
 
     /// Optional internal counters for profiling parser/callback traffic.

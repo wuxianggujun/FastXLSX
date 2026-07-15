@@ -462,6 +462,7 @@ void test_event_reader_coalesces_complete_cells_and_preserves_fallbacks()
         R"(<c r="B1" s="3" t="inlineStr"><is><t>text</t></is></c>)"
         R"(<c r="C1"><f>A1+1</f><v>2</v></c>)"
         R"(<c r="D1" t="inlineStr"><is><r><t>rich</t></r></is></c>)"
+        R"(<c r='E1'><v>3</v></c>)"
         R"(</row></sheetData></worksheet>)";
 
     fastxlsx::detail::WorksheetEventReaderTelemetry telemetry;
@@ -479,13 +480,24 @@ void test_event_reader_coalesces_complete_cells_and_preserves_fallbacks()
     }
     check(reconstructed == xml,
         "complete-cell coalescing should preserve exact worksheet bytes");
-    check(telemetry.complete_cell_coalesced_count == 3,
-        "numeric, simple inline-string, and formula cells should coalesce");
+    check(telemetry.complete_cell_coalesced_count == 4,
+        "canonical and attribute-variant simple cells should coalesce");
     check(telemetry.complete_cell_fallback_count == 1,
         "rich inline-string metadata should retain the detailed fallback path");
     check(telemetry.complete_cell_coalesced_bytes
             > telemetry.complete_cell_coalesced_count,
         "complete-cell telemetry should report exact-byte traffic");
+    check(telemetry.canonical_complete_cell_fast_path_count == 3,
+        "canonical shared-string, inline-string, and formula cells should use the whole-cell path");
+    check(telemetry.canonical_complete_cell_fast_path_bytes
+            == std::string_view(R"(<c r="A1" t="s"><v>1</v></c>)").size()
+                + std::string_view(R"(<c r="B1" s="3" t="inlineStr"><is><t>text</t></is></c>)").size()
+                + std::string_view(R"(<c r="C1"><f>A1+1</f><v>2</v></c>)").size(),
+        "canonical complete-cell fast path should report exact consumed bytes");
+    check(telemetry.canonical_complete_cell_formula_count == 1,
+        "canonical complete-cell fast path should retain formula audit traffic");
+    check(telemetry.canonical_complete_cell_inline_string_count == 1,
+        "canonical complete-cell fast path should retain inline-string traffic");
 
     const auto formula = std::find_if(events.begin(), events.end(),
         [](const CopiedWorksheetEvent& event) {
@@ -505,6 +517,12 @@ void test_event_reader_coalesces_complete_cells_and_preserves_fallbacks()
         });
     check(styled != events.end() && styled->has_style_reference,
         "coalesced cells should retain style audit metadata");
+    const auto attribute_variant = std::find_if(events.begin(), events.end(),
+        [](const CopiedWorksheetEvent& event) {
+            return event.cell_reference == "E1";
+        });
+    check(attribute_variant != events.end() && attribute_variant->complete_cell,
+        "noncanonical cell attributes should retain structural complete-cell coalescing");
 
     fastxlsx::detail::WorksheetEventReaderTelemetry boundary_telemetry;
     options.max_window_bytes = 32;
@@ -519,6 +537,23 @@ void test_event_reader_coalesces_complete_cells_and_preserves_fallbacks()
         "window-split complete cells should preserve bytes through fallback");
     check(boundary_telemetry.complete_cell_fallback_count > 0,
         "window-split cells should report complete-cell fallback traffic");
+    check(boundary_telemetry.canonical_complete_cell_fast_path_count == 0,
+        "window-split cells should not claim canonical whole-cell traffic");
+
+    bool malformed_failed = false;
+    try {
+        const std::string malformed =
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</f></c></row></sheetData></worksheet>)";
+        options.max_window_bytes = malformed.size();
+        (void)read_source_events(malformed, malformed.size(), options);
+    } catch (const std::exception& error) {
+        malformed_failed = true;
+        check(std::string_view(error.what()).find("mismatched cell value boundary")
+                != std::string_view::npos,
+            "canonical whole-cell fallback should retain mismatched-value diagnostics");
+    }
+    check(malformed_failed,
+        "canonical whole-cell candidates should not bypass malformed value diagnostics");
 }
 
 void test_event_reader_inline_string_fast_path_preserves_chunked_fallback_diagnostics()

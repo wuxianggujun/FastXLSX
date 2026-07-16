@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "13"
+BENCHMARK_SCHEMA_VERSION = "14"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -74,7 +74,11 @@ METRICS = [
     "package_writer_total_process_cpu_us",
     "target_worksheet_entry_total_us",
     "target_worksheet_entry_total_process_cpu_us",
+    "target_worksheet_entry_prefetched_staged_file_chunk_count",
+    "target_worksheet_entry_prefetched_staged_input_bytes",
+    "target_worksheet_entry_prefetch_peak_buffer_bytes",
     "target_worksheet_entry_input_read_us",
+    "target_worksheet_entry_input_read_wait_us",
     "target_worksheet_entry_writer_write_us",
     "target_worksheet_entry_writer_write_process_cpu_us",
     "target_worksheet_entry_staged_crc_validation_us",
@@ -558,6 +562,12 @@ def verify_result(
             "target worksheet entry should report writer calls")
         require(int(result.get("target_worksheet_entry_total_us")) > 0,
             "target worksheet entry should report positive total time")
+        input_read_us = int(result.get("target_worksheet_entry_input_read_us"))
+        input_read_wait_us = int(
+            result.get("target_worksheet_entry_input_read_wait_us")
+        )
+        require(0 <= input_read_wait_us <= input_read_us,
+            "target worksheet staged input wait time must be within input read time")
         writer_process_cpu_us = int(
             result.get("target_worksheet_entry_writer_write_process_cpu_us")
         )
@@ -594,6 +604,21 @@ def verify_result(
             )
             require(int(result.get("target_worksheet_entry_staged_crc_validation_us")) >= 0,
                 "patch-upsert staged CRC validation time must be non-negative")
+            if platform.system() == "Windows" and int(
+                result.get("target_worksheet_entry_uncompressed_bytes")
+            ) >= 4 * 1024 * 1024:
+                require(result.get("target_worksheet_entry_staged_file_read_prefetch") is True,
+                    "large Windows patch-upsert target should prefetch staged file chunks")
+                require(int(result.get(
+                    "target_worksheet_entry_prefetched_staged_file_chunk_count")) > 0,
+                    "large patch-upsert target should report prefetched staged chunks")
+                require(int(result.get(
+                    "target_worksheet_entry_prefetched_staged_input_bytes")) > 0,
+                    "large patch-upsert target should report prefetched staged bytes")
+                require(int(result.get(
+                    "target_worksheet_entry_prefetch_peak_buffer_bytes"))
+                    == 2 * 1024 * 1024,
+                    "large patch-upsert target should keep prefetch buffers at 2 MiB")
     require(not result.get("materialized_worksheet"), "Patch case unexpectedly materialized sheet")
 
     copied_names = list(result.get("copied_entry_names", []))
@@ -958,7 +983,11 @@ def run_self_test() -> None:
                 "package_writer_total_process_cpu_us": 900,
                 "target_worksheet_entry_total_us": 500,
                 "target_worksheet_entry_total_process_cpu_us": 450,
+                "target_worksheet_entry_prefetched_staged_file_chunk_count": 1,
+                "target_worksheet_entry_prefetched_staged_input_bytes": 100000,
+                "target_worksheet_entry_prefetch_peak_buffer_bytes": 2097152,
                 "target_worksheet_entry_input_read_us": 50,
+                "target_worksheet_entry_input_read_wait_us": 10,
                 "target_worksheet_entry_writer_write_us": 400,
                 "target_worksheet_entry_writer_write_process_cpu_us": 350,
                 "target_worksheet_entry_staged_crc_validation_us": 1,
@@ -1125,7 +1154,7 @@ def main() -> int:
             )
 
     matrix_report = {
-        "patch_benchmark_matrix_schema_version": "7",
+        "patch_benchmark_matrix_schema_version": "8",
         "benchmark_executable": str(bench_exe),
         "output_dir": str(output_dir),
         "rows": args.rows,

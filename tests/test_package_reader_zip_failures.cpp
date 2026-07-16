@@ -453,6 +453,78 @@ void test_package_writer_reuses_staged_crc32_for_chunked_minizip_entries()
     }
 }
 
+void test_package_writer_prefetches_large_staged_file_chunks()
+{
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-writer-prefetched-staged-body.bin");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-writer-prefetched-staged-output.xlsx");
+    std::string body;
+    body.reserve(5U * 1024U * 1024U);
+    for (std::size_t index = 0; index < 5U * 1024U * 1024U; ++index) {
+        body.push_back(static_cast<char>('A' + index % 23U));
+    }
+    write_file(body_path, body);
+
+    fastxlsx::detail::PackageEntryChunk staged =
+        fastxlsx::detail::PackageEntryChunk::file(body_path);
+    staged.has_expected_size = true;
+    staged.expected_size = body.size();
+    staged.has_expected_crc32 = true;
+    staged.expected_crc32 = fastxlsx::detail::crc32(body);
+    const std::string content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(</Types>)";
+
+    fastxlsx::detail::PackageWriterTelemetry telemetry;
+    fastxlsx::detail::PackageWriterOptions options;
+    options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    options.compression_level = 1;
+    options.telemetry = &telemetry;
+    fastxlsx::detail::write_package(output,
+        {
+            {"[Content_Types].xml", content_types},
+            {"custom/prefetched.bin", std::vector<fastxlsx::detail::PackageEntryChunk> {
+                std::move(staged)}},
+        }, options);
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(reader.read_entry("custom/prefetched.bin") == body,
+        "prefetched staged file output should preserve complete payload bytes");
+    const auto entry_position = std::find_if(telemetry.entries.begin(), telemetry.entries.end(),
+        [](const fastxlsx::detail::PackageWriterEntryTelemetry& entry) {
+            return entry.entry_name == "custom/prefetched.bin";
+        });
+    check(entry_position != telemetry.entries.end(),
+        "prefetched staged file output should report the staged entry");
+    if (entry_position == telemetry.entries.end()) {
+        return;
+    }
+
+    const fastxlsx::detail::PackageWriterEntryTelemetry& entry = *entry_position;
+#ifdef _WIN32
+    check(entry.staged_file_read_prefetch,
+        "large Windows staged file should use bounded overlapped prefetch");
+    check(entry.prefetched_staged_file_chunk_count == 1
+            && entry.prefetched_staged_input_bytes == body.size(),
+        "prefetched staged file telemetry should account for its chunk and bytes");
+    check(entry.prefetch_peak_buffer_bytes == 2U * 1024U * 1024U,
+        "prefetched staged file should use exactly two 1 MiB buffers");
+    check(entry.input_read_calls == 5,
+        "prefetched staged file should issue one read per 1 MiB payload block");
+    check(entry.input_read_wait_us <= entry.input_read_us,
+        "prefetched staged file wait time should be within total input read time");
+#else
+    check(!entry.staged_file_read_prefetch
+            && entry.prefetched_staged_file_chunk_count == 0
+            && entry.prefetched_staged_input_bytes == 0
+            && entry.prefetch_peak_buffer_bytes == 0,
+        "non-Windows staged file path should retain synchronous fallback telemetry");
+#endif
+}
+
 void test_package_writer_raw_copies_matching_compressed_entries()
 {
     const std::filesystem::path source_path =
@@ -1759,6 +1831,7 @@ int main()
         test_package_reader_extracts_deflated_entry_to_file_with_minizip();
         test_package_writer_applies_explicit_minizip_compression_levels();
         test_package_writer_reuses_staged_crc32_for_chunked_minizip_entries();
+        test_package_writer_prefetches_large_staged_file_chunks();
         test_package_writer_raw_copies_matching_compressed_entries();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_read();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_extract();

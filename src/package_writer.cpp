@@ -37,6 +37,7 @@ namespace fastxlsx::detail {
 namespace {
 
 constexpr std::size_t io_buffer_size = 1024 * 1024;
+constexpr std::uint64_t staged_file_prefetch_min_bytes = 4U * io_buffer_size;
 constexpr std::uint64_t max_forward_gap_discard_bytes = 64 * 1024;
 constexpr std::uint64_t zip32_max_u16 = std::numeric_limits<std::uint16_t>::max();
 constexpr std::uint64_t zip32_max_u32 = std::numeric_limits<std::uint32_t>::max();
@@ -662,6 +663,310 @@ private:
     std::ifstream stream_;
 };
 
+#ifdef _WIN32
+
+class Win32Handle {
+public:
+    Win32Handle() = default;
+
+    explicit Win32Handle(HANDLE handle) noexcept
+        : handle_(handle)
+    {
+    }
+
+    ~Win32Handle()
+    {
+        reset();
+    }
+
+    Win32Handle(const Win32Handle&) = delete;
+    Win32Handle& operator=(const Win32Handle&) = delete;
+
+    Win32Handle(Win32Handle&& other) noexcept
+        : handle_(other.release())
+    {
+    }
+
+    Win32Handle& operator=(Win32Handle&& other) noexcept
+    {
+        if (this != &other) {
+            reset(other.release());
+        }
+        return *this;
+    }
+
+    [[nodiscard]] HANDLE get() const noexcept
+    {
+        return handle_;
+    }
+
+    [[nodiscard]] bool valid() const noexcept
+    {
+        return handle_ != nullptr && handle_ != INVALID_HANDLE_VALUE;
+    }
+
+    void reset(HANDLE handle = INVALID_HANDLE_VALUE) noexcept
+    {
+        if (valid()) {
+            CloseHandle(handle_);
+        }
+        handle_ = handle;
+    }
+
+private:
+    [[nodiscard]] HANDLE release() noexcept
+    {
+        const HANDLE handle = handle_;
+        handle_ = INVALID_HANDLE_VALUE;
+        return handle;
+    }
+
+    HANDLE handle_ = INVALID_HANDLE_VALUE;
+};
+
+std::string win32_file_failure_message(
+    std::string_view prefix, const PackageEntryChunk& chunk, DWORD error)
+{
+    return chunk_file_failure_message(prefix, chunk)
+        + " (Windows error " + std::to_string(error) + ")";
+}
+
+class MinizipOverlappedFileChunkReader {
+public:
+    MinizipOverlappedFileChunkReader(const PackageEntryChunk& chunk,
+        std::vector<char>& first_buffer, std::vector<char>& second_buffer)
+        : chunk_(chunk)
+    {
+        first_buffer.resize(io_buffer_size);
+        second_buffer.resize(io_buffer_size);
+        slots_[0].buffer = &first_buffer;
+        slots_[1].buffer = &second_buffer;
+
+        file_.reset(CreateFileW(chunk.path.c_str(), GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN
+                | FILE_FLAG_OVERLAPPED,
+            nullptr));
+        if (!file_.valid()) {
+            throw FastXlsxError(win32_file_failure_message(
+                "failed to open prefetched file-backed ZIP entry chunk",
+                chunk, GetLastError()));
+        }
+
+        for (ReadSlot& slot : slots_) {
+            slot.event.reset(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+            if (!slot.event.valid()) {
+                throw FastXlsxError(win32_file_failure_message(
+                    "failed to create staged file prefetch event",
+                    chunk, GetLastError()));
+            }
+        }
+
+        LARGE_INTEGER measured_size {};
+        if (GetFileSizeEx(file_.get(), &measured_size) == 0 || measured_size.QuadPart < 0) {
+            throw FastXlsxError(win32_file_failure_message(
+                "failed to measure prefetched file-backed ZIP entry chunk",
+                chunk, GetLastError()));
+        }
+        opened_file_size_ = static_cast<std::uint64_t>(measured_size.QuadPart);
+        const std::uint64_t offset = chunk.has_file_range ? chunk.file_offset : 0;
+        const std::uint64_t payload_size = file_chunk_read_limit(chunk);
+        if (offset > opened_file_size_
+            || payload_size > opened_file_size_ - offset) {
+            throw FastXlsxError(expected_actual_size_message(
+                "prefetched file-backed ZIP entry chunk range exceeds file size",
+                payload_size, opened_file_size_ >= offset ? opened_file_size_ - offset : 0));
+        }
+        if (!chunk.has_file_range && opened_file_size_ != payload_size) {
+            throw FastXlsxError(expected_actual_size_message(
+                "prefetched file-backed ZIP entry chunk changed before read",
+                payload_size, opened_file_size_));
+        }
+    }
+
+    ~MinizipOverlappedFileChunkReader()
+    {
+        for (ReadSlot& slot : slots_) {
+            cancel_and_wait(slot);
+        }
+    }
+
+    MinizipOverlappedFileChunkReader(const MinizipOverlappedFileChunkReader&) = delete;
+    MinizipOverlappedFileChunkReader& operator=(
+        const MinizipOverlappedFileChunkReader&) = delete;
+
+    void start(std::size_t slot_index, std::uint64_t offset, std::size_t size,
+        PackageWriterEntryTelemetry* telemetry)
+    {
+        ReadSlot& slot = slots_.at(slot_index);
+        if (slot.active || size == 0 || size > slot.buffer->size()
+            || size > static_cast<std::size_t>(std::numeric_limits<DWORD>::max())) {
+            throw FastXlsxError("invalid staged file prefetch request");
+        }
+
+        if (ResetEvent(slot.event.get()) == 0) {
+            throw FastXlsxError(win32_file_failure_message(
+                "failed to reset staged file prefetch event",
+                chunk_, GetLastError()));
+        }
+        slot.overlapped = OVERLAPPED {};
+        slot.overlapped.Offset = static_cast<DWORD>(offset & 0xffffffffULL);
+        slot.overlapped.OffsetHigh = static_cast<DWORD>(offset >> 32U);
+        slot.overlapped.hEvent = slot.event.get();
+        slot.requested = static_cast<DWORD>(size);
+        slot.active = true;
+
+        const auto read_started = telemetry != nullptr
+            ? std::chrono::steady_clock::now()
+            : std::chrono::steady_clock::time_point {};
+        const BOOL started = ReadFile(file_.get(), slot.buffer->data(), slot.requested,
+            nullptr, &slot.overlapped);
+        const DWORD error = started != 0 ? ERROR_SUCCESS : GetLastError();
+        if (telemetry != nullptr) {
+            telemetry->input_read_us += elapsed_microseconds(read_started);
+            ++telemetry->input_read_calls;
+        }
+        if (started == 0 && error != ERROR_IO_PENDING) {
+            slot.active = false;
+            throw FastXlsxError(win32_file_failure_message(
+                "failed to start staged file prefetch read", chunk_, error));
+        }
+    }
+
+    [[nodiscard]] std::size_t finish(
+        std::size_t slot_index, PackageWriterEntryTelemetry* telemetry)
+    {
+        ReadSlot& slot = slots_.at(slot_index);
+        if (!slot.active) {
+            throw FastXlsxError("staged file prefetch slot is not active");
+        }
+
+        DWORD read_size = 0;
+        const auto wait_started = telemetry != nullptr
+            ? std::chrono::steady_clock::now()
+            : std::chrono::steady_clock::time_point {};
+        const BOOL completed = GetOverlappedResult(
+            file_.get(), &slot.overlapped, &read_size, TRUE);
+        if (telemetry != nullptr) {
+            const std::uint64_t wait_us = elapsed_microseconds(wait_started);
+            telemetry->input_read_us += wait_us;
+            telemetry->input_read_wait_us += wait_us;
+        }
+        slot.active = false;
+        if (completed == 0) {
+            throw FastXlsxError(win32_file_failure_message(
+                "failed to complete staged file prefetch read",
+                chunk_, GetLastError()));
+        }
+        if (read_size != slot.requested) {
+            throw FastXlsxError(expected_actual_size_message(
+                "prefetched file-backed ZIP entry chunk ended before expected bytes",
+                slot.requested, read_size));
+        }
+        return static_cast<std::size_t>(read_size);
+    }
+
+    [[nodiscard]] std::string_view data(std::size_t slot_index, std::size_t size) const
+    {
+        const ReadSlot& slot = slots_.at(slot_index);
+        return {slot.buffer->data(), size};
+    }
+
+    void require_file_size_unchanged() const
+    {
+        if (chunk_.has_file_range) {
+            return;
+        }
+        LARGE_INTEGER measured_size {};
+        if (GetFileSizeEx(file_.get(), &measured_size) == 0 || measured_size.QuadPart < 0) {
+            throw FastXlsxError(win32_file_failure_message(
+                "failed to remeasure prefetched file-backed ZIP entry chunk",
+                chunk_, GetLastError()));
+        }
+        const auto current_size = static_cast<std::uint64_t>(measured_size.QuadPart);
+        if (current_size != opened_file_size_) {
+            throw FastXlsxError(expected_actual_size_message(
+                "prefetched file-backed ZIP entry chunk size changed during read",
+                opened_file_size_, current_size));
+        }
+    }
+
+private:
+    struct ReadSlot {
+        std::vector<char>* buffer = nullptr;
+        Win32Handle event;
+        OVERLAPPED overlapped {};
+        DWORD requested = 0;
+        bool active = false;
+    };
+
+    void cancel_and_wait(ReadSlot& slot) noexcept
+    {
+        if (!slot.active || !file_.valid()) {
+            return;
+        }
+        (void)CancelIoEx(file_.get(), &slot.overlapped);
+        DWORD ignored = 0;
+        (void)GetOverlappedResult(file_.get(), &slot.overlapped, &ignored, TRUE);
+        slot.active = false;
+    }
+
+    const PackageEntryChunk& chunk_;
+    Win32Handle file_;
+    std::array<ReadSlot, 2> slots_;
+    std::uint64_t opened_file_size_ = 0;
+};
+
+[[nodiscard]] bool should_prefetch_staged_file_chunk(
+    const PackageEntryChunk& chunk) noexcept
+{
+    return file_chunk_has_read_limit(chunk)
+        && file_chunk_read_limit(chunk) >= staged_file_prefetch_min_bytes;
+}
+
+template <typename Consumer>
+void consume_prefetched_minizip_file_chunk(const PackageEntryChunk& chunk,
+    std::vector<char>& first_buffer, PackageWriterEntryTelemetry* telemetry,
+    Consumer consumer)
+{
+    std::vector<char> second_buffer;
+    MinizipOverlappedFileChunkReader reader(chunk, first_buffer, second_buffer);
+    const std::uint64_t read_limit = file_chunk_read_limit(chunk);
+    const std::uint64_t first_offset = chunk.has_file_range ? chunk.file_offset : 0;
+    std::uint64_t consumed_size = 0;
+    std::size_t active_slot = 0;
+    std::size_t requested = static_cast<std::size_t>(
+        std::min<std::uint64_t>(read_limit, io_buffer_size));
+    reader.start(active_slot, first_offset, requested, telemetry);
+
+    while (consumed_size < read_limit) {
+        const std::size_t read_size = reader.finish(active_slot, telemetry);
+        const std::uint64_t next_consumed = consumed_size + read_size;
+        const std::size_t next_slot = 1U - active_slot;
+        if (next_consumed < read_limit) {
+            requested = static_cast<std::size_t>(std::min<std::uint64_t>(
+                read_limit - next_consumed, io_buffer_size));
+            reader.start(next_slot, first_offset + next_consumed, requested, telemetry);
+        }
+
+        consumer(reader.data(active_slot, read_size));
+        consumed_size = next_consumed;
+        active_slot = next_slot;
+    }
+
+    reader.require_file_size_unchanged();
+    require_expected_chunk_size(chunk, consumed_size);
+    if (telemetry != nullptr) {
+        telemetry->staged_file_read_prefetch = true;
+        ++telemetry->prefetched_staged_file_chunk_count;
+        telemetry->prefetched_staged_input_bytes += consumed_size;
+        telemetry->prefetch_peak_buffer_bytes = std::max<std::uint64_t>(
+            telemetry->prefetch_peak_buffer_bytes, 2U * io_buffer_size);
+    }
+}
+
+#endif
+
 void write_minizip_memory_chunk(void* writer, std::string_view data,
     PackageWriterEntryTelemetry* telemetry)
 {
@@ -785,6 +1090,45 @@ void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cach
     }
 }
 
+#ifdef _WIN32
+
+void write_minizip_prefetched_file_chunk(void* writer,
+    const PackageEntryChunk& chunk, std::vector<char>& buffer,
+    bool validate_chunk_crc32, PackageWriterEntryTelemetry* telemetry)
+{
+    Crc32Accumulator chunk_crc;
+    consume_prefetched_minizip_file_chunk(chunk, buffer, telemetry,
+        [&](std::string_view data) {
+        const int chunk_size = static_cast<int>(data.size());
+        const auto write_started = telemetry != nullptr
+            ? std::chrono::steady_clock::now()
+            : std::chrono::steady_clock::time_point {};
+        const std::uint64_t write_process_cpu_started = telemetry != nullptr
+            ? process_cpu_microseconds()
+            : 0;
+        const int written = mz_zip_writer_entry_write(writer, data.data(), chunk_size);
+        if (telemetry != nullptr) {
+            telemetry->writer_write_us += elapsed_microseconds(write_started);
+            telemetry->writer_write_process_cpu_us +=
+                elapsed_process_cpu_microseconds(write_process_cpu_started);
+            ++telemetry->writer_write_calls;
+            telemetry->input_bytes += static_cast<std::uint64_t>(data.size());
+        }
+        if (written != chunk_size) {
+            throw FastXlsxError(
+                "minizip-ng failed to write prefetched file-backed ZIP entry data");
+        }
+        if (validate_chunk_crc32) {
+            chunk_crc.update(data);
+        }
+    });
+    if (validate_chunk_crc32) {
+        require_expected_chunk_crc32(chunk, chunk_crc.value());
+    }
+}
+
+#endif
+
 void write_minizip_entry_chunks(
     void* writer, const PackageEntry& entry, std::vector<char>& file_buffer,
     bool reuse_staged_crc32, PackageWriterEntryTelemetry* telemetry)
@@ -806,6 +1150,14 @@ void write_minizip_entry_chunks(
                 if (file_buffer.empty()) {
                     file_buffer.resize(io_buffer_size);
                 }
+#ifdef _WIN32
+                if (should_prefetch_staged_file_chunk(chunk)) {
+                    write_minizip_prefetched_file_chunk(
+                        writer, chunk, file_buffer,
+                        chunk.has_expected_crc32 && !reuse_staged_crc32, telemetry);
+                    break;
+                }
+#endif
                 write_minizip_file_chunk(
                     writer, file_cache, chunk, file_buffer,
                     chunk.has_expected_crc32 && !reuse_staged_crc32, telemetry);

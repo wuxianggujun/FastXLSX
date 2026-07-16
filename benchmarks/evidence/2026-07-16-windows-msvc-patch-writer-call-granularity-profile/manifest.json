@@ -1,0 +1,119 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-16-windows-msvc-patch-writer-call-granularity-profile",
+  "created_utc": "2026-07-16T07:14:09Z",
+  "git_revision": "ea63411f2432bbacd46f486bec0f8c840b173434",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "isolated-forward-formula-matrix.json",
+      "sha256": "a85af4b7e63e0f339be8dc31a1394c6106e8567f092b1c6c979cf79873d52d0f",
+      "role": "matrix-report"
+    },
+    {
+      "path": "isolated-forward-mixed-inline-matrix.json",
+      "sha256": "3fb6db2f630e419d936192beb5197fb83fe5fe7388196e1a3e4083ec748a2dc5",
+      "role": "matrix-report"
+    },
+    {
+      "path": "isolated-forward-numeric-matrix.json",
+      "sha256": "fbd37be6d4db7d70381f21a65a6b5221c59333530586775fa82563d0ccfbb2cb",
+      "role": "matrix-report"
+    },
+    {
+      "path": "isolated-reverse-formula-matrix.json",
+      "sha256": "054ff50f188d9ed3e6634cf10d7deb100521382d78d319d8f8a7ba6f75c3e125",
+      "role": "matrix-report"
+    },
+    {
+      "path": "isolated-reverse-mixed-inline-matrix.json",
+      "sha256": "350a520d99ccc60f85dedee74330809e3d171b71f8b1532fcb34a567030e0c74",
+      "role": "matrix-report"
+    },
+    {
+      "path": "isolated-reverse-numeric-matrix.json",
+      "sha256": "10c529be9191cf1c00b41a473d0cb14641c4f919fd3b8844ae5b710c813cd85a",
+      "role": "matrix-report"
+    },
+    {
+      "path": "patch-v15-formula-hyperlink-matrix.json",
+      "sha256": "26a25103f6d2cdc080520bf5b3b3d6bf3b4f0c9f8e8db321f664310627483115",
+      "role": "matrix-report"
+    },
+    {
+      "path": "patch-v15-mixed-inline-matrix.json",
+      "sha256": "41665ec36c79aea1a152dda81c71c345d688eff16d1278464fad7bef82f68c0e",
+      "role": "matrix-report"
+    },
+    {
+      "path": "patch-v15-numeric-matrix.json",
+      "sha256": "d0d59bcbab745e14091beeb6b44593d8d390072156851894c4c808fb5582ebe0",
+      "role": "matrix-report"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "ed5e75d33212cc5fdecccde8f037df87c6025dc101f42f1d519cf66cae08da29",
+      "role": "summary"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "d75ba239601441db996724846365296c958a9844bada96feb047e39b38261b1c",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "Package-writer executable/matrix schema v1 isolate file-backed minizip-ng package entry writes, and Patch executable schema v15/matrix v9 add configured file buffer, writer input peak, writer call count and maximum writer-call wall-time telemetry while retaining prior Patch telemetry.",
+      "artifact_paths": [
+        "isolated-forward-formula-matrix.json",
+        "isolated-forward-mixed-inline-matrix.json",
+        "isolated-forward-numeric-matrix.json",
+        "patch-v15-formula-hyperlink-matrix.json",
+        "patch-v15-mixed-inline-matrix.json",
+        "patch-v15-numeric-matrix.json",
+        "summary.json"
+      ]
+    },
+    {
+      "statement": "On this machine and the recorded one-million-cell level-1 isolated writer workloads, 512 KiB reduced combined target-entry median by 4.30% for numeric, 5.06% for mixed-inline and 0.85% for formula versus 1 MiB, reduced median maximum writer-call wall time by 41.65%-53.26%, and reduced process peak working set by about 0.99 MiB.",
+      "artifact_paths": [
+        "isolated-forward-formula-matrix.json",
+        "isolated-forward-mixed-inline-matrix.json",
+        "isolated-forward-numeric-matrix.json",
+        "isolated-reverse-formula-matrix.json",
+        "isolated-reverse-mixed-inline-matrix.json",
+        "isolated-reverse-numeric-matrix.json",
+        "summary.json"
+      ]
+    },
+    {
+      "statement": "Numeric and mixed-inline improved in both ascending and descending buffer orders; formula improved by 2.76% in ascending order and regressed by 0.43% in descending order. The 2 MiB and 4 MiB cases did not provide stable cross-workload gains and used more process peak working set, so no universal throughput claim is made.",
+      "artifact_paths": [
+        "isolated-forward-formula-matrix.json",
+        "isolated-forward-mixed-inline-matrix.json",
+        "isolated-forward-numeric-matrix.json",
+        "isolated-reverse-formula-matrix.json",
+        "isolated-reverse-mixed-inline-matrix.json",
+        "isolated-reverse-numeric-matrix.json",
+        "summary.json"
+      ]
+    },
+    {
+      "statement": "Patch schema v15/matrix v9 confirmed a 512 KiB writer input peak, 1 MiB two-buffer prefetch peak, staged CRC reuse and bounded call traffic for numeric, mixed-inline and formula-plus-external-hyperlink upsert outputs. Production/stored CTest passed 132/132, no-images and three install consumers passed, 18 representative outputs opened with openpyxl 3.1.2, Office was not run, and no cross-machine, arbitrary-workbook, pure-encoder, full-feature or OpenXLSX-superiority claim is made.",
+      "artifact_paths": [
+        "patch-v15-formula-hyperlink-matrix.json",
+        "patch-v15-mixed-inline-matrix.json",
+        "patch-v15-numeric-matrix.json",
+        "run-context.json",
+        "summary.json"
+      ]
+    }
+  ]
+}

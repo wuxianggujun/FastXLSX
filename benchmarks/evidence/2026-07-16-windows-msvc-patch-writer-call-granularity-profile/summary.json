@@ -1,0 +1,171 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "git_revision": "ea63411f2432bbacd46f486bec0f8c840b173434",
+  "package_writer_benchmark_schema_version": "1",
+  "package_writer_matrix_schema_version": "1",
+  "patch_benchmark_schema_version": "15",
+  "patch_matrix_schema_version": "9",
+  "workload": {
+    "isolated_writer": {
+      "rows": 100000,
+      "columns": 10,
+      "source_cells": 1000000,
+      "patterns": ["numeric", "mixed-inline", "formula"],
+      "compression_level": 1,
+      "file_buffer_kib": [256, 512, 1024, 2048, 4096],
+      "ascending_order": {
+        "warmup_runs_per_buffer": 2,
+        "measured_runs_per_buffer": 5
+      },
+      "descending_order": {
+        "warmup_runs_per_buffer": 2,
+        "measured_runs_per_buffer": 7
+      },
+      "payload_sha256": {
+        "numeric": "3a27feb1d719f8c6aae6077ac1043270416fde1d57f51ba7c9b2252c1736add6",
+        "mixed_inline": "9558dec4af3ea95660f25234cb421828d5db6a0aa8909c3dbb3b043347363462",
+        "formula": "2715c07989187e54a63e71270e1531c3e97b7199cf54f5c74bee661b0f609eec"
+      }
+    },
+    "public_patch": {
+      "rows": 100000,
+      "columns": 10,
+      "source_cells": 1000000,
+      "requested_patch_cells": 1000,
+      "matched_existing_cells": 500,
+      "inserted_cells": 500,
+      "source_compression_level": 6,
+      "output_compression_level": 1,
+      "warmup_runs_per_profile": 2,
+      "measured_runs_per_profile": 5,
+      "source_sha256": {
+        "numeric": "44e26a49ea3441bbe7b5a8f1518b8b1449c57b85778f8ad79971b439e312c4eb",
+        "mixed_inline": "73ca18068426994fb595702075607d00841df2bbcd6913d0d92b8716aff534c9",
+        "formula_hyperlink": "4ac554edeb9f63ba919a0da9bf5911237fba9a5e7bac208b4fe1a7a0915ecdce"
+      }
+    }
+  },
+  "implementation": {
+    "platform_scope": "Production minizip-ng file-backed package entry writes; Windows additionally uses bounded overlapped staged-file prefetch.",
+    "previous_default_file_buffer_bytes": 1048576,
+    "selected_default_file_buffer_bytes": 524288,
+    "allowed_file_buffer_bytes": {
+      "minimum": 65536,
+      "maximum": 4194304,
+      "constraint": "power of two"
+    },
+    "prefetch_activation_threshold_bytes": 4194304,
+    "prefetch_buffer_count": 2,
+    "selected_prefetch_peak_buffer_bytes": 1048576,
+    "telemetry": "Package writer and Patch benchmark telemetry record configured file buffer bytes, writer input peak bytes, writer call count and maximum writer-call wall time in addition to aggregate writer wall/process CPU.",
+    "lifecycle": "No worker thread or persistent background resource was added. Two Windows OVERLAPPED read buffers remain local to one entry write and are cancelled/joined by RAII before return.",
+    "contract": "Staged size, CRC reuse/validation, raw compressed-copy, stored/non-Windows fallbacks, package transaction failure propagation and retry semantics are unchanged.",
+    "public_api_change": false
+  },
+  "isolated_results": {
+    "numeric": {
+      "combined_measured_runs_per_buffer": 12,
+      "payload_bytes": 32866937,
+      "buffer_512_entry_median_us": 107808.0,
+      "buffer_1024_entry_median_us": 112656.5,
+      "entry_change_percent": -4.30,
+      "buffer_512_writer_median_us": 99790.5,
+      "buffer_1024_writer_median_us": 104120.0,
+      "writer_change_percent": -4.16,
+      "buffer_512_max_call_median_us": 2392.5,
+      "buffer_1024_max_call_median_us": 4189.0,
+      "max_call_change_percent": -42.89,
+      "buffer_512_peak_working_set_median_mb": 6.39844,
+      "buffer_1024_peak_working_set_median_mb": 7.39453,
+      "peak_working_set_change_mb": -0.99609,
+      "ascending_entry_change_percent": -1.08,
+      "descending_entry_change_percent": -7.13
+    },
+    "mixed_inline": {
+      "combined_measured_runs_per_buffer": 12,
+      "payload_bytes": 41533964,
+      "buffer_512_entry_median_us": 145697.5,
+      "buffer_1024_entry_median_us": 153461.0,
+      "entry_change_percent": -5.06,
+      "buffer_512_writer_median_us": 135180.0,
+      "buffer_1024_writer_median_us": 142174.0,
+      "writer_change_percent": -4.92,
+      "buffer_512_max_call_median_us": 2460.0,
+      "buffer_1024_max_call_median_us": 5263.5,
+      "max_call_change_percent": -53.26,
+      "buffer_512_peak_working_set_median_mb": 6.40234,
+      "buffer_1024_peak_working_set_median_mb": 7.39453,
+      "peak_working_set_change_mb": -0.99219,
+      "ascending_entry_change_percent": -0.73,
+      "descending_entry_change_percent": -6.56
+    },
+    "formula": {
+      "combined_measured_runs_per_buffer": 12,
+      "payload_bytes": 33378042,
+      "buffer_512_entry_median_us": 111371.0,
+      "buffer_1024_entry_median_us": 112322.0,
+      "entry_change_percent": -0.85,
+      "buffer_512_writer_median_us": 101887.0,
+      "buffer_1024_writer_median_us": 103796.5,
+      "writer_change_percent": -1.84,
+      "buffer_512_max_call_median_us": 2478.0,
+      "buffer_1024_max_call_median_us": 4247.0,
+      "max_call_change_percent": -41.65,
+      "buffer_512_peak_working_set_median_mb": 6.40234,
+      "buffer_1024_peak_working_set_median_mb": 7.392575,
+      "peak_working_set_change_mb": -0.99024,
+      "ascending_entry_change_percent": -2.76,
+      "descending_entry_change_percent": 0.43
+    }
+  },
+  "public_patch_results": {
+    "numeric": {
+      "total_editor_median_ms": 538,
+      "target_entry_median_us": 131067,
+      "writer_median_us": 120942,
+      "maximum_writer_call_median_us": 2734,
+      "input_read_call_median": 68,
+      "writer_call_median": 69,
+      "peak_working_set_median_mb": 8.62891
+    },
+    "mixed_inline": {
+      "total_editor_median_ms": 608,
+      "target_entry_median_us": 156725,
+      "writer_median_us": 145702,
+      "maximum_writer_call_median_us": 2741,
+      "input_read_call_median": 83,
+      "writer_call_median": 84,
+      "peak_working_set_median_mb": 9.62109
+    },
+    "formula_hyperlink": {
+      "total_editor_median_ms": 503,
+      "target_entry_median_us": 120989,
+      "writer_median_us": 113200,
+      "maximum_writer_call_median_us": 2827,
+      "input_read_call_median": 68,
+      "writer_call_median": 69,
+      "peak_working_set_median_mb": 8.62891,
+      "hyperlink_target": "https://example.com/fastxlsx-benchmark"
+    }
+  },
+  "aggregate": {
+    "isolated_512_vs_1024_entry_decrease_percent_range": [0.85, 5.06],
+    "isolated_512_vs_1024_writer_max_call_decrease_percent_range": [41.65, 53.26],
+    "isolated_512_vs_1024_peak_working_set_decrease_mb_range": [0.99024, 0.99609],
+    "numeric_and_mixed_order_pairs_improved": 4,
+    "numeric_and_mixed_order_pair_count": 4,
+    "formula_descending_entry_regression_percent": 0.43,
+    "public_patch_file_buffer_bytes": 524288,
+    "public_patch_prefetch_peak_buffer_bytes": 1048576,
+    "representative_outputs_opened_with_openpyxl": 18,
+    "office_open": "not_run"
+  },
+  "interpretation": {
+    "supported_claim": "On this machine and the recorded one-million-cell level-1 isolated writer workloads, 512 KiB reduced combined target-entry median by 4.30% for numeric, 5.06% for mixed-inline and 0.85% for formula versus 1 MiB, while reducing median maximum writer-call wall time by 41.65%-53.26% and process peak working set by about 0.99 MiB.",
+    "order_limit": "Numeric and mixed-inline improved in both ascending and descending buffer orders. Formula improved by 2.76% in ascending order and regressed by 0.43% in descending order, so no universal per-workload throughput improvement is claimed.",
+    "larger_buffer_limit": "The 2 MiB and 4 MiB cases did not provide stable cross-workload target-entry gains and increased process peak working set to roughly 9.39 MiB and 13.39 MiB in the isolated process.",
+    "patch_confirmation": "Patch schema v15/matrix v9 confirmed the selected 512 KiB input peak, 1 MiB two-buffer prefetch peak, CRC reuse, bounded call traffic and successful openpyxl validation for numeric, mixed-inline and formula-plus-external-hyperlink upsert outputs.",
+    "next_hotspot": "The remaining measured cost is synchronous minizip DEFLATE writer work. Next profiling should distinguish minizip internal output-buffer/backend bookkeeping from zlib compression and scheduler noise before considering backend or concurrency changes."
+  },
+  "scope": "Single Windows/MSVC machine, deterministic one-million-cell worksheet payloads, production minizip-ng, DEFLATE level 1 and the recorded buffer sweep. This does not establish cross-machine, arbitrary-workbook, Office, pure-encoder, full-feature or OpenXLSX-superiority claims."
+}

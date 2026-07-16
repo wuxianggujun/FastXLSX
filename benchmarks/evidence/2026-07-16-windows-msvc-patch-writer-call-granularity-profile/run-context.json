@@ -1,0 +1,62 @@
+{
+  "run_context_schema_version": "1",
+  "git_revision": "ea63411f2432bbacd46f486bec0f8c840b173434",
+  "date_local": "2026-07-16",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680,
+    "openpyxl_version": "3.1.2"
+  },
+  "benchmark_protocol": {
+    "isolated_runner": "tools/run_package_writer_benchmark_matrix.py",
+    "isolated_executable": "build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_package_writer.exe",
+    "isolated_common_arguments": "--rows 100000 --cols 10 --compression-level 1",
+    "isolated_buffer_orders": [
+      {
+        "name": "ascending",
+        "values_kib": [256, 512, 1024, 2048, 4096],
+        "warmup_runs": 2,
+        "measured_runs": 5,
+        "openpyxl": "representative output for every case opened"
+      },
+      {
+        "name": "descending",
+        "values_kib": [4096, 2048, 1024, 512, 256],
+        "warmup_runs": 2,
+        "measured_runs": 7,
+        "openpyxl": "not_requested"
+      }
+    ],
+    "isolated_profiles": ["numeric", "mixed-inline", "formula"],
+    "isolated_preparation": "Each matrix generated one deterministic worksheet XML payload in a separate preparation process. Ascending and descending payload SHA-256 values matched for every profile. Payload generation, ZIP inspection and openpyxl validation were outside timed benchmark processes.",
+    "isolated_representative_policy": "Measured run nearest target-entry total wall-time median; earliest run breaks ties.",
+    "patch_runner": "tools/run_patch_benchmark_matrix.py",
+    "patch_executable": "build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe",
+    "patch_common_arguments": "--rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-compression-level 6 --output-compression-level 1 --verify-openpyxl",
+    "patch_profiles": [
+      "--source-pattern numeric",
+      "--source-pattern mixed-inline",
+      "--source-pattern formula --source-external-hyperlink"
+    ],
+    "patch_verification": "Every Patch matrix passed schema-v15 telemetry, bounded writer-call, staged CRC, output-plan byte accounting, raw compressed-payload and openpyxl checks. The formula representative retained the recorded external hyperlink target.",
+    "process_priority": "Windows High priority runner processes; benchmark children inherited that priority.",
+    "timing_limit": "GetProcessTimes process CPU is quantized on this host. Wall-time medians, maximum per-call wall time and process peak working set are reported separately; no ETW trace or pure zlib encoder attribution was collected."
+  },
+  "validation": {
+    "focused_tests": "passed: package reader core and ZIP failures",
+    "production_ctest": "132/132 passed",
+    "stored_ctest": "132/132 passed",
+    "no_images_profile": "build and image-disabled runtime smoke passed",
+    "install_consumer_smoke": "passed for production, stored-only and no-images installations",
+    "package_writer_runner_self_test": "passed",
+    "patch_runner_self_test": "passed",
+    "evidence_validator_self_test": "passed",
+    "evidence_bundle_validation": "passed: 21 bundles",
+    "office_open": "not_run"
+  },
+  "resource_lifecycle": "No background worker was introduced. Benchmark payloads, XLSX outputs and install-consumer trees were kept only under build/qa for evidence capture and were removed after the committed matrix reports were hashed. No FastXLSX benchmark process remained. Package writer OVERLAPPED state remains local and joins pending I/O before return.",
+  "qualification": "Claims are limited to the recorded same-machine deterministic workloads. They are not generalized to arbitrary workbooks, other machines, Office compatibility, physical cache-hit rate, pure encoder performance or full-feature superiority."
+}

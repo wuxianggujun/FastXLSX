@@ -57,6 +57,44 @@ void test_package_writer_rejects_invalid_compression_levels_before_output()
         "fastxlsx-package-writer-invalid-compression-high.xlsx");
 }
 
+void test_package_writer_rejects_invalid_file_io_buffers_before_output()
+{
+    auto check_invalid_buffer = [](std::size_t file_io_buffer_size,
+                                    std::string_view output_name) {
+        const std::filesystem::path path = output_path(output_name);
+        const std::string sentinel = "preserve existing invalid-buffer output";
+        write_file(path, sentinel);
+
+        fastxlsx::detail::PackageWriterOptions options;
+        options.backend = fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap;
+        options.file_io_buffer_size = file_io_buffer_size;
+
+        bool failed = false;
+        try {
+            fastxlsx::detail::write_package(path,
+                {
+                    {"xl/workbook.xml", "<workbook/>"},
+                },
+                options);
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), "ZIP file IO buffer size",
+                "invalid file IO buffer failure should explain the bad option");
+        }
+
+        check(failed, "PackageWriter should reject invalid file IO buffers");
+        check(fastxlsx::test::read_file(path) == sentinel,
+            "invalid file IO buffer should fail before overwriting output");
+    };
+
+    check_invalid_buffer(fastxlsx::detail::package_writer_min_file_io_buffer_size / 2U,
+        "fastxlsx-package-writer-invalid-buffer-low.xlsx");
+    check_invalid_buffer(96U * 1024U,
+        "fastxlsx-package-writer-invalid-buffer-non-power-of-two.xlsx");
+    check_invalid_buffer(fastxlsx::detail::package_writer_max_file_io_buffer_size * 2U,
+        "fastxlsx-package-writer-invalid-buffer-high.xlsx");
+}
+
 void test_package_writer_rejects_zip64_entry_count_before_output()
 {
     const std::filesystem::path path =
@@ -852,6 +890,7 @@ int main()
     try {
         test_package_writer_rejects_empty_package_before_output();
         test_package_writer_rejects_invalid_compression_levels_before_output();
+        test_package_writer_rejects_invalid_file_io_buffers_before_output();
         test_package_writer_rejects_zip64_entry_count_before_output();
         test_package_writer_rejects_zip_entry_name_length_before_output();
         test_package_writer_rejects_invalid_entry_names_before_output();

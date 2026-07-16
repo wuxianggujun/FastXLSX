@@ -504,16 +504,24 @@ void test_package_writer_prefetches_large_staged_file_chunks()
     }
 
     const fastxlsx::detail::PackageWriterEntryTelemetry& entry = *entry_position;
+    check(entry.file_io_buffer_bytes
+            == fastxlsx::detail::package_writer_default_file_io_buffer_size,
+        "staged file telemetry should report the configured file IO buffer");
+    check(entry.writer_write_input_peak_bytes
+            == fastxlsx::detail::package_writer_default_file_io_buffer_size,
+        "staged file writer calls should remain bounded by the configured buffer");
+    check(entry.writer_write_calls == 10,
+        "staged file writer should issue one write per 512 KiB payload block");
 #ifdef _WIN32
     check(entry.staged_file_read_prefetch,
         "large Windows staged file should use bounded overlapped prefetch");
     check(entry.prefetched_staged_file_chunk_count == 1
             && entry.prefetched_staged_input_bytes == body.size(),
         "prefetched staged file telemetry should account for its chunk and bytes");
-    check(entry.prefetch_peak_buffer_bytes == 2U * 1024U * 1024U,
-        "prefetched staged file should use exactly two 1 MiB buffers");
-    check(entry.input_read_calls == 5,
-        "prefetched staged file should issue one read per 1 MiB payload block");
+    check(entry.prefetch_peak_buffer_bytes == 1024U * 1024U,
+        "prefetched staged file should use exactly two 512 KiB buffers");
+    check(entry.input_read_calls == 10,
+        "prefetched staged file should issue one read per 512 KiB payload block");
     check(entry.input_read_wait_us <= entry.input_read_us,
         "prefetched staged file wait time should be within total input read time");
 #else

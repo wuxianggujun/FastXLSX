@@ -36,8 +36,7 @@
 namespace fastxlsx::detail {
 namespace {
 
-constexpr std::size_t io_buffer_size = 1024 * 1024;
-constexpr std::uint64_t staged_file_prefetch_min_bytes = 4U * io_buffer_size;
+constexpr std::uint64_t staged_file_prefetch_min_bytes = 4U * 1024U * 1024U;
 constexpr std::uint64_t max_forward_gap_discard_bytes = 64 * 1024;
 constexpr std::uint64_t zip32_max_u16 = std::numeric_limits<std::uint16_t>::max();
 constexpr std::uint64_t zip32_max_u32 = std::numeric_limits<std::uint32_t>::max();
@@ -100,13 +99,16 @@ PackageWriterBackend resolve_backend(PackageWriterBackend backend)
 
 void validate_options(PackageWriterOptions options)
 {
-    if (options.compression_level == package_writer_default_compression_level) {
-        return;
-    }
-
-    if (options.compression_level < package_writer_min_compression_level
-        || options.compression_level > package_writer_max_compression_level) {
+    if (options.compression_level != package_writer_default_compression_level
+        && (options.compression_level < package_writer_min_compression_level
+        || options.compression_level > package_writer_max_compression_level)) {
         throw FastXlsxError("ZIP compression level must be -1 or between 0 and 9");
+    }
+    if (options.file_io_buffer_size < package_writer_min_file_io_buffer_size
+        || options.file_io_buffer_size > package_writer_max_file_io_buffer_size
+        || (options.file_io_buffer_size & (options.file_io_buffer_size - 1U)) != 0U) {
+        throw FastXlsxError(
+            "ZIP file IO buffer size must be a power of two between 64 KiB and 4 MiB");
     }
 }
 
@@ -734,11 +736,12 @@ std::string win32_file_failure_message(
 class MinizipOverlappedFileChunkReader {
 public:
     MinizipOverlappedFileChunkReader(const PackageEntryChunk& chunk,
-        std::vector<char>& first_buffer, std::vector<char>& second_buffer)
+        std::vector<char>& first_buffer, std::vector<char>& second_buffer,
+        std::size_t file_io_buffer_size)
         : chunk_(chunk)
     {
-        first_buffer.resize(io_buffer_size);
-        second_buffer.resize(io_buffer_size);
+        first_buffer.resize(file_io_buffer_size);
+        second_buffer.resize(file_io_buffer_size);
         slots_[0].buffer = &first_buffer;
         slots_[1].buffer = &second_buffer;
 
@@ -926,17 +929,18 @@ private:
 
 template <typename Consumer>
 void consume_prefetched_minizip_file_chunk(const PackageEntryChunk& chunk,
-    std::vector<char>& first_buffer, PackageWriterEntryTelemetry* telemetry,
-    Consumer consumer)
+    std::vector<char>& first_buffer, std::size_t file_io_buffer_size,
+    PackageWriterEntryTelemetry* telemetry, Consumer consumer)
 {
     std::vector<char> second_buffer;
-    MinizipOverlappedFileChunkReader reader(chunk, first_buffer, second_buffer);
+    MinizipOverlappedFileChunkReader reader(
+        chunk, first_buffer, second_buffer, file_io_buffer_size);
     const std::uint64_t read_limit = file_chunk_read_limit(chunk);
     const std::uint64_t first_offset = chunk.has_file_range ? chunk.file_offset : 0;
     std::uint64_t consumed_size = 0;
     std::size_t active_slot = 0;
     std::size_t requested = static_cast<std::size_t>(
-        std::min<std::uint64_t>(read_limit, io_buffer_size));
+        std::min<std::uint64_t>(read_limit, file_io_buffer_size));
     reader.start(active_slot, first_offset, requested, telemetry);
 
     while (consumed_size < read_limit) {
@@ -945,7 +949,7 @@ void consume_prefetched_minizip_file_chunk(const PackageEntryChunk& chunk,
         const std::size_t next_slot = 1U - active_slot;
         if (next_consumed < read_limit) {
             requested = static_cast<std::size_t>(std::min<std::uint64_t>(
-                read_limit - next_consumed, io_buffer_size));
+                read_limit - next_consumed, file_io_buffer_size));
             reader.start(next_slot, first_offset + next_consumed, requested, telemetry);
         }
 
@@ -961,11 +965,39 @@ void consume_prefetched_minizip_file_chunk(const PackageEntryChunk& chunk,
         ++telemetry->prefetched_staged_file_chunk_count;
         telemetry->prefetched_staged_input_bytes += consumed_size;
         telemetry->prefetch_peak_buffer_bytes = std::max<std::uint64_t>(
-            telemetry->prefetch_peak_buffer_bytes, 2U * io_buffer_size);
+            telemetry->prefetch_peak_buffer_bytes, 2U * file_io_buffer_size);
     }
 }
 
 #endif
+
+void write_minizip_data(void* writer, std::string_view data,
+    PackageWriterEntryTelemetry* telemetry, std::string_view failure_message)
+{
+    const int chunk_size = static_cast<int>(data.size());
+    const auto write_started = telemetry != nullptr
+        ? std::chrono::steady_clock::now()
+        : std::chrono::steady_clock::time_point {};
+    const std::uint64_t write_process_cpu_started = telemetry != nullptr
+        ? process_cpu_microseconds()
+        : 0;
+    const int written = mz_zip_writer_entry_write(writer, data.data(), chunk_size);
+    if (telemetry != nullptr) {
+        const std::uint64_t write_us = elapsed_microseconds(write_started);
+        telemetry->writer_write_us += write_us;
+        telemetry->writer_write_process_cpu_us +=
+            elapsed_process_cpu_microseconds(write_process_cpu_started);
+        ++telemetry->writer_write_calls;
+        telemetry->input_bytes += static_cast<std::uint64_t>(data.size());
+        telemetry->writer_write_input_peak_bytes = std::max<std::uint64_t>(
+            telemetry->writer_write_input_peak_bytes, data.size());
+        telemetry->writer_write_max_us =
+            std::max(telemetry->writer_write_max_us, write_us);
+    }
+    if (written != chunk_size) {
+        throw FastXlsxError(std::string(failure_message));
+    }
+}
 
 void write_minizip_memory_chunk(void* writer, std::string_view data,
     PackageWriterEntryTelemetry* telemetry)
@@ -975,25 +1007,10 @@ void write_minizip_memory_chunk(void* writer, std::string_view data,
         const std::size_t remaining = data.size() - offset;
         const int chunk_size = static_cast<int>(std::min<std::size_t>(
             remaining, static_cast<std::size_t>(std::numeric_limits<int>::max())));
-        const auto write_started = telemetry != nullptr
-            ? std::chrono::steady_clock::now()
-            : std::chrono::steady_clock::time_point {};
-        const std::uint64_t write_process_cpu_started = telemetry != nullptr
-            ? process_cpu_microseconds()
-            : 0;
-        const int written = mz_zip_writer_entry_write(
-            writer, data.data() + offset, chunk_size);
-        if (telemetry != nullptr) {
-            telemetry->writer_write_us += elapsed_microseconds(write_started);
-            telemetry->writer_write_process_cpu_us +=
-                elapsed_process_cpu_microseconds(write_process_cpu_started);
-            ++telemetry->writer_write_calls;
-            telemetry->input_bytes += static_cast<std::uint64_t>(chunk_size);
-        }
-        if (written != chunk_size) {
-            throw FastXlsxError("minizip-ng failed to write ZIP entry data");
-        }
-        offset += static_cast<std::size_t>(written);
+        write_minizip_data(writer,
+            data.substr(offset, static_cast<std::size_t>(chunk_size)), telemetry,
+            "minizip-ng failed to write ZIP entry data");
+        offset += static_cast<std::size_t>(chunk_size);
     }
 }
 
@@ -1063,24 +1080,8 @@ void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cach
     Crc32Accumulator chunk_crc;
     consume_minizip_file_chunk(file_cache, chunk, buffer, telemetry,
         [&](std::string_view data) {
-        const int chunk_size = static_cast<int>(data.size());
-        const auto write_started = telemetry != nullptr
-            ? std::chrono::steady_clock::now()
-            : std::chrono::steady_clock::time_point {};
-        const std::uint64_t write_process_cpu_started = telemetry != nullptr
-            ? process_cpu_microseconds()
-            : 0;
-        const int written = mz_zip_writer_entry_write(writer, data.data(), chunk_size);
-        if (telemetry != nullptr) {
-            telemetry->writer_write_us += elapsed_microseconds(write_started);
-            telemetry->writer_write_process_cpu_us +=
-                elapsed_process_cpu_microseconds(write_process_cpu_started);
-            ++telemetry->writer_write_calls;
-            telemetry->input_bytes += static_cast<std::uint64_t>(data.size());
-        }
-        if (written != chunk_size) {
-            throw FastXlsxError("minizip-ng failed to write file-backed ZIP entry data");
-        }
+        write_minizip_data(writer, data, telemetry,
+            "minizip-ng failed to write file-backed ZIP entry data");
         if (validate_chunk_crc32) {
             chunk_crc.update(data);
         }
@@ -1094,30 +1095,14 @@ void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cach
 
 void write_minizip_prefetched_file_chunk(void* writer,
     const PackageEntryChunk& chunk, std::vector<char>& buffer,
-    bool validate_chunk_crc32, PackageWriterEntryTelemetry* telemetry)
+    std::size_t file_io_buffer_size, bool validate_chunk_crc32,
+    PackageWriterEntryTelemetry* telemetry)
 {
     Crc32Accumulator chunk_crc;
-    consume_prefetched_minizip_file_chunk(chunk, buffer, telemetry,
+    consume_prefetched_minizip_file_chunk(chunk, buffer, file_io_buffer_size, telemetry,
         [&](std::string_view data) {
-        const int chunk_size = static_cast<int>(data.size());
-        const auto write_started = telemetry != nullptr
-            ? std::chrono::steady_clock::now()
-            : std::chrono::steady_clock::time_point {};
-        const std::uint64_t write_process_cpu_started = telemetry != nullptr
-            ? process_cpu_microseconds()
-            : 0;
-        const int written = mz_zip_writer_entry_write(writer, data.data(), chunk_size);
-        if (telemetry != nullptr) {
-            telemetry->writer_write_us += elapsed_microseconds(write_started);
-            telemetry->writer_write_process_cpu_us +=
-                elapsed_process_cpu_microseconds(write_process_cpu_started);
-            ++telemetry->writer_write_calls;
-            telemetry->input_bytes += static_cast<std::uint64_t>(data.size());
-        }
-        if (written != chunk_size) {
-            throw FastXlsxError(
-                "minizip-ng failed to write prefetched file-backed ZIP entry data");
-        }
+        write_minizip_data(writer, data, telemetry,
+            "minizip-ng failed to write prefetched file-backed ZIP entry data");
         if (validate_chunk_crc32) {
             chunk_crc.update(data);
         }
@@ -1131,7 +1116,8 @@ void write_minizip_prefetched_file_chunk(void* writer,
 
 void write_minizip_entry_chunks(
     void* writer, const PackageEntry& entry, std::vector<char>& file_buffer,
-    bool reuse_staged_crc32, PackageWriterEntryTelemetry* telemetry)
+    std::size_t file_io_buffer_size, bool reuse_staged_crc32,
+    PackageWriterEntryTelemetry* telemetry)
 {
     if (entry.chunks.empty()) {
         write_minizip_memory_chunk(writer, entry.data, telemetry);
@@ -1148,12 +1134,15 @@ void write_minizip_entry_chunks(
                 break;
             case PackageEntryChunk::Kind::File:
                 if (file_buffer.empty()) {
-                    file_buffer.resize(io_buffer_size);
+                    file_buffer.resize(file_io_buffer_size);
+                }
+                if (telemetry != nullptr) {
+                    telemetry->file_io_buffer_bytes = file_io_buffer_size;
                 }
 #ifdef _WIN32
                 if (should_prefetch_staged_file_chunk(chunk)) {
                     write_minizip_prefetched_file_chunk(
-                        writer, chunk, file_buffer,
+                        writer, chunk, file_buffer, file_io_buffer_size,
                         chunk.has_expected_crc32 && !reuse_staged_crc32, telemetry);
                     break;
                 }
@@ -1174,10 +1163,13 @@ void write_minizip_entry_chunks(
 void write_minizip_raw_compressed_entry(void* writer,
     const PackageRawCompressedEntrySource& source,
     MinizipFileChunkReadCache& file_cache, std::vector<char>& file_buffer,
-    PackageWriterEntryTelemetry* telemetry)
+    std::size_t file_io_buffer_size, PackageWriterEntryTelemetry* telemetry)
 {
     if (file_buffer.empty()) {
-        file_buffer.resize(io_buffer_size);
+        file_buffer.resize(file_io_buffer_size);
+    }
+    if (telemetry != nullptr) {
+        telemetry->file_io_buffer_bytes = file_io_buffer_size;
     }
     PackageEntryChunk chunk = PackageEntryChunk::file_range(
         source.path, source.data_offset, source.compressed_size);
@@ -1185,10 +1177,11 @@ void write_minizip_raw_compressed_entry(void* writer,
 }
 
 void diagnose_entry_crc32_mismatch(
-    const PackageEntry& entry, std::vector<char>& file_buffer)
+    const PackageEntry& entry, std::vector<char>& file_buffer,
+    std::size_t file_io_buffer_size)
 {
     if (file_buffer.empty()) {
-        file_buffer.resize(io_buffer_size);
+        file_buffer.resize(file_io_buffer_size);
     }
     MinizipFileChunkReadCache file_cache;
     for (std::size_t chunk_index = 0; chunk_index < entry.chunks.size(); ++chunk_index) {
@@ -1208,7 +1201,8 @@ void diagnose_entry_crc32_mismatch(
 }
 
 void validate_written_entry_crc32(void* zip_handle, const PackageEntry& entry,
-    const EntryCrcValidationPlan& plan, std::vector<char>& file_buffer)
+    const EntryCrcValidationPlan& plan, std::vector<char>& file_buffer,
+    std::size_t file_io_buffer_size)
 {
     mz_zip_file* written_file_info = nullptr;
     check_minizip_result(mz_zip_entry_get_info(zip_handle, &written_file_info),
@@ -1220,7 +1214,7 @@ void validate_written_entry_crc32(void* zip_handle, const PackageEntry& entry,
         return;
     }
 
-    diagnose_entry_crc32_mismatch(entry, file_buffer);
+    diagnose_entry_crc32_mismatch(entry, file_buffer, file_io_buffer_size);
     throw FastXlsxError("ZIP entry CRC32 changed after staging: expected "
         + std::to_string(plan.expected_crc32) + ", actual "
         + std::to_string(written_file_info->crc));
@@ -1228,7 +1222,8 @@ void validate_written_entry_crc32(void* zip_handle, const PackageEntry& entry,
 
 void write_minizip_package(
     const std::filesystem::path& path, const std::vector<PackageEntry>& entries,
-    int compression_level, PackageWriterTelemetry* telemetry)
+    int compression_level, std::size_t file_io_buffer_size,
+    PackageWriterTelemetry* telemetry)
 {
     if (entries.empty()) {
         throw FastXlsxError("cannot write an empty ZIP package");
@@ -1331,11 +1326,11 @@ void write_minizip_package(
             if (entry.raw_compressed_source.has_value()) {
                 write_minizip_raw_compressed_entry(writer.get(),
                     *entry.raw_compressed_source, raw_file_cache, file_buffer,
-                    active_entry_telemetry);
+                    file_io_buffer_size, active_entry_telemetry);
             } else {
                 write_minizip_entry_chunks(
-                    writer.get(), entry, file_buffer, crc_plan.reuse_staged_crc32,
-                    active_entry_telemetry);
+                    writer.get(), entry, file_buffer, file_io_buffer_size,
+                    crc_plan.reuse_staged_crc32, active_entry_telemetry);
             }
 
             const auto entry_close_started = active_entry_telemetry != nullptr
@@ -1353,7 +1348,8 @@ void write_minizip_package(
                 const auto crc_validation_started = active_entry_telemetry != nullptr
                     ? std::chrono::steady_clock::now()
                     : std::chrono::steady_clock::time_point {};
-                validate_written_entry_crc32(zip_handle, entry, crc_plan, file_buffer);
+                validate_written_entry_crc32(
+                    zip_handle, entry, crc_plan, file_buffer, file_io_buffer_size);
                 if (active_entry_telemetry != nullptr) {
                     active_entry_telemetry->staged_crc_validation_us +=
                         elapsed_microseconds(crc_validation_started);
@@ -1445,7 +1441,8 @@ void write_package(const std::filesystem::path& path, const std::vector<PackageE
     case PackageWriterBackend::MinizipNg:
 #ifdef FASTXLSX_HAS_MINIZIP_NG
         write_minizip_package(
-            path, entries, options.compression_level, options.telemetry);
+            path, entries, options.compression_level,
+            options.file_io_buffer_size, options.telemetry);
         if (options.telemetry != nullptr) {
             options.telemetry->total_us = elapsed_microseconds(total_started);
             options.telemetry->total_process_cpu_us =

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -107,6 +108,9 @@ enum class PackageWriterBackend {
 inline constexpr int package_writer_default_compression_level = -1;
 inline constexpr int package_writer_min_compression_level = 0;
 inline constexpr int package_writer_max_compression_level = 9;
+inline constexpr std::size_t package_writer_default_file_io_buffer_size = 512U * 1024U;
+inline constexpr std::size_t package_writer_min_file_io_buffer_size = 64U * 1024U;
+inline constexpr std::size_t package_writer_max_file_io_buffer_size = 4U * 1024U * 1024U;
 
 struct PackageWriterEntryTelemetry {
     std::string entry_name;
@@ -118,6 +122,9 @@ struct PackageWriterEntryTelemetry {
     std::uint64_t input_bytes = 0;
     std::uint64_t input_read_calls = 0;
     std::uint64_t writer_write_calls = 0;
+    std::uint64_t file_io_buffer_bytes = 0;
+    std::uint64_t writer_write_input_peak_bytes = 0;
+    std::uint64_t writer_write_max_us = 0;
     std::uint64_t reused_staged_file_chunk_count = 0;
     std::uint64_t prefetched_staged_file_chunk_count = 0;
     std::uint64_t prefetched_staged_input_bytes = 0;
@@ -148,6 +155,7 @@ struct PackageWriterTelemetry {
 struct PackageWriterOptions {
     PackageWriterBackend backend = PackageWriterBackend::Auto;
     int compression_level = package_writer_default_compression_level;
+    std::size_t file_io_buffer_size = package_writer_default_file_io_buffer_size;
     PackageWriterTelemetry* telemetry = nullptr;
 };
 

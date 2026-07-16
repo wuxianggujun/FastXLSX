@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "14"
+BENCHMARK_SCHEMA_VERSION = "15"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -77,6 +77,11 @@ METRICS = [
     "target_worksheet_entry_prefetched_staged_file_chunk_count",
     "target_worksheet_entry_prefetched_staged_input_bytes",
     "target_worksheet_entry_prefetch_peak_buffer_bytes",
+    "target_worksheet_entry_input_read_calls",
+    "target_worksheet_entry_writer_write_calls",
+    "target_worksheet_entry_file_io_buffer_bytes",
+    "target_worksheet_entry_writer_write_input_peak_bytes",
+    "target_worksheet_entry_writer_write_max_us",
     "target_worksheet_entry_input_read_us",
     "target_worksheet_entry_input_read_wait_us",
     "target_worksheet_entry_writer_write_us",
@@ -596,6 +601,47 @@ def verify_result(
                 require(deflate_writer_process_cpu_us > 0,
                     "large rewritten target should report positive DEFLATE process CPU")
         if case.scenario == "patch-upsert":
+            file_io_buffer_bytes = int(
+                result.get("target_worksheet_entry_file_io_buffer_bytes")
+            )
+            input_bytes = int(result.get("target_worksheet_entry_input_bytes"))
+            minimum_io_calls = (
+                input_bytes + file_io_buffer_bytes - 1
+            ) // file_io_buffer_bytes
+            staged_file_chunk_count = int(
+                result.get("target_worksheet_entry_reused_staged_file_chunk_count")
+            )
+            maximum_file_read_calls = (
+                minimum_io_calls + max(0, staged_file_chunk_count - 1)
+            )
+            input_read_calls = int(
+                result.get("target_worksheet_entry_input_read_calls")
+            )
+            writer_write_calls = int(
+                result.get("target_worksheet_entry_writer_write_calls")
+            )
+            require(file_io_buffer_bytes == 512 * 1024,
+                "patch-upsert should report the production 512 KiB file IO buffer")
+            require(
+                minimum_io_calls <= input_read_calls <= maximum_file_read_calls,
+                "patch-upsert input read calls should stay within file-chunk boundaries",
+            )
+            require(
+                input_read_calls <= writer_write_calls
+                <= maximum_file_read_calls + 2,
+                "patch-upsert writer calls should cover bounded file and memory chunks",
+            )
+            require(
+                int(result.get(
+                    "target_worksheet_entry_writer_write_input_peak_bytes"))
+                == min(input_bytes, file_io_buffer_bytes),
+                "patch-upsert writer input peak should match the bounded file IO buffer",
+            )
+            require(
+                0 < int(result.get("target_worksheet_entry_writer_write_max_us"))
+                <= int(result.get("target_worksheet_entry_writer_write_us")),
+                "patch-upsert maximum writer call should fit aggregate writer time",
+            )
             require(result.get("target_worksheet_entry_reused_staged_crc32") is True,
                 "patch-upsert should reuse staged CRC32 metadata")
             require(
@@ -617,8 +663,8 @@ def verify_result(
                     "large patch-upsert target should report prefetched staged bytes")
                 require(int(result.get(
                     "target_worksheet_entry_prefetch_peak_buffer_bytes"))
-                    == 2 * 1024 * 1024,
-                    "large patch-upsert target should keep prefetch buffers at 2 MiB")
+                    == 2 * file_io_buffer_bytes,
+                    "large patch-upsert target should keep exactly two file IO buffers")
     require(not result.get("materialized_worksheet"), "Patch case unexpectedly materialized sheet")
 
     copied_names = list(result.get("copied_entry_names", []))
@@ -985,7 +1031,12 @@ def run_self_test() -> None:
                 "target_worksheet_entry_total_process_cpu_us": 450,
                 "target_worksheet_entry_prefetched_staged_file_chunk_count": 1,
                 "target_worksheet_entry_prefetched_staged_input_bytes": 100000,
-                "target_worksheet_entry_prefetch_peak_buffer_bytes": 2097152,
+                "target_worksheet_entry_prefetch_peak_buffer_bytes": 1048576,
+                "target_worksheet_entry_input_read_calls": 1,
+                "target_worksheet_entry_writer_write_calls": 1,
+                "target_worksheet_entry_file_io_buffer_bytes": 524288,
+                "target_worksheet_entry_writer_write_input_peak_bytes": 100000,
+                "target_worksheet_entry_writer_write_max_us": 400,
                 "target_worksheet_entry_input_read_us": 50,
                 "target_worksheet_entry_input_read_wait_us": 10,
                 "target_worksheet_entry_writer_write_us": 400,
@@ -1154,7 +1205,7 @@ def main() -> int:
             )
 
     matrix_report = {
-        "patch_benchmark_matrix_schema_version": "8",
+        "patch_benchmark_matrix_schema_version": "9",
         "benchmark_executable": str(bench_exe),
         "output_dir": str(output_dir),
         "rows": args.rows,

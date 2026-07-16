@@ -35,7 +35,7 @@ namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
-constexpr std::string_view kEditorBenchmarkSchemaVersion = "14";
+constexpr std::string_view kEditorBenchmarkSchemaVersion = "15";
 
 std::filesystem::path default_output_dir()
 {
@@ -147,6 +147,9 @@ struct RunStats {
     std::uint64_t target_worksheet_entry_input_bytes = 0;
     std::uint64_t target_worksheet_entry_input_read_calls = 0;
     std::uint64_t target_worksheet_entry_writer_write_calls = 0;
+    std::uint64_t target_worksheet_entry_file_io_buffer_bytes = 0;
+    std::uint64_t target_worksheet_entry_writer_write_input_peak_bytes = 0;
+    std::uint64_t target_worksheet_entry_writer_write_max_us = 0;
     std::uint64_t target_worksheet_entry_reused_staged_file_chunk_count = 0;
     std::uint64_t target_worksheet_entry_prefetched_staged_file_chunk_count = 0;
     std::uint64_t target_worksheet_entry_prefetched_staged_input_bytes = 0;
@@ -811,6 +814,10 @@ void observe_package_writer_telemetry(
     stats.target_worksheet_entry_input_bytes = target->input_bytes;
     stats.target_worksheet_entry_input_read_calls = target->input_read_calls;
     stats.target_worksheet_entry_writer_write_calls = target->writer_write_calls;
+    stats.target_worksheet_entry_file_io_buffer_bytes = target->file_io_buffer_bytes;
+    stats.target_worksheet_entry_writer_write_input_peak_bytes =
+        target->writer_write_input_peak_bytes;
+    stats.target_worksheet_entry_writer_write_max_us = target->writer_write_max_us;
     stats.target_worksheet_entry_reused_staged_file_chunk_count =
         target->reused_staged_file_chunk_count;
     stats.target_worksheet_entry_prefetched_staged_file_chunk_count =
@@ -988,6 +995,12 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.target_worksheet_entry_input_read_calls << ",\n";
     out << "  \"target_worksheet_entry_writer_write_calls\": "
         << stats.target_worksheet_entry_writer_write_calls << ",\n";
+    out << "  \"target_worksheet_entry_file_io_buffer_bytes\": "
+        << stats.target_worksheet_entry_file_io_buffer_bytes << ",\n";
+    out << "  \"target_worksheet_entry_writer_write_input_peak_bytes\": "
+        << stats.target_worksheet_entry_writer_write_input_peak_bytes << ",\n";
+    out << "  \"target_worksheet_entry_writer_write_max_us\": "
+        << stats.target_worksheet_entry_writer_write_max_us << ",\n";
     out << "  \"target_worksheet_entry_reused_staged_file_chunk_count\": "
         << stats.target_worksheet_entry_reused_staged_file_chunk_count << ",\n";
     out << "  \"target_worksheet_entry_prefetched_staged_file_chunk_count\": "

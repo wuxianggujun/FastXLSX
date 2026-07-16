@@ -693,8 +693,13 @@ void test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells
             "replace_cells Insert policy should limit relationship attribute slow paths");
         check(data_sheet_plan->single_pass_relationship_scan_us
                     + data_sheet_plan->single_pass_temporary_write_us
+                    + data_sheet_plan->single_pass_crc32_us
                 <= data_sheet_plan->single_pass_transform_us,
             "replace_cells Insert policy sink timings should fit within transform time");
+        check(data_sheet_plan->single_pass_fused_crc32,
+            "replace_cells Insert policy should fuse CRC32 into transform output");
+        check(data_sheet_plan->single_pass_crc32_segment_count >= 2,
+            "replace_cells Insert policy should expose fused CRC32 file segments");
         check(data_sheet_plan->staged_replacement_file_range_chunk_count == 2,
             "replace_cells Insert policy should stage sequential temporary-file ranges");
         check(data_sheet_plan->staged_replacement_memory_chunk_count == 1,

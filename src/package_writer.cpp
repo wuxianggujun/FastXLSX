@@ -19,6 +19,10 @@
 #include <mz_zip_rw.h>
 #endif
 
+#ifdef FASTXLSX_HAS_DIRECT_ZLIB_PROFILING
+#include <zlib.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -37,6 +41,9 @@ namespace fastxlsx::detail {
 namespace {
 
 constexpr std::uint64_t staged_file_prefetch_min_bytes = 4U * 1024U * 1024U;
+#ifdef FASTXLSX_HAS_DIRECT_ZLIB_PROFILING
+constexpr std::uint64_t direct_zlib_raw_min_bytes = 4U * 1024U * 1024U;
+#endif
 constexpr std::uint64_t max_forward_gap_discard_bytes = 64 * 1024;
 constexpr std::uint64_t zip32_max_u16 = std::numeric_limits<std::uint16_t>::max();
 constexpr std::uint64_t zip32_max_u32 = std::numeric_limits<std::uint32_t>::max();
@@ -109,6 +116,23 @@ void validate_options(PackageWriterOptions options)
         || (options.file_io_buffer_size & (options.file_io_buffer_size - 1U)) != 0U) {
         throw FastXlsxError(
             "ZIP file IO buffer size must be a power of two between 64 KiB and 4 MiB");
+    }
+    if (options.deflate_engine != PackageWriterDeflateEngine::MinizipNg) {
+        if (options.deflate_output_buffer_size < package_writer_min_deflate_output_buffer_size
+            || options.deflate_output_buffer_size > package_writer_max_deflate_output_buffer_size
+            || (options.deflate_output_buffer_size
+                & (options.deflate_output_buffer_size - 1U)) != 0U) {
+            throw FastXlsxError(
+                "ZIP DEFLATE output buffer size must be a power of two between 16 KiB and 4 MiB");
+        }
+#ifdef FASTXLSX_HAS_DIRECT_ZLIB_PROFILING
+        if (resolve_backend(options.backend) != PackageWriterBackend::MinizipNg) {
+            throw FastXlsxError("direct zlib DEFLATE requires the minizip-ng package backend");
+        }
+#else
+        throw FastXlsxError(
+            "direct zlib DEFLATE profiling engine is not enabled in this build");
+#endif
     }
 }
 
@@ -972,23 +996,29 @@ void consume_prefetched_minizip_file_chunk(const PackageEntryChunk& chunk,
 #endif
 
 void write_minizip_data(void* writer, std::string_view data,
-    PackageWriterEntryTelemetry* telemetry, std::string_view failure_message)
+    PackageWriterEntryTelemetry* telemetry, std::string_view failure_message,
+    bool count_source_input = true, bool measure_process_cpu = true)
 {
     const int chunk_size = static_cast<int>(data.size());
     const auto write_started = telemetry != nullptr
         ? std::chrono::steady_clock::now()
         : std::chrono::steady_clock::time_point {};
-    const std::uint64_t write_process_cpu_started = telemetry != nullptr
+    const std::uint64_t write_process_cpu_started =
+        telemetry != nullptr && measure_process_cpu
         ? process_cpu_microseconds()
         : 0;
     const int written = mz_zip_writer_entry_write(writer, data.data(), chunk_size);
     if (telemetry != nullptr) {
         const std::uint64_t write_us = elapsed_microseconds(write_started);
         telemetry->writer_write_us += write_us;
-        telemetry->writer_write_process_cpu_us +=
-            elapsed_process_cpu_microseconds(write_process_cpu_started);
+        if (measure_process_cpu) {
+            telemetry->writer_write_process_cpu_us +=
+                elapsed_process_cpu_microseconds(write_process_cpu_started);
+        }
         ++telemetry->writer_write_calls;
-        telemetry->input_bytes += static_cast<std::uint64_t>(data.size());
+        if (count_source_input) {
+            telemetry->input_bytes += static_cast<std::uint64_t>(data.size());
+        }
         telemetry->writer_write_input_peak_bytes = std::max<std::uint64_t>(
             telemetry->writer_write_input_peak_bytes, data.size());
         telemetry->writer_write_max_us =
@@ -998,6 +1028,175 @@ void write_minizip_data(void* writer, std::string_view data,
         throw FastXlsxError(std::string(failure_message));
     }
 }
+
+#ifdef FASTXLSX_HAS_DIRECT_ZLIB_PROFILING
+class DirectZlibRawEntryWriter {
+public:
+    DirectZlibRawEntryWriter(void* writer, int compression_level,
+        std::size_t output_buffer_size, PackageWriterEntryTelemetry* telemetry)
+        : writer_(writer)
+        , output_buffer_(output_buffer_size)
+        , telemetry_(telemetry)
+    {
+        const int level = compression_level == package_writer_default_compression_level
+            ? Z_DEFAULT_COMPRESSION
+            : compression_level;
+        const std::uint64_t init_process_cpu_started = telemetry_ != nullptr
+            ? process_cpu_microseconds()
+            : 0;
+        const int result = deflateInit2(&stream_, level, Z_DEFLATED,
+            -MAX_WBITS, 8, Z_DEFAULT_STRATEGY);
+        if (result != Z_OK) {
+            throw FastXlsxError("failed to initialize direct zlib raw DEFLATE stream (error "
+                + std::to_string(result) + ")");
+        }
+        initialized_ = true;
+        stream_.next_out = output_buffer_.data();
+        stream_.avail_out = static_cast<uInt>(output_buffer_.size());
+        crc32_ = ::crc32(0L, Z_NULL, 0);
+        if (telemetry_ != nullptr) {
+            telemetry_->direct_zlib_raw = true;
+            telemetry_->direct_zlib_output_buffer_bytes = output_buffer_.size();
+            telemetry_->direct_zlib_engine_process_cpu_us +=
+                elapsed_process_cpu_microseconds(init_process_cpu_started);
+        }
+    }
+
+    ~DirectZlibRawEntryWriter()
+    {
+        close_noexcept();
+    }
+
+    DirectZlibRawEntryWriter(const DirectZlibRawEntryWriter&) = delete;
+    DirectZlibRawEntryWriter& operator=(const DirectZlibRawEntryWriter&) = delete;
+
+    void write(std::string_view data)
+    {
+        if (telemetry_ != nullptr) {
+            telemetry_->input_bytes += static_cast<std::uint64_t>(data.size());
+        }
+        std::size_t offset = 0;
+        while (offset < data.size()) {
+            const std::size_t remaining = data.size() - offset;
+            const uInt chunk_size = static_cast<uInt>(std::min<std::size_t>(
+                remaining, std::numeric_limits<uInt>::max()));
+            const auto crc_started = telemetry_ != nullptr
+                ? std::chrono::steady_clock::now()
+                : std::chrono::steady_clock::time_point {};
+            crc32_ = ::crc32(crc32_, reinterpret_cast<const Bytef*>(data.data() + offset),
+                chunk_size);
+            if (telemetry_ != nullptr) {
+                telemetry_->direct_zlib_crc32_us += elapsed_microseconds(crc_started);
+            }
+
+            stream_.next_in = reinterpret_cast<Bytef*>(
+                const_cast<char*>(data.data() + offset));
+            stream_.avail_in = chunk_size;
+            while (stream_.avail_in > 0) {
+                const int result = deflate_once(Z_NO_FLUSH);
+                if (result != Z_OK) {
+                    throw_deflate_error("write", result);
+                }
+            }
+            offset += chunk_size;
+        }
+    }
+
+    [[nodiscard]] std::uint32_t finish()
+    {
+        while (true) {
+            const int result = deflate_once(Z_FINISH);
+            if (result == Z_STREAM_END) {
+                break;
+            }
+            if (result != Z_OK) {
+                throw_deflate_error("finish", result);
+            }
+        }
+        const std::uint64_t end_process_cpu_started = telemetry_ != nullptr
+            ? process_cpu_microseconds()
+            : 0;
+        const int result = deflateEnd(&stream_);
+        initialized_ = false;
+        if (telemetry_ != nullptr) {
+            telemetry_->direct_zlib_engine_process_cpu_us +=
+                elapsed_process_cpu_microseconds(end_process_cpu_started);
+        }
+        if (result != Z_OK) {
+            throw FastXlsxError("failed to close direct zlib raw DEFLATE stream (error "
+                + std::to_string(result) + ")");
+        }
+        return static_cast<std::uint32_t>(crc32_);
+    }
+
+private:
+    [[noreturn]] void throw_deflate_error(std::string_view operation, int result)
+    {
+        throw FastXlsxError("direct zlib raw DEFLATE failed to " + std::string(operation)
+            + " ZIP entry data (error " + std::to_string(result) + ")");
+    }
+
+    void close_noexcept() noexcept
+    {
+        if (initialized_) {
+            (void)deflateEnd(&stream_);
+            initialized_ = false;
+        }
+    }
+
+    void flush_output()
+    {
+        const std::size_t produced = output_buffer_.size() - stream_.avail_out;
+        if (produced == 0) {
+            return;
+        }
+        write_minizip_data(writer_,
+            std::string_view(reinterpret_cast<const char*>(output_buffer_.data()), produced),
+            telemetry_, "minizip-ng failed to write direct zlib raw DEFLATE data", false, false);
+        if (telemetry_ != nullptr) {
+            telemetry_->direct_zlib_output_bytes += produced;
+            telemetry_->direct_zlib_output_buffer_peak_bytes = std::max<std::uint64_t>(
+                telemetry_->direct_zlib_output_buffer_peak_bytes, produced);
+        }
+        stream_.next_out = output_buffer_.data();
+        stream_.avail_out = static_cast<uInt>(output_buffer_.size());
+    }
+
+    int deflate_once(int flush)
+    {
+        if (stream_.avail_out == 0) {
+            flush_output();
+        }
+        const auto started = telemetry_ != nullptr
+            ? std::chrono::steady_clock::now()
+            : std::chrono::steady_clock::time_point {};
+        const std::uint64_t process_cpu_started = telemetry_ != nullptr
+            ? process_cpu_microseconds()
+            : 0;
+        const int result = deflate(&stream_, flush);
+        if (telemetry_ != nullptr) {
+            const std::uint64_t elapsed_us = elapsed_microseconds(started);
+            ++telemetry_->direct_zlib_deflate_calls;
+            telemetry_->direct_zlib_deflate_us += elapsed_us;
+            telemetry_->direct_zlib_deflate_max_us = std::max(
+                telemetry_->direct_zlib_deflate_max_us, elapsed_us);
+            telemetry_->direct_zlib_engine_process_cpu_us +=
+                elapsed_process_cpu_microseconds(process_cpu_started);
+        }
+        if (stream_.avail_out == 0 || result == Z_STREAM_END) {
+            flush_output();
+        }
+        return result;
+    }
+
+    void* writer_ = nullptr;
+    std::vector<Bytef> output_buffer_;
+    PackageWriterEntryTelemetry* telemetry_ = nullptr;
+    z_stream stream_ {};
+    uLong crc32_ = 0;
+    bool initialized_ = false;
+};
+#endif
 
 void write_minizip_memory_chunk(void* writer, std::string_view data,
     PackageWriterEntryTelemetry* telemetry)
@@ -1200,6 +1399,80 @@ void diagnose_entry_crc32_mismatch(
     }
 }
 
+#ifdef FASTXLSX_HAS_DIRECT_ZLIB_PROFILING
+void write_minizip_direct_zlib_entry_chunks(void* writer,
+    const PackageEntry& entry, const EntryCrcValidationPlan& crc_plan,
+    std::vector<char>& file_buffer, std::size_t file_io_buffer_size,
+    std::size_t deflate_output_buffer_size, int compression_level,
+    PackageWriterEntryTelemetry* telemetry)
+{
+    DirectZlibRawEntryWriter direct_writer(
+        writer, compression_level, deflate_output_buffer_size, telemetry);
+    MinizipFileChunkReadCache file_cache;
+    for (std::size_t chunk_index = 0; chunk_index < entry.chunks.size(); ++chunk_index) {
+        const PackageEntryChunk& chunk = entry.chunks[chunk_index];
+        try {
+            switch (chunk.kind) {
+            case PackageEntryChunk::Kind::Memory:
+                direct_writer.write(chunk.data);
+                break;
+            case PackageEntryChunk::Kind::File:
+                if (file_buffer.empty()) {
+                    file_buffer.resize(file_io_buffer_size);
+                }
+                if (telemetry != nullptr) {
+                    telemetry->file_io_buffer_bytes = file_io_buffer_size;
+                }
+#ifdef _WIN32
+                if (should_prefetch_staged_file_chunk(chunk)) {
+                    consume_prefetched_minizip_file_chunk(
+                        chunk, file_buffer, file_io_buffer_size, telemetry,
+                        [&](std::string_view data) { direct_writer.write(data); });
+                    break;
+                }
+#endif
+                consume_minizip_file_chunk(file_cache, chunk, file_buffer, telemetry,
+                    [&](std::string_view data) { direct_writer.write(data); });
+                break;
+            default:
+                throw FastXlsxError("unsupported ZIP entry chunk kind");
+            }
+        } catch (const std::exception& error) {
+            wrap_zip_entry_chunk_error(entry.name, chunk, chunk_index, error);
+        }
+    }
+
+    const std::uint32_t actual_crc32 = direct_writer.finish();
+    if (actual_crc32 == crc_plan.expected_crc32) {
+        return;
+    }
+    diagnose_entry_crc32_mismatch(entry, file_buffer, file_io_buffer_size);
+    throw FastXlsxError("ZIP entry CRC32 changed after staging: expected "
+        + std::to_string(crc_plan.expected_crc32) + ", actual "
+        + std::to_string(actual_crc32));
+}
+#endif
+
+bool should_use_direct_zlib_raw(PackageWriterDeflateEngine engine,
+    int compression_level, const PackageEntry& entry,
+    const EntryCrcValidationPlan& crc_plan, std::uint64_t uncompressed_size) noexcept
+{
+#ifdef FASTXLSX_HAS_DIRECT_ZLIB_PROFILING
+    return engine == PackageWriterDeflateEngine::DirectZlibRaw
+        && compression_level != package_writer_min_compression_level
+        && !entry.raw_compressed_source.has_value()
+        && crc_plan.reuse_staged_crc32
+        && uncompressed_size >= direct_zlib_raw_min_bytes;
+#else
+    static_cast<void>(engine);
+    static_cast<void>(compression_level);
+    static_cast<void>(entry);
+    static_cast<void>(crc_plan);
+    static_cast<void>(uncompressed_size);
+    return false;
+#endif
+}
+
 void validate_written_entry_crc32(void* zip_handle, const PackageEntry& entry,
     const EntryCrcValidationPlan& plan, std::vector<char>& file_buffer,
     std::size_t file_io_buffer_size)
@@ -1223,8 +1496,12 @@ void validate_written_entry_crc32(void* zip_handle, const PackageEntry& entry,
 void write_minizip_package(
     const std::filesystem::path& path, const std::vector<PackageEntry>& entries,
     int compression_level, std::size_t file_io_buffer_size,
-    PackageWriterTelemetry* telemetry)
+    PackageWriterDeflateEngine deflate_engine,
+    std::size_t deflate_output_buffer_size, PackageWriterTelemetry* telemetry)
 {
+#ifndef FASTXLSX_HAS_DIRECT_ZLIB_PROFILING
+    static_cast<void>(deflate_output_buffer_size);
+#endif
     if (entries.empty()) {
         throw FastXlsxError("cannot write an empty ZIP package");
     }
@@ -1303,12 +1580,17 @@ void write_minizip_package(
                 : MZ_COMPRESS_METHOD_DEFLATE;
             file_info.modified_date = 0;
             const std::uint64_t uncompressed_size = entry_uncompressed_size(entry, stat_cache);
+            const bool direct_zlib_raw = should_use_direct_zlib_raw(deflate_engine,
+                compression_level, entry, crc_plan, uncompressed_size);
             file_info.uncompressed_size = static_cast<std::int64_t>(uncompressed_size);
             if (active_entry_telemetry != nullptr) {
                 active_entry_telemetry->uncompressed_bytes = uncompressed_size;
             }
             if (entry.raw_compressed_source.has_value()) {
                 file_info.crc = entry.raw_compressed_source->crc32;
+                mz_zip_writer_set_raw(writer.get(), 1);
+            } else if (direct_zlib_raw) {
+                file_info.crc = crc_plan.expected_crc32;
                 mz_zip_writer_set_raw(writer.get(), 1);
             } else {
                 mz_zip_writer_set_raw(writer.get(), 0);
@@ -1327,6 +1609,15 @@ void write_minizip_package(
                 write_minizip_raw_compressed_entry(writer.get(),
                     *entry.raw_compressed_source, raw_file_cache, file_buffer,
                     file_io_buffer_size, active_entry_telemetry);
+            } else if (direct_zlib_raw) {
+#ifdef FASTXLSX_HAS_DIRECT_ZLIB_PROFILING
+                write_minizip_direct_zlib_entry_chunks(writer.get(), entry, crc_plan,
+                    file_buffer, file_io_buffer_size, deflate_output_buffer_size,
+                    minizip_compression_level, active_entry_telemetry);
+#else
+                throw FastXlsxError(
+                    "direct zlib DEFLATE profiling engine is not enabled in this build");
+#endif
             } else {
                 write_minizip_entry_chunks(
                     writer.get(), entry, file_buffer, file_io_buffer_size,
@@ -1344,7 +1635,7 @@ void write_minizip_package(
                 active_entry_telemetry->close_process_cpu_us =
                     elapsed_process_cpu_microseconds(entry_close_process_cpu_started);
             }
-            if (crc_plan.reuse_staged_crc32) {
+            if (crc_plan.reuse_staged_crc32 && !direct_zlib_raw) {
                 const auto crc_validation_started = active_entry_telemetry != nullptr
                     ? std::chrono::steady_clock::now()
                     : std::chrono::steady_clock::time_point {};
@@ -1356,7 +1647,11 @@ void write_minizip_package(
                 }
             }
             if (active_entry_telemetry != nullptr) {
-                if (!active_entry_telemetry->raw_compressed_copy
+                if (active_entry_telemetry->direct_zlib_raw) {
+                    active_entry_telemetry->deflate_writer_process_cpu_us =
+                        active_entry_telemetry->direct_zlib_engine_process_cpu_us
+                        + active_entry_telemetry->close_process_cpu_us;
+                } else if (!active_entry_telemetry->raw_compressed_copy
                     && compression_level != package_writer_min_compression_level) {
                     active_entry_telemetry->deflate_writer_process_cpu_us =
                         active_entry_telemetry->writer_write_process_cpu_us
@@ -1442,7 +1737,8 @@ void write_package(const std::filesystem::path& path, const std::vector<PackageE
 #ifdef FASTXLSX_HAS_MINIZIP_NG
         write_minizip_package(
             path, entries, options.compression_level,
-            options.file_io_buffer_size, options.telemetry);
+            options.file_io_buffer_size, options.deflate_engine,
+            options.deflate_output_buffer_size, options.telemetry);
         if (options.telemetry != nullptr) {
             options.telemetry->total_us = elapsed_microseconds(total_started);
             options.telemetry->total_process_cpu_us =

@@ -18,6 +18,8 @@
         "FASTXLSX_BUILD_TESTS": "ON",
         "FASTXLSX_BUILD_EXAMPLES": "OFF",
         "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING": "OFF",
+        "FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING": "OFF",
         "FASTXLSX_ENABLE_IMAGES": "ON"
       }
     },
@@ -47,6 +49,8 @@
         "FASTXLSX_BUILD_TESTS": "ON",
         "FASTXLSX_BUILD_EXAMPLES": "OFF",
         "FASTXLSX_ENABLE_MINIZIP_NG": "OFF",
+        "FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING": "OFF",
+        "FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING": "OFF",
         "FASTXLSX_ENABLE_IMAGES": "ON",
         "VCPKG_MANIFEST_NO_DEFAULT_FEATURES": "ON",
         "VCPKG_MANIFEST_FEATURES": "images"
@@ -65,6 +69,8 @@
         "FASTXLSX_BUILD_EXAMPLES": "ON",
         "FASTXLSX_BUILD_FEATURE_SMOKES": "ON",
         "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING": "OFF",
+        "FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING": "OFF",
         "FASTXLSX_ENABLE_IMAGES": "OFF",
         "VCPKG_MANIFEST_NO_DEFAULT_FEATURES": "ON",
         "VCPKG_MANIFEST_FEATURES": "runtime-minizip"
@@ -83,6 +89,8 @@
         "FASTXLSX_BUILD_EXAMPLES": "OFF",
         "FASTXLSX_BUILD_BENCHMARKS": "ON",
         "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING": "ON",
+        "FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING": "OFF",
         "FASTXLSX_ENABLE_IMAGES": "ON"
       }
     },
@@ -107,8 +115,56 @@
         "FASTXLSX_BUILD_BENCHMARKS": "ON",
         "FASTXLSX_BUILD_REFERENCE_BENCHMARKS": "ON",
         "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING": "ON",
+        "FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING": "OFF",
         "FASTXLSX_ENABLE_IMAGES": "ON",
         "VCPKG_MANIFEST_FEATURES": "reference-benchmarks"
+      }
+    },
+    {
+      "name": "windows-nmake-release-direct-zlib-profile",
+      "displayName": "Windows NMake Release Direct-zlib Profiling",
+      "description": "Opt-in internal direct-zlib profiling engine with focused tests and manual benchmarks.",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-nmake-zlib-profile",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FASTXLSX_BUILD_TESTS": "ON",
+        "FASTXLSX_BUILD_EXAMPLES": "OFF",
+        "FASTXLSX_BUILD_BENCHMARKS": "ON",
+        "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING": "ON",
+        "FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING": "OFF",
+        "FASTXLSX_ENABLE_IMAGES": "ON"
+      }
+    },
+    {
+      "name": "windows-nmake-release-patch-crc-minizip-profile",
+      "displayName": "Windows NMake Release Patch CRC Minizip Profile",
+      "description": "Internal Patch benchmark profile using minizip-ng CRC32 without direct-zlib profiling code.",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-nmake-crc-minizip-profile",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FASTXLSX_BUILD_TESTS": "OFF",
+        "FASTXLSX_BUILD_EXAMPLES": "OFF",
+        "FASTXLSX_BUILD_BENCHMARKS": "ON",
+        "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING": "OFF",
+        "FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING": "OFF",
+        "FASTXLSX_ENABLE_IMAGES": "ON"
+      }
+    },
+    {
+      "name": "windows-nmake-release-patch-crc-portable-profile",
+      "displayName": "Windows NMake Release Patch CRC Portable Profile",
+      "description": "Internal Patch A/B benchmark profile forcing the portable CRC32 fallback with the same minizip-ng package backend.",
+      "inherits": "windows-nmake-release-patch-crc-minizip-profile",
+      "binaryDir": "${sourceDir}/build/windows-nmake-crc-portable-profile",
+      "cacheVariables": {
+        "FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING": "ON"
       }
     }
   ],
@@ -120,7 +176,10 @@
     { "name": "windows-nmake-release-no-images", "configurePreset": "windows-nmake-release-no-images" },
     { "name": "windows-nmake-release-benchmark", "configurePreset": "windows-nmake-release-benchmark" },
     { "name": "windows-nmake-release-benchmark-minizip", "configurePreset": "windows-nmake-release-benchmark-minizip" },
-    { "name": "windows-nmake-release-reference-benchmark", "configurePreset": "windows-nmake-release-reference-benchmark" }
+    { "name": "windows-nmake-release-reference-benchmark", "configurePreset": "windows-nmake-release-reference-benchmark" },
+    { "name": "windows-nmake-release-direct-zlib-profile", "configurePreset": "windows-nmake-release-direct-zlib-profile" },
+    { "name": "windows-nmake-release-patch-crc-minizip-profile", "configurePreset": "windows-nmake-release-patch-crc-minizip-profile" },
+    { "name": "windows-nmake-release-patch-crc-portable-profile", "configurePreset": "windows-nmake-release-patch-crc-portable-profile" }
   ],
   "testPresets": [
     {
@@ -144,6 +203,12 @@
     {
       "name": "windows-nmake-release-stored",
       "configurePreset": "windows-nmake-release-stored",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "timeout": 60 }
+    },
+    {
+      "name": "windows-nmake-release-direct-zlib-profile",
+      "configurePreset": "windows-nmake-release-direct-zlib-profile",
       "output": { "outputOnFailure": true },
       "execution": { "noTestsAction": "error", "timeout": 60 }
     }

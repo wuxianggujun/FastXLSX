@@ -28,4 +28,4 @@ Existing-file large worksheet rewrite 属于 C5，不应通过 `WorksheetEditor`
 
 ## 验证
 
-Focused streaming tests、ZIP/XML、Office/openpyxl，性能相关时使用 schema-v5 benchmark，检查 generation/package-close、body buffer peak/flush count、process peak working set 和 close 后 active temporary file count。
+Focused streaming tests、ZIP/XML、Office/openpyxl，性能相关时使用 schema-v6 executable/schema-v3 matrix，检查 generation/package-close/total wall 与 process CPU、CPU 总账、body buffer peak/flush count、process peak working set 和 close 后 active temporary file count。

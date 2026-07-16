@@ -1390,6 +1390,92 @@ void test_package_editor_repeated_single_pass_transform_reclaims_superseded_temp
 }
 
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+void test_package_editor_fused_single_pass_crc_rejects_mutation_and_retries()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-fused-crc-mutation-source.xlsx");
+    const std::filesystem::path output = output_path(
+        "fastxlsx-package-editor-fused-crc-mutation-output.xlsx");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string output_sentinel =
+        "do not overwrite fused single-pass CRC failure output";
+    const std::string inserted_cell = R"(<c r="C3"><v>33</v></c>)";
+    write_binary_file(output, output_sentinel);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::array replacements {
+        worksheet_cell_replacement("C3", inserted_cell),
+    };
+    editor.replace_or_insert_worksheet_cells(worksheet_part, replacements);
+
+    const fastxlsx::detail::PackageEditorOutputPlan staged_plan =
+        editor.planned_output();
+    const auto* worksheet_plan =
+        find_output_entry_plan(staged_plan.entries, worksheet_part.zip_path());
+    check(worksheet_plan != nullptr && worksheet_plan->single_pass_fused_crc32,
+        "single-pass upsert should publish fused CRC telemetry");
+    check(worksheet_plan != nullptr
+            && worksheet_plan->single_pass_crc32_segment_count >= 2,
+        "single-pass upsert should stage multiple CRC-addressable segments");
+
+    const auto owned_files = editor.testing_owned_temporary_files();
+    check(owned_files.size() == 1,
+        "fused single-pass upsert should own one temporary worksheet file");
+    if (owned_files.size() != 1) {
+        return;
+    }
+    const std::filesystem::path staged_path = owned_files.front();
+    const std::string original_staged_bytes = fastxlsx::test::read_file(staged_path);
+    check(!original_staged_bytes.empty(),
+        "fused single-pass temporary worksheet should not be empty");
+    write_binary_file(
+        staged_path, same_size_different_payload(original_staged_bytes));
+
+    fastxlsx::detail::PackageWriterOptions save_options;
+    save_options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    save_options.compression_level = 1;
+
+    bool save_failed = false;
+    try {
+        editor.save_as(output, save_options);
+    } catch (const std::exception& error) {
+        save_failed = true;
+        check_contains(error.what(),
+            "ZIP entry chunk CRC32 changed after staging",
+            "fused single-pass mutation should be diagnosed at the staged chunk");
+        check_contains(error.what(), worksheet_part.zip_path(),
+            "fused single-pass mutation should identify the worksheet entry");
+        check_contains(error.what(), staged_path.filename().generic_string(),
+            "fused single-pass mutation should identify the staged worksheet file");
+    }
+
+    check(save_failed,
+        "fused single-pass CRC should reject same-size staged worksheet mutation");
+    check(fastxlsx::test::read_file(output) == output_sentinel,
+        "fused single-pass CRC failure should preserve existing output bytes");
+    check(std::filesystem::exists(staged_path),
+        "fused single-pass CRC failure should retain staged state for retry");
+    const fastxlsx::detail::PackageEditorOutputPlan failed_plan =
+        editor.planned_output();
+    const auto* failed_worksheet_plan =
+        find_output_entry_plan(failed_plan.entries, worksheet_part.zip_path());
+    check(failed_worksheet_plan != nullptr
+            && failed_worksheet_plan->single_pass_fused_crc32,
+        "fused single-pass CRC failure should preserve output-plan telemetry");
+
+    write_binary_file(staged_path, original_staged_bytes);
+    editor.save_as(output, save_options);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string output_worksheet =
+        output_reader.read_entry(worksheet_part.zip_path());
+    check_contains(output_worksheet, inserted_cell,
+        "fused single-pass CRC retry should save the staged insertion");
+    check_contains(output_worksheet, R"(<dimension ref="A1:C3"/>)",
+        "fused single-pass CRC retry should save the staged dimension");
+}
+
 void test_package_editor_deflated_indexed_cell_commit_failure_cleans_temp_and_retries()
 {
     const SourcePackage source = write_source_package(
@@ -1573,6 +1659,7 @@ int main(int argc, char* argv[])
             test_package_editor_indexed_cell_commit_failure_preserves_telemetry_and_retries();
             test_package_editor_repeated_single_pass_transform_reclaims_superseded_temp_file();
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+            test_package_editor_fused_single_pass_crc_rejects_mutation_and_retries();
             test_package_editor_deflated_indexed_cell_commit_failure_cleans_temp_and_retries();
 #endif
             test_package_editor_replaces_worksheet_by_name_from_chunk_source();

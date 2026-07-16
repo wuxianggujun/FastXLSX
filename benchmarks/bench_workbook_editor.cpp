@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -35,7 +36,15 @@ namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
-constexpr std::string_view kEditorBenchmarkSchemaVersion = "15";
+constexpr std::string_view kEditorBenchmarkSchemaVersion = "20";
+constexpr std::string_view kProcessCpuScope =
+    "WorkbookEditor open/materialize/mutation/save phase sum; excludes source fixture, "
+    "output-plan telemetry collection, result JSON, and compatibility QA";
+#ifdef FASTXLSX_BENCH_PACKAGE_EDITOR_CRC_MINIZIP_NG
+constexpr std::string_view kPackageEditorCrc32Backend = "minizip-ng";
+#else
+constexpr std::string_view kPackageEditorCrc32Backend = "portable";
+#endif
 
 std::filesystem::path default_output_dir()
 {
@@ -50,6 +59,7 @@ struct Options {
     std::uint32_t rows = 10000;
     std::uint32_t cols = 10;
     std::uint32_t edits = 1000;
+    std::uint32_t worksheets = 1;
     std::string scenario = "batch-set";
     std::string source_pattern = "numeric";
     int source_compression_level = fastxlsx::min_zip_compression_level;
@@ -69,6 +79,11 @@ struct Timings {
     std::uint64_t save_ms = 0;
     std::uint64_t total_editor_ms = 0;
     std::uint64_t total_ms = 0;
+    std::uint64_t open_process_cpu_us = 0;
+    std::uint64_t materialize_process_cpu_us = 0;
+    std::uint64_t mutation_process_cpu_us = 0;
+    std::uint64_t save_process_cpu_us = 0;
+    std::uint64_t total_editor_process_cpu_us = 0;
 };
 
 struct RunStats {
@@ -95,6 +110,7 @@ struct RunStats {
     std::vector<std::string> rewritten_entry_names;
     std::vector<std::string> omitted_entry_names;
     bool single_pass_worksheet_transform = false;
+    std::uint64_t single_pass_worksheet_transform_count = 0;
     std::uint64_t single_pass_scanned_source_cell_count = 0;
     std::uint64_t single_pass_matched_replacement_count = 0;
     std::uint64_t single_pass_inserted_cell_count = 0;
@@ -132,11 +148,28 @@ struct RunStats {
     std::uint64_t single_pass_relationship_scan_boundary_carry_count = 0;
     std::uint64_t single_pass_relationship_scan_slow_path_tag_count = 0;
     std::uint64_t single_pass_temporary_write_us = 0;
+    bool single_pass_fused_crc32 = false;
+    std::uint64_t single_pass_crc32_us = 0;
+    std::uint64_t single_pass_crc32_segment_count = 0;
     std::uint64_t single_pass_commit_ms = 0;
     std::uint64_t package_writer_total_us = 0;
     std::uint64_t package_writer_total_process_cpu_us = 0;
     std::uint64_t package_writer_open_us = 0;
     std::uint64_t package_writer_close_us = 0;
+    std::uint64_t rewritten_worksheet_entry_count = 0;
+    std::uint64_t rewritten_worksheet_entry_input_bytes = 0;
+    std::uint64_t rewritten_worksheet_entry_total_us = 0;
+    std::uint64_t rewritten_worksheet_entry_total_process_cpu_us = 0;
+    std::uint64_t rewritten_worksheet_entry_input_read_us = 0;
+    std::uint64_t rewritten_worksheet_entry_input_read_wait_us = 0;
+    std::uint64_t rewritten_worksheet_entry_writer_write_us = 0;
+    std::uint64_t rewritten_worksheet_entry_writer_write_process_cpu_us = 0;
+    std::uint64_t rewritten_worksheet_entry_writer_write_max_us = 0;
+    std::uint64_t rewritten_worksheet_entry_close_us = 0;
+    std::uint64_t rewritten_worksheet_entry_close_process_cpu_us = 0;
+    std::uint64_t rewritten_worksheet_entry_deflate_writer_process_cpu_us = 0;
+    std::vector<fastxlsx::detail::PackageWriterEntryTelemetry>
+        rewritten_worksheet_entries;
     bool target_worksheet_entry_telemetry = false;
     bool target_worksheet_entry_raw_compressed_copy = false;
     bool target_worksheet_entry_reused_staged_crc32 = false;
@@ -242,6 +275,15 @@ std::uint64_t checked_cell_count(const Options& options)
     return rows * cols;
 }
 
+std::uint64_t checked_source_cell_count(const Options& options)
+{
+    const std::uint64_t cells_per_worksheet = checked_cell_count(options);
+    if (cells_per_worksheet > std::numeric_limits<std::uint64_t>::max() / options.worksheets) {
+        fail("--rows * --cols * --worksheets overflows source cell count");
+    }
+    return cells_per_worksheet * options.worksheets;
+}
+
 bool is_in_memory_scenario(std::string_view scenario)
 {
     return scenario == "point-set" || scenario == "batch-set"
@@ -293,6 +335,9 @@ void validate_options(const Options& options)
     if (options.cols > kExcelColumnLimit) {
         fail("--cols exceeds Excel's column limit");
     }
+    if (options.worksheets > 1U && !is_patch_scenario(options.scenario)) {
+        fail("--worksheets greater than one is supported only for Patch scenarios");
+    }
     if (options.source_pattern != "numeric"
         && options.source_pattern != "mixed-inline"
         && options.source_pattern != "mixed-shared"
@@ -300,6 +345,7 @@ void validate_options(const Options& options)
         fail("--source-pattern must be numeric, mixed-inline, mixed-shared, or formula");
     }
     const std::uint64_t cells = checked_cell_count(options);
+    (void)checked_source_cell_count(options);
     if (options.scenario == "noop-copy" && options.edits != 0) {
         fail("noop-copy requires --edits 0");
     }
@@ -344,6 +390,8 @@ Options parse_args(int argc, char** argv)
             options.cols = parse_u32(next_value(), "--cols");
         } else if (arg == "--edits") {
             options.edits = parse_nonnegative_u32(next_value(), "--edits");
+        } else if (arg == "--worksheets") {
+            options.worksheets = parse_u32(next_value(), "--worksheets");
         } else if (arg == "--scenario") {
             options.scenario = std::string(next_value());
         } else if (arg == "--source-pattern") {
@@ -367,7 +415,7 @@ Options parse_args(int argc, char** argv)
                 << "Usage: fastxlsx_bench_workbook_editor "
                 << "--scenario point-set|batch-set|a1-range-clear|a1-range-erase|"
                    "noop-copy|document-properties|patch-replace|patch-upsert "
-                << "--rows N --cols N --edits N "
+                << "--rows N --cols N --edits N [--worksheets N] "
                 << "[--source-pattern numeric|mixed-inline|mixed-shared|formula] "
                    "[--source-external-hyperlink] "
                 << "--source source.xlsx --output edited.xlsx --result result.json "
@@ -376,7 +424,8 @@ Options parse_args(int argc, char** argv)
                 << "The tool generates or reuses a source workbook, opens it through "
                 << "WorkbookEditor, then either materializes the Data sheet for "
                 << "in-memory scenarios or uses copy-original, document-properties, "
-                << "or targeted Patch replace/upsert, and saves a new workbook.\n";
+                << "or targeted Patch replace/upsert, and saves a new workbook. "
+                << "For Patch scenarios, --edits applies to every worksheet.\n";
             std::exit(0);
         } else {
             fail(std::string("unknown argument: ") + std::string(arg));
@@ -411,6 +460,41 @@ std::uint64_t peak_memory_bytes()
     }
 #endif
     return 0;
+}
+
+std::uint64_t process_cpu_microseconds() noexcept
+{
+#ifdef _WIN32
+    FILETIME created {};
+    FILETIME exited {};
+    FILETIME kernel {};
+    FILETIME user {};
+    if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user) == 0) {
+        return 0;
+    }
+
+    ULARGE_INTEGER kernel_ticks {};
+    kernel_ticks.LowPart = kernel.dwLowDateTime;
+    kernel_ticks.HighPart = kernel.dwHighDateTime;
+    ULARGE_INTEGER user_ticks {};
+    user_ticks.LowPart = user.dwLowDateTime;
+    user_ticks.HighPart = user.dwHighDateTime;
+    return (kernel_ticks.QuadPart + user_ticks.QuadPart) / 10U;
+#else
+    const std::clock_t value = std::clock();
+    if (value == static_cast<std::clock_t>(-1)) {
+        return 0;
+    }
+    return static_cast<std::uint64_t>(
+        static_cast<long double>(value) * 1'000'000.0L
+        / static_cast<long double>(CLOCKS_PER_SEC));
+#endif
+}
+
+std::uint64_t process_cpu_delta(
+    std::uint64_t started, std::uint64_t finished) noexcept
+{
+    return finished >= started ? finished - started : 0;
 }
 
 std::uint64_t existing_file_size(const std::filesystem::path& path, std::string_view purpose)
@@ -469,6 +553,66 @@ void write_json_string_array(std::ostream& out,
     out << "]" << (trailing_comma ? "," : "") << "\n";
 }
 
+void write_rewritten_worksheet_entry_array(std::ostream& out,
+    const std::vector<fastxlsx::detail::PackageWriterEntryTelemetry>& entries,
+    bool trailing_comma)
+{
+    out << "  \"rewritten_worksheet_entries\": [";
+    if (!entries.empty()) {
+        out << "\n";
+    }
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+        const fastxlsx::detail::PackageWriterEntryTelemetry& entry = entries[index];
+        out << "    {\n";
+        out << "      \"entry_name\": \"" << json_escape(entry.entry_name) << "\",\n";
+        out << "      \"raw_compressed_copy\": "
+            << (entry.raw_compressed_copy ? "true" : "false") << ",\n";
+        out << "      \"reused_staged_crc32\": "
+            << (entry.reused_staged_crc32 ? "true" : "false") << ",\n";
+        out << "      \"staged_file_read_prefetch\": "
+            << (entry.staged_file_read_prefetch ? "true" : "false") << ",\n";
+        out << "      \"requested_compression_level\": "
+            << entry.requested_compression_level << ",\n";
+        out << "      \"uncompressed_bytes\": " << entry.uncompressed_bytes << ",\n";
+        out << "      \"input_bytes\": " << entry.input_bytes << ",\n";
+        out << "      \"input_read_calls\": " << entry.input_read_calls << ",\n";
+        out << "      \"writer_write_calls\": " << entry.writer_write_calls << ",\n";
+        out << "      \"file_io_buffer_bytes\": "
+            << entry.file_io_buffer_bytes << ",\n";
+        out << "      \"writer_write_input_peak_bytes\": "
+            << entry.writer_write_input_peak_bytes << ",\n";
+        out << "      \"writer_write_max_us\": " << entry.writer_write_max_us << ",\n";
+        out << "      \"reused_staged_file_chunk_count\": "
+            << entry.reused_staged_file_chunk_count << ",\n";
+        out << "      \"prefetched_staged_file_chunk_count\": "
+            << entry.prefetched_staged_file_chunk_count << ",\n";
+        out << "      \"prefetched_staged_input_bytes\": "
+            << entry.prefetched_staged_input_bytes << ",\n";
+        out << "      \"prefetch_peak_buffer_bytes\": "
+            << entry.prefetch_peak_buffer_bytes << ",\n";
+        out << "      \"total_us\": " << entry.total_us << ",\n";
+        out << "      \"total_process_cpu_us\": " << entry.total_process_cpu_us << ",\n";
+        out << "      \"open_us\": " << entry.open_us << ",\n";
+        out << "      \"input_read_us\": " << entry.input_read_us << ",\n";
+        out << "      \"input_read_wait_us\": " << entry.input_read_wait_us << ",\n";
+        out << "      \"writer_write_us\": " << entry.writer_write_us << ",\n";
+        out << "      \"writer_write_process_cpu_us\": "
+            << entry.writer_write_process_cpu_us << ",\n";
+        out << "      \"staged_crc_validation_us\": "
+            << entry.staged_crc_validation_us << ",\n";
+        out << "      \"close_us\": " << entry.close_us << ",\n";
+        out << "      \"close_process_cpu_us\": "
+            << entry.close_process_cpu_us << ",\n";
+        out << "      \"deflate_writer_process_cpu_us\": "
+            << entry.deflate_writer_process_cpu_us << "\n";
+        out << "    }" << (index + 1U == entries.size() ? "" : ",") << "\n";
+    }
+    if (!entries.empty()) {
+        out << "  ";
+    }
+    out << "]" << (trailing_comma ? "," : "") << "\n";
+}
+
 double make_source_number(std::uint32_t row, std::uint32_t col)
 {
     return static_cast<double>(row) * 1000.0 + static_cast<double>(col);
@@ -506,6 +650,13 @@ std::string cell_reference(std::uint32_t row, std::uint32_t column)
     return column_name(column) + std::to_string(row);
 }
 
+std::string worksheet_name(std::uint32_t worksheet_index)
+{
+    return worksheet_index == 0U
+        ? "Data"
+        : "Data" + std::to_string(worksheet_index + 1U);
+}
+
 std::string a1_range_for_touched_coordinates(const Options& options)
 {
     const std::uint32_t touched_rows =
@@ -531,33 +682,36 @@ void write_source_workbook(const Options& options)
     }
 
     auto workbook = fastxlsx::WorkbookWriter::create(options.source, writer_options);
-    auto sheet = workbook.add_worksheet("Data");
     std::vector<fastxlsx::CellView> cells;
     cells.reserve(options.cols);
     std::vector<std::string> text_storage;
     text_storage.reserve(options.cols);
 
-    for (std::uint32_t row = 1; row <= options.rows; ++row) {
-        cells.clear();
-        text_storage.clear();
-        for (std::uint32_t col = 1; col <= options.cols; ++col) {
-            if ((options.source_pattern == "mixed-inline"
-                    || options.source_pattern == "mixed-shared")
-                && (row + col) % 3U == 0) {
-                text_storage.push_back("group-" + std::to_string((row + col) % 32U));
-                cells.push_back(fastxlsx::CellView::text(text_storage.back()));
-            } else if (options.source_pattern == "formula" && col % 4U == 0) {
-                text_storage.push_back(cell_reference(row, col - 1U) + "*2");
-                cells.push_back(fastxlsx::CellView::formula(text_storage.back()));
-            } else {
-                cells.push_back(fastxlsx::CellView::number(make_source_number(row, col)));
+    for (std::uint32_t worksheet_index = 0;
+        worksheet_index < options.worksheets; ++worksheet_index) {
+        auto sheet = workbook.add_worksheet(worksheet_name(worksheet_index));
+        for (std::uint32_t row = 1; row <= options.rows; ++row) {
+            cells.clear();
+            text_storage.clear();
+            for (std::uint32_t col = 1; col <= options.cols; ++col) {
+                if ((options.source_pattern == "mixed-inline"
+                        || options.source_pattern == "mixed-shared")
+                    && (row + col) % 3U == 0) {
+                    text_storage.push_back("group-" + std::to_string((row + col) % 32U));
+                    cells.push_back(fastxlsx::CellView::text(text_storage.back()));
+                } else if (options.source_pattern == "formula" && col % 4U == 0) {
+                    text_storage.push_back(cell_reference(row, col - 1U) + "*2");
+                    cells.push_back(fastxlsx::CellView::formula(text_storage.back()));
+                } else {
+                    cells.push_back(fastxlsx::CellView::number(make_source_number(row, col)));
+                }
             }
+            sheet.append_row(cells);
         }
-        sheet.append_row(cells);
-    }
-    if (options.source_external_hyperlink) {
-        sheet.add_external_hyperlink(
-            1, 1, "https://example.com/fastxlsx-benchmark");
+        if (options.source_external_hyperlink && worksheet_index == 0U) {
+            sheet.add_external_hyperlink(
+                1, 1, "https://example.com/fastxlsx-benchmark");
+        }
     }
     workbook.close();
 }
@@ -621,8 +775,11 @@ void run_patch_replace(
 {
     std::vector<fastxlsx::WorksheetCellUpdate> updates =
         make_existing_cell_updates(options, options.edits);
-    editor.replace_cells("Data", updates);
-    touched = updates.size();
+    for (std::uint32_t worksheet_index = 0;
+        worksheet_index < options.worksheets; ++worksheet_index) {
+        editor.replace_cells(worksheet_name(worksheet_index), updates);
+        touched += updates.size();
+    }
 }
 
 void run_patch_upsert(fastxlsx::WorkbookEditor& editor,
@@ -641,9 +798,13 @@ void run_patch_upsert(fastxlsx::WorkbookEditor& editor,
             fastxlsx::CellValue::number(make_edit_number(existing_count + index)),
         });
     }
-    editor.replace_cells("Data", updates, fastxlsx::CellPatchMissingCellPolicy::Insert);
-    touched = updates.size();
-    inserted = inserted_count;
+    for (std::uint32_t worksheet_index = 0;
+        worksheet_index < options.worksheets; ++worksheet_index) {
+        editor.replace_cells(worksheet_name(worksheet_index), updates,
+            fastxlsx::CellPatchMissingCellPolicy::Insert);
+        touched += updates.size();
+        inserted += inserted_count;
+    }
 }
 
 void run_document_properties(fastxlsx::WorkbookEditor& editor)
@@ -683,84 +844,96 @@ void observe_output_plan(
     for (const fastxlsx::detail::PackageEditorOutputEntryPlan& entry : plan.entries) {
         if (entry.single_pass_worksheet_transform) {
             stats.single_pass_worksheet_transform = true;
-            stats.single_pass_scanned_source_cell_count =
+            const bool first_single_pass_entry =
+                stats.single_pass_worksheet_transform_count == 0;
+            ++stats.single_pass_worksheet_transform_count;
+            stats.single_pass_scanned_source_cell_count +=
                 entry.single_pass_scanned_source_cell_count;
-            stats.single_pass_matched_replacement_count =
+            stats.single_pass_matched_replacement_count +=
                 entry.single_pass_matched_replacement_count;
-            stats.single_pass_inserted_cell_count =
+            stats.single_pass_inserted_cell_count +=
                 entry.single_pass_inserted_cell_count;
-            stats.single_pass_staged_output_bytes =
+            stats.single_pass_staged_output_bytes +=
                 entry.single_pass_staged_output_bytes;
-            stats.single_pass_transform_ms = entry.single_pass_transform_ms;
-            stats.single_pass_transform_us = entry.single_pass_transform_us;
-            stats.single_pass_source_parsed_event_count =
+            stats.single_pass_transform_ms += entry.single_pass_transform_ms;
+            stats.single_pass_transform_us += entry.single_pass_transform_us;
+            stats.single_pass_source_parsed_event_count +=
                 entry.single_pass_source_parsed_event_count;
-            stats.single_pass_source_callback_event_count =
+            stats.single_pass_source_callback_event_count +=
                 entry.single_pass_source_callback_event_count;
-            stats.single_pass_source_coalesced_input_event_count =
+            stats.single_pass_source_coalesced_input_event_count +=
                 entry.single_pass_source_coalesced_input_event_count;
-            stats.single_pass_source_coalesced_output_event_count =
+            stats.single_pass_source_coalesced_output_event_count +=
                 entry.single_pass_source_coalesced_output_event_count;
-            stats.single_pass_source_simple_inline_string_fast_path_count =
+            stats.single_pass_source_simple_inline_string_fast_path_count +=
                 entry.single_pass_source_simple_inline_string_fast_path_count;
-            stats.single_pass_source_simple_inline_string_fast_path_bytes =
+            stats.single_pass_source_simple_inline_string_fast_path_bytes +=
                 entry.single_pass_source_simple_inline_string_fast_path_bytes;
-            stats.single_pass_source_canonical_inline_string_fast_path_count =
+            stats.single_pass_source_canonical_inline_string_fast_path_count +=
                 entry.single_pass_source_canonical_inline_string_fast_path_count;
-            stats.single_pass_source_canonical_inline_string_fast_path_bytes =
+            stats.single_pass_source_canonical_inline_string_fast_path_bytes +=
                 entry.single_pass_source_canonical_inline_string_fast_path_bytes;
-            stats.single_pass_source_simple_inline_string_fallback_count =
+            stats.single_pass_source_simple_inline_string_fallback_count +=
                 entry.single_pass_source_simple_inline_string_fallback_count;
-            stats.single_pass_source_canonical_complete_cell_fast_path_count =
+            stats.single_pass_source_canonical_complete_cell_fast_path_count +=
                 entry.single_pass_source_canonical_complete_cell_fast_path_count;
-            stats.single_pass_source_canonical_complete_cell_fast_path_bytes =
+            stats.single_pass_source_canonical_complete_cell_fast_path_bytes +=
                 entry.single_pass_source_canonical_complete_cell_fast_path_bytes;
-            stats.single_pass_source_canonical_complete_cell_formula_count =
+            stats.single_pass_source_canonical_complete_cell_formula_count +=
                 entry.single_pass_source_canonical_complete_cell_formula_count;
-            stats.single_pass_source_canonical_complete_cell_inline_string_count =
+            stats.single_pass_source_canonical_complete_cell_inline_string_count +=
                 entry.single_pass_source_canonical_complete_cell_inline_string_count;
-            stats.single_pass_source_complete_cell_coalesced_count =
+            stats.single_pass_source_complete_cell_coalesced_count +=
                 entry.single_pass_source_complete_cell_coalesced_count;
-            stats.single_pass_source_complete_cell_coalesced_bytes =
+            stats.single_pass_source_complete_cell_coalesced_bytes +=
                 entry.single_pass_source_complete_cell_coalesced_bytes;
-            stats.single_pass_source_complete_cell_fallback_count =
+            stats.single_pass_source_complete_cell_fallback_count +=
                 entry.single_pass_source_complete_cell_fallback_count;
-            stats.single_pass_transform_action_callback_count =
+            stats.single_pass_transform_action_callback_count +=
                 entry.single_pass_transform_action_callback_count;
-            stats.single_pass_transform_pass_through_batch_count =
+            stats.single_pass_transform_pass_through_batch_count +=
                 entry.single_pass_transform_pass_through_batch_count;
-            stats.single_pass_transform_pass_through_batched_cell_count =
+            stats.single_pass_transform_pass_through_batched_cell_count +=
                 entry.single_pass_transform_pass_through_batched_cell_count;
-            stats.single_pass_transform_pass_through_batched_bytes =
+            stats.single_pass_transform_pass_through_batched_bytes +=
                 entry.single_pass_transform_pass_through_batched_bytes;
             stats.single_pass_transform_pass_through_batch_peak_cell_count =
-                entry.single_pass_transform_pass_through_batch_peak_cell_count;
-            stats.single_pass_output_append_call_count =
+                std::max(stats.single_pass_transform_pass_through_batch_peak_cell_count,
+                    entry.single_pass_transform_pass_through_batch_peak_cell_count);
+            stats.single_pass_output_append_call_count +=
                 entry.single_pass_output_append_call_count;
-            stats.single_pass_output_flush_count =
+            stats.single_pass_output_flush_count +=
                 entry.single_pass_output_flush_count;
             stats.single_pass_output_peak_buffer_bytes =
-                entry.single_pass_output_peak_buffer_bytes;
-            stats.single_pass_relationship_scan_us =
+                std::max(stats.single_pass_output_peak_buffer_bytes,
+                    entry.single_pass_output_peak_buffer_bytes);
+            stats.single_pass_relationship_scan_us +=
                 entry.single_pass_relationship_scan_us;
-            stats.single_pass_relationship_scan_input_call_count =
+            stats.single_pass_relationship_scan_input_call_count +=
                 entry.single_pass_relationship_scan_input_call_count;
-            stats.single_pass_relationship_scan_input_bytes =
+            stats.single_pass_relationship_scan_input_bytes +=
                 entry.single_pass_relationship_scan_input_bytes;
-            stats.single_pass_relationship_scan_boundary_carry_count =
+            stats.single_pass_relationship_scan_boundary_carry_count +=
                 entry.single_pass_relationship_scan_boundary_carry_count;
-            stats.single_pass_relationship_scan_slow_path_tag_count =
+            stats.single_pass_relationship_scan_slow_path_tag_count +=
                 entry.single_pass_relationship_scan_slow_path_tag_count;
-            stats.single_pass_temporary_write_us =
+            stats.single_pass_temporary_write_us +=
                 entry.single_pass_temporary_write_us;
+            stats.single_pass_fused_crc32 = first_single_pass_entry
+                ? entry.single_pass_fused_crc32
+                : stats.single_pass_fused_crc32 && entry.single_pass_fused_crc32;
+            stats.single_pass_crc32_us += entry.single_pass_crc32_us;
+            stats.single_pass_crc32_segment_count +=
+                entry.single_pass_crc32_segment_count;
             const std::uint64_t measured_sink_us =
-                stats.single_pass_relationship_scan_us
-                + stats.single_pass_temporary_write_us;
-            stats.single_pass_source_scan_action_us =
-                stats.single_pass_transform_us > measured_sink_us
-                ? stats.single_pass_transform_us - measured_sink_us
+                entry.single_pass_relationship_scan_us
+                + entry.single_pass_temporary_write_us
+                + entry.single_pass_crc32_us;
+            stats.single_pass_source_scan_action_us +=
+                entry.single_pass_transform_us > measured_sink_us
+                ? entry.single_pass_transform_us - measured_sink_us
                 : 0;
-            stats.single_pass_commit_ms = entry.single_pass_commit_ms;
+            stats.single_pass_commit_ms += entry.single_pass_commit_ms;
         }
         if (entry.omitted) {
             stats.omitted_entry_names.push_back(entry.entry_name);
@@ -795,6 +968,32 @@ void observe_package_writer_telemetry(
     stats.package_writer_total_process_cpu_us = telemetry.total_process_cpu_us;
     stats.package_writer_open_us = telemetry.open_us;
     stats.package_writer_close_us = telemetry.close_us;
+    for (const fastxlsx::detail::PackageWriterEntryTelemetry& entry : telemetry.entries) {
+        const bool worksheet_entry =
+            entry.entry_name.starts_with("xl/worksheets/sheet")
+            && entry.entry_name.ends_with(".xml");
+        if (!worksheet_entry || entry.raw_compressed_copy) {
+            continue;
+        }
+        ++stats.rewritten_worksheet_entry_count;
+        stats.rewritten_worksheet_entry_input_bytes += entry.input_bytes;
+        stats.rewritten_worksheet_entry_total_us += entry.total_us;
+        stats.rewritten_worksheet_entry_total_process_cpu_us += entry.total_process_cpu_us;
+        stats.rewritten_worksheet_entry_input_read_us += entry.input_read_us;
+        stats.rewritten_worksheet_entry_input_read_wait_us += entry.input_read_wait_us;
+        stats.rewritten_worksheet_entry_writer_write_us += entry.writer_write_us;
+        stats.rewritten_worksheet_entry_writer_write_process_cpu_us +=
+            entry.writer_write_process_cpu_us;
+        stats.rewritten_worksheet_entry_writer_write_max_us =
+            std::max(stats.rewritten_worksheet_entry_writer_write_max_us,
+                entry.writer_write_max_us);
+        stats.rewritten_worksheet_entry_close_us += entry.close_us;
+        stats.rewritten_worksheet_entry_close_process_cpu_us +=
+            entry.close_process_cpu_us;
+        stats.rewritten_worksheet_entry_deflate_writer_process_cpu_us +=
+            entry.deflate_writer_process_cpu_us;
+        stats.rewritten_worksheet_entries.push_back(entry);
+    }
     const auto target = std::find_if(telemetry.entries.begin(), telemetry.entries.end(),
         [](const fastxlsx::detail::PackageWriterEntryTelemetry& entry) {
             return entry.entry_name == "xl/worksheets/sheet1.xml";
@@ -856,8 +1055,15 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"scenario\": \"" << json_escape(options.scenario) << "\",\n";
     out << "  \"rows\": " << options.rows << ",\n";
     out << "  \"cols\": " << options.cols << ",\n";
+    out << "  \"worksheets\": " << options.worksheets << ",\n";
     out << "  \"source_cells\": " << stats.source_cells << ",\n";
-    out << "  \"requested_edits\": " << options.edits << ",\n";
+    const std::uint64_t requested_edits =
+        is_patch_replace_scenario(options.scenario)
+            || is_patch_upsert_scenario(options.scenario)
+        ? static_cast<std::uint64_t>(options.edits) * options.worksheets
+        : options.edits;
+    out << "  \"requested_edits\": " << requested_edits << ",\n";
+    out << "  \"requested_edits_per_worksheet\": " << options.edits << ",\n";
     out << "  \"touched_coordinates\": " << stats.touched_coordinates << ",\n";
     out << "  \"inserted_coordinates\": " << stats.inserted_coordinates << ",\n";
     out << "  \"source_write_ms\": " << stats.timings.source_write_ms << ",\n";
@@ -867,6 +1073,19 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"save_ms\": " << stats.timings.save_ms << ",\n";
     out << "  \"total_editor_ms\": " << stats.timings.total_editor_ms << ",\n";
     out << "  \"total_ms\": " << stats.timings.total_ms << ",\n";
+    out << "  \"process_cpu_scope\": \"" << kProcessCpuScope << "\",\n";
+    out << "  \"package_editor_crc32_backend\": \""
+        << kPackageEditorCrc32Backend << "\",\n";
+    out << "  \"open_process_cpu_us\": "
+        << stats.timings.open_process_cpu_us << ",\n";
+    out << "  \"materialize_process_cpu_us\": "
+        << stats.timings.materialize_process_cpu_us << ",\n";
+    out << "  \"mutation_process_cpu_us\": "
+        << stats.timings.mutation_process_cpu_us << ",\n";
+    out << "  \"save_process_cpu_us\": "
+        << stats.timings.save_process_cpu_us << ",\n";
+    out << "  \"total_editor_process_cpu_us\": "
+        << stats.timings.total_editor_process_cpu_us << ",\n";
     out << "  \"materialized_worksheet\": "
         << (stats.materialized_worksheet ? "true" : "false") << ",\n";
     out << "  \"materialized_cells_before\": " << stats.materialized_cells_before << ",\n";
@@ -894,6 +1113,8 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.raw_compressed_copy_bytes << ",\n";
     out << "  \"single_pass_worksheet_transform\": "
         << (stats.single_pass_worksheet_transform ? "true" : "false") << ",\n";
+    out << "  \"single_pass_worksheet_transform_count\": "
+        << stats.single_pass_worksheet_transform_count << ",\n";
     out << "  \"single_pass_scanned_source_cell_count\": "
         << stats.single_pass_scanned_source_cell_count << ",\n";
     out << "  \"single_pass_matched_replacement_count\": "
@@ -968,6 +1189,12 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.single_pass_relationship_scan_slow_path_tag_count << ",\n";
     out << "  \"single_pass_temporary_write_us\": "
         << stats.single_pass_temporary_write_us << ",\n";
+    out << "  \"single_pass_fused_crc32\": "
+        << (stats.single_pass_fused_crc32 ? "true" : "false") << ",\n";
+    out << "  \"single_pass_crc32_us\": "
+        << stats.single_pass_crc32_us << ",\n";
+    out << "  \"single_pass_crc32_segment_count\": "
+        << stats.single_pass_crc32_segment_count << ",\n";
     out << "  \"single_pass_commit_ms\": "
         << stats.single_pass_commit_ms << ",\n";
     out << "  \"package_writer_total_us\": " << stats.package_writer_total_us << ",\n";
@@ -975,6 +1202,32 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.package_writer_total_process_cpu_us << ",\n";
     out << "  \"package_writer_open_us\": " << stats.package_writer_open_us << ",\n";
     out << "  \"package_writer_close_us\": " << stats.package_writer_close_us << ",\n";
+    out << "  \"rewritten_worksheet_entry_count\": "
+        << stats.rewritten_worksheet_entry_count << ",\n";
+    out << "  \"rewritten_worksheet_entry_input_bytes\": "
+        << stats.rewritten_worksheet_entry_input_bytes << ",\n";
+    out << "  \"rewritten_worksheet_entry_total_us\": "
+        << stats.rewritten_worksheet_entry_total_us << ",\n";
+    out << "  \"rewritten_worksheet_entry_total_process_cpu_us\": "
+        << stats.rewritten_worksheet_entry_total_process_cpu_us << ",\n";
+    out << "  \"rewritten_worksheet_entry_input_read_us\": "
+        << stats.rewritten_worksheet_entry_input_read_us << ",\n";
+    out << "  \"rewritten_worksheet_entry_input_read_wait_us\": "
+        << stats.rewritten_worksheet_entry_input_read_wait_us << ",\n";
+    out << "  \"rewritten_worksheet_entry_writer_write_us\": "
+        << stats.rewritten_worksheet_entry_writer_write_us << ",\n";
+    out << "  \"rewritten_worksheet_entry_writer_write_process_cpu_us\": "
+        << stats.rewritten_worksheet_entry_writer_write_process_cpu_us << ",\n";
+    out << "  \"rewritten_worksheet_entry_writer_write_max_us\": "
+        << stats.rewritten_worksheet_entry_writer_write_max_us << ",\n";
+    out << "  \"rewritten_worksheet_entry_close_us\": "
+        << stats.rewritten_worksheet_entry_close_us << ",\n";
+    out << "  \"rewritten_worksheet_entry_close_process_cpu_us\": "
+        << stats.rewritten_worksheet_entry_close_process_cpu_us << ",\n";
+    out << "  \"rewritten_worksheet_entry_deflate_writer_process_cpu_us\": "
+        << stats.rewritten_worksheet_entry_deflate_writer_process_cpu_us << ",\n";
+    write_rewritten_worksheet_entry_array(
+        out, stats.rewritten_worksheet_entries, true);
     out << "  \"target_worksheet_entry_telemetry\": "
         << (stats.target_worksheet_entry_telemetry ? "true" : "false") << ",\n";
     out << "  \"target_worksheet_entry_raw_compressed_copy\": "
@@ -1047,7 +1300,7 @@ void write_result_json(const Options& options, const RunStats& stats)
 RunStats run_benchmark(const Options& options)
 {
     RunStats stats;
-    stats.source_cells = checked_cell_count(options);
+    stats.source_cells = checked_source_cell_count(options);
     const auto total_started = std::chrono::steady_clock::now();
 
     auto phase_started = std::chrono::steady_clock::now();
@@ -1060,13 +1313,19 @@ RunStats run_benchmark(const Options& options)
     }
 
     phase_started = std::chrono::steady_clock::now();
+    auto phase_process_cpu_started = process_cpu_microseconds();
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(options.source);
     stats.timings.open_ms = milliseconds_since(phase_started);
+    stats.timings.open_process_cpu_us =
+        process_cpu_delta(phase_process_cpu_started, process_cpu_microseconds());
 
     phase_started = std::chrono::steady_clock::now();
+    phase_process_cpu_started = process_cpu_microseconds();
     if (is_patch_scenario(options.scenario)) {
         stats.timings.materialize_ms = 0;
+        stats.timings.materialize_process_cpu_us = 0;
         phase_started = std::chrono::steady_clock::now();
+        phase_process_cpu_started = process_cpu_microseconds();
         if (is_patch_replace_scenario(options.scenario)) {
             run_patch_replace(editor, options, stats.touched_coordinates);
         } else if (is_patch_upsert_scenario(options.scenario)) {
@@ -1082,10 +1341,13 @@ RunStats run_benchmark(const Options& options)
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", editor_options);
         stats.materialized_worksheet = true;
         stats.timings.materialize_ms = milliseconds_since(phase_started);
+        stats.timings.materialize_process_cpu_us =
+            process_cpu_delta(phase_process_cpu_started, process_cpu_microseconds());
         stats.materialized_cells_before = sheet.cell_count();
         stats.estimated_memory_before = sheet.estimated_memory_usage();
 
         phase_started = std::chrono::steady_clock::now();
+        phase_process_cpu_started = process_cpu_microseconds();
         if (options.scenario == "point-set") {
             run_point_set(sheet, options, stats.touched_coordinates);
         } else if (options.scenario == "batch-set") {
@@ -1099,10 +1361,13 @@ RunStats run_benchmark(const Options& options)
         stats.estimated_memory_after = sheet.estimated_memory_usage();
     }
     stats.timings.mutation_ms = milliseconds_since(phase_started);
+    stats.timings.mutation_process_cpu_us =
+        process_cpu_delta(phase_process_cpu_started, process_cpu_microseconds());
     observe_output_plan(editor, options.output_compression_level, stats);
 
     ensure_parent_directory(options.output);
     phase_started = std::chrono::steady_clock::now();
+    phase_process_cpu_started = process_cpu_microseconds();
     fastxlsx::WorkbookEditorSaveOptions save_options;
     save_options.zip_compression_level = options.output_compression_level;
     fastxlsx::detail::PackageWriterTelemetry package_writer_telemetry;
@@ -1119,11 +1384,16 @@ RunStats run_benchmark(const Options& options)
         editor, nullptr);
     observe_package_writer_telemetry(package_writer_telemetry, stats);
     stats.timings.save_ms = milliseconds_since(phase_started);
+    stats.timings.save_process_cpu_us =
+        process_cpu_delta(phase_process_cpu_started, process_cpu_microseconds());
     stats.output_bytes = static_cast<std::uint64_t>(std::filesystem::file_size(options.output));
     stats.timings.total_ms = milliseconds_since(total_started);
     stats.timings.total_editor_ms =
         stats.timings.open_ms + stats.timings.materialize_ms + stats.timings.mutation_ms +
         stats.timings.save_ms;
+    stats.timings.total_editor_process_cpu_us =
+        stats.timings.open_process_cpu_us + stats.timings.materialize_process_cpu_us +
+        stats.timings.mutation_process_cpu_us + stats.timings.save_process_cpu_us;
     stats.peak_memory_bytes = peak_memory_bytes();
 
     write_result_json(options, stats);

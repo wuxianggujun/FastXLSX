@@ -105,18 +105,27 @@ enum class PackageWriterBackend {
     MinizipNg,
 };
 
+enum class PackageWriterDeflateEngine {
+    MinizipNg,
+    DirectZlibRaw,
+};
+
 inline constexpr int package_writer_default_compression_level = -1;
 inline constexpr int package_writer_min_compression_level = 0;
 inline constexpr int package_writer_max_compression_level = 9;
 inline constexpr std::size_t package_writer_default_file_io_buffer_size = 512U * 1024U;
 inline constexpr std::size_t package_writer_min_file_io_buffer_size = 64U * 1024U;
 inline constexpr std::size_t package_writer_max_file_io_buffer_size = 4U * 1024U * 1024U;
+inline constexpr std::size_t package_writer_default_deflate_output_buffer_size = 32U * 1024U;
+inline constexpr std::size_t package_writer_min_deflate_output_buffer_size = 16U * 1024U;
+inline constexpr std::size_t package_writer_max_deflate_output_buffer_size = 4U * 1024U * 1024U;
 
 struct PackageWriterEntryTelemetry {
     std::string entry_name;
     bool raw_compressed_copy = false;
     bool reused_staged_crc32 = false;
     bool staged_file_read_prefetch = false;
+    bool direct_zlib_raw = false;
     int requested_compression_level = package_writer_default_compression_level;
     std::uint64_t uncompressed_bytes = 0;
     std::uint64_t input_bytes = 0;
@@ -129,6 +138,14 @@ struct PackageWriterEntryTelemetry {
     std::uint64_t prefetched_staged_file_chunk_count = 0;
     std::uint64_t prefetched_staged_input_bytes = 0;
     std::uint64_t prefetch_peak_buffer_bytes = 0;
+    std::uint64_t direct_zlib_output_bytes = 0;
+    std::uint64_t direct_zlib_output_buffer_bytes = 0;
+    std::uint64_t direct_zlib_output_buffer_peak_bytes = 0;
+    std::uint64_t direct_zlib_deflate_calls = 0;
+    std::uint64_t direct_zlib_deflate_us = 0;
+    std::uint64_t direct_zlib_engine_process_cpu_us = 0;
+    std::uint64_t direct_zlib_deflate_max_us = 0;
+    std::uint64_t direct_zlib_crc32_us = 0;
     std::uint64_t total_us = 0;
     std::uint64_t total_process_cpu_us = 0;
     std::uint64_t open_us = 0;
@@ -154,8 +171,10 @@ struct PackageWriterTelemetry {
 
 struct PackageWriterOptions {
     PackageWriterBackend backend = PackageWriterBackend::Auto;
+    PackageWriterDeflateEngine deflate_engine = PackageWriterDeflateEngine::MinizipNg;
     int compression_level = package_writer_default_compression_level;
     std::size_t file_io_buffer_size = package_writer_default_file_io_buffer_size;
+    std::size_t deflate_output_buffer_size = package_writer_default_deflate_output_buffer_size;
     PackageWriterTelemetry* telemetry = nullptr;
 };
 

@@ -6,6 +6,11 @@
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/workbook.hpp>
 
+#if defined(FASTXLSX_HAS_MINIZIP_NG) \
+    && !defined(FASTXLSX_USE_PORTABLE_PACKAGE_EDITOR_CRC32)
+#include <mz_crypt.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -3050,6 +3055,9 @@ void clear_indexed_source_entry_direct_range_stats(PackagePartReplacement& repla
     replacement.single_pass_relationship_scan_boundary_carry_count = 0;
     replacement.single_pass_relationship_scan_slow_path_tag_count = 0;
     replacement.single_pass_temporary_write_us = 0;
+    replacement.single_pass_fused_crc32 = false;
+    replacement.single_pass_crc32_us = 0;
+    replacement.single_pass_crc32_segment_count = 0;
     replacement.single_pass_commit_ms = 0;
 }
 
@@ -3430,6 +3438,8 @@ std::string expected_actual_crc32_message(
         + ", actual " + std::to_string(actual_crc32);
 }
 
+#if !defined(FASTXLSX_HAS_MINIZIP_NG) \
+    || defined(FASTXLSX_USE_PORTABLE_PACKAGE_EDITOR_CRC32)
 const std::array<std::uint32_t, 256>& package_editor_crc32_table()
 {
     static constexpr std::uint32_t polynomial = 0xedb88320u;
@@ -3446,29 +3456,58 @@ const std::array<std::uint32_t, 256>& package_editor_crc32_table()
     }();
     return table;
 }
+#endif
 
 class PackageEditorCrc32Accumulator {
 public:
     void update(std::string_view data)
     {
+#if defined(FASTXLSX_HAS_MINIZIP_NG) \
+    && !defined(FASTXLSX_USE_PORTABLE_PACKAGE_EDITOR_CRC32)
+        constexpr std::size_t maximum_update_bytes =
+            static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max());
+        while (!data.empty()) {
+            const std::size_t update_bytes = std::min(data.size(), maximum_update_bytes);
+            value_ = mz_crypt_crc32_update(value_,
+                reinterpret_cast<const std::uint8_t*>(data.data()),
+                static_cast<std::int32_t>(update_bytes));
+            data.remove_prefix(update_bytes);
+        }
+#else
         const auto& table = package_editor_crc32_table();
         for (const unsigned char byte : data) {
             value_ = (value_ >> 8u) ^ table[(value_ ^ byte) & 0xffu];
         }
+#endif
     }
 
     void reset() noexcept
     {
+#if defined(FASTXLSX_HAS_MINIZIP_NG) \
+    && !defined(FASTXLSX_USE_PORTABLE_PACKAGE_EDITOR_CRC32)
+        value_ = 0;
+#else
         value_ = 0xffffffffu;
+#endif
     }
 
     [[nodiscard]] std::uint32_t value() const noexcept
     {
+#if defined(FASTXLSX_HAS_MINIZIP_NG) \
+    && !defined(FASTXLSX_USE_PORTABLE_PACKAGE_EDITOR_CRC32)
+        return value_;
+#else
         return value_ ^ 0xffffffffu;
+#endif
     }
 
 private:
+#if defined(FASTXLSX_HAS_MINIZIP_NG) \
+    && !defined(FASTXLSX_USE_PORTABLE_PACKAGE_EDITOR_CRC32)
+    std::uint32_t value_ = 0;
+#else
     std::uint32_t value_ = 0xffffffffu;
+#endif
 };
 
 std::uint32_t package_editor_crc32(std::string_view data)
@@ -4596,6 +4635,12 @@ WorksheetRelationshipReferenceAuditResult write_worksheet_cell_replacement_strea
 }
 
 struct SinglePassWorksheetTransformResult {
+    struct Crc32Segment {
+        std::uint64_t file_offset = 0;
+        std::uint64_t size = 0;
+        std::uint32_t crc32 = 0;
+    };
+
     WorksheetCellReplacementStreamAnalysis analysis;
     WorksheetRelationshipReferenceAuditResult relationship_reference_audit;
     std::uint64_t temporary_output_bytes = 0;
@@ -4612,6 +4657,8 @@ struct SinglePassWorksheetTransformResult {
     std::uint64_t relationship_scan_boundary_carry_count = 0;
     std::uint64_t relationship_scan_slow_path_tag_count = 0;
     std::uint64_t temporary_write_us = 0;
+    std::uint64_t crc32_us = 0;
+    std::vector<Crc32Segment> crc32_segments;
 };
 
 class BoundedWorksheetTransformOutput {
@@ -4637,6 +4684,11 @@ public:
         if (chunk.empty()) {
             return;
         }
+
+        const auto crc32_started = std::chrono::steady_clock::now();
+        crc32_.update(chunk);
+        crc32_us_ += steady_clock_elapsed_microseconds(crc32_started);
+        current_crc32_segment_bytes_ += static_cast<std::uint64_t>(chunk.size());
 
         if (scan_relationships) {
             append_relationship_scan(chunk);
@@ -4673,6 +4725,24 @@ public:
             throw FastXlsxError(
                 "failed to finalize temporary single-pass worksheet transform XML");
         }
+        checkpoint_crc32_segment();
+    }
+
+    void checkpoint_crc32_segment()
+    {
+        if (current_crc32_segment_bytes_ == 0) {
+            return;
+        }
+        if (current_crc32_segment_bytes_ > output_bytes_) {
+            throw FastXlsxError("single-pass worksheet CRC32 segment size overflow");
+        }
+        crc32_segments_.push_back({
+            output_bytes_ - current_crc32_segment_bytes_,
+            current_crc32_segment_bytes_,
+            crc32_.value(),
+        });
+        crc32_.reset();
+        current_crc32_segment_bytes_ = 0;
     }
 
     [[nodiscard]] std::uint64_t output_bytes() const noexcept
@@ -4723,6 +4793,17 @@ public:
     [[nodiscard]] std::uint64_t temporary_write_us() const noexcept
     {
         return temporary_write_us_;
+    }
+
+    [[nodiscard]] std::uint64_t crc32_us() const noexcept
+    {
+        return crc32_us_;
+    }
+
+    [[nodiscard]] const std::vector<SinglePassWorksheetTransformResult::Crc32Segment>&
+    crc32_segments() const noexcept
+    {
+        return crc32_segments_;
     }
 
     [[nodiscard]] bool relationship_scan_failed() const noexcept
@@ -4805,6 +4886,10 @@ private:
     std::uint64_t peak_buffer_bytes_ = 0;
     std::uint64_t relationship_scan_us_ = 0;
     std::uint64_t temporary_write_us_ = 0;
+    PackageEditorCrc32Accumulator crc32_;
+    std::uint64_t current_crc32_segment_bytes_ = 0;
+    std::uint64_t crc32_us_ = 0;
+    std::vector<SinglePassWorksheetTransformResult::Crc32Segment> crc32_segments_;
 };
 
 SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
@@ -4844,6 +4929,7 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
                 if (!is_closing_raw_tag(action.raw_xml)) {
                     if (!source_dimension_offset.has_value()) {
                         source_dimension_offset = output.output_bytes();
+                        output.checkpoint_crc32_segment();
                     }
                     skipping_dimension = !action.self_closing;
                 }
@@ -4871,6 +4957,7 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
             if (action.event_kind == WorksheetEventKind::WorksheetStart
                 && !worksheet_root_end.has_value()) {
                 worksheet_root_end = output.output_bytes();
+                output.checkpoint_crc32_segment();
             }
         },
         package_editor_cell_replacement_reader_options(
@@ -4904,6 +4991,8 @@ SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
     result.relationship_scan_slow_path_tag_count =
         output.relationship_scan_slow_path_tag_count();
     result.temporary_write_us = output.temporary_write_us();
+    result.crc32_us = output.crc32_us();
+    result.crc32_segments = output.crc32_segments();
     result.relationship_reference_audit = output.relationship_scan_failed()
         ? worksheet_relationship_reference_parse_failure_audit()
         : worksheet_relationship_reference_audit_from_references(
@@ -4922,7 +5011,8 @@ std::vector<PackageEntryChunk> make_dimension_inserted_worksheet_chunks(
     const std::filesystem::path& path,
     std::uint64_t temporary_output_bytes,
     std::uint64_t dimension_insertion_offset,
-    std::string dimension_xml)
+    std::string dimension_xml,
+    std::span<const SinglePassWorksheetTransformResult::Crc32Segment> crc32_segments)
 {
     if (dimension_insertion_offset > temporary_output_bytes) {
         throw FastXlsxError(
@@ -4930,16 +5020,42 @@ std::vector<PackageEntryChunk> make_dimension_inserted_worksheet_chunks(
     }
 
     std::vector<PackageEntryChunk> chunks;
-    chunks.reserve(3);
-    if (dimension_insertion_offset > 0) {
-        chunks.push_back(PackageEntryChunk::file_range(
-            path, 0, dimension_insertion_offset));
+    chunks.reserve(crc32_segments.size() + 1);
+    bool inserted_dimension = false;
+    std::uint64_t expected_offset = 0;
+    auto append_dimension = [&] {
+        PackageEntryChunk chunk = PackageEntryChunk::memory(std::move(dimension_xml));
+        chunk.expected_crc32 = package_editor_crc32(chunk.data);
+        chunk.has_expected_crc32 = true;
+        chunks.push_back(std::move(chunk));
+        inserted_dimension = true;
+    };
+    if (dimension_insertion_offset == 0) {
+        append_dimension();
     }
-    chunks.push_back(PackageEntryChunk::memory(std::move(dimension_xml)));
-    const std::uint64_t tail_bytes = temporary_output_bytes - dimension_insertion_offset;
-    if (tail_bytes > 0) {
-        chunks.push_back(PackageEntryChunk::file_range(
-            path, dimension_insertion_offset, tail_bytes));
+    for (const auto& segment : crc32_segments) {
+        if (expected_offset > temporary_output_bytes
+            || segment.file_offset != expected_offset || segment.size == 0
+            || segment.size > temporary_output_bytes - expected_offset) {
+            throw FastXlsxError(
+                "single-pass worksheet CRC32 segments do not cover staged output");
+        }
+        if (!inserted_dimension && expected_offset == dimension_insertion_offset) {
+            append_dimension();
+        }
+        PackageEntryChunk chunk = PackageEntryChunk::file_range(
+            path, segment.file_offset, segment.size);
+        chunk.expected_crc32 = segment.crc32;
+        chunk.has_expected_crc32 = true;
+        chunks.push_back(std::move(chunk));
+        expected_offset += segment.size;
+    }
+    if (!inserted_dimension && expected_offset == dimension_insertion_offset) {
+        append_dimension();
+    }
+    if (!inserted_dimension || expected_offset != temporary_output_bytes) {
+        throw FastXlsxError(
+            "single-pass worksheet CRC32 segments lost the dimension insertion boundary");
     }
     return chunks;
 }
@@ -5352,6 +5468,12 @@ PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
             replacement->single_pass_relationship_scan_slow_path_tag_count;
         plan.single_pass_temporary_write_us =
             replacement->single_pass_temporary_write_us;
+        plan.single_pass_fused_crc32 =
+            replacement->single_pass_fused_crc32;
+        plan.single_pass_crc32_us =
+            replacement->single_pass_crc32_us;
+        plan.single_pass_crc32_segment_count =
+            replacement->single_pass_crc32_segment_count;
         plan.single_pass_commit_ms =
             replacement->single_pass_commit_ms;
         if (plan.staged_replacement_chunks) {
@@ -7729,6 +7851,11 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             single_pass_stats->relationship_scan_slow_path_tag_count;
         replacement->single_pass_temporary_write_us =
             single_pass_stats->temporary_write_us;
+        replacement->single_pass_fused_crc32 = true;
+        replacement->single_pass_crc32_us =
+            single_pass_stats->crc32_us;
+        replacement->single_pass_crc32_segment_count =
+            single_pass_stats->crc32_segment_count;
         replacement->single_pass_commit_ms =
             steady_clock_elapsed_milliseconds(staged_commit_started);
     }
@@ -8227,7 +8354,8 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
         make_dimension_inserted_worksheet_chunks(temp_file.path(),
             transform_result.temporary_output_bytes,
             transform_result.dimension_insertion_offset,
-            std::move(transform_result.dimension_xml));
+            std::move(transform_result.dimension_xml),
+            transform_result.crc32_segments);
 
     std::string replacement_reason =
         "target worksheet part single-pass file-backed stream rewrite from "
@@ -8264,6 +8392,11 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
         "worksheet cell replacement builds one prevalidated non-owning replacement lookup "
         "plan and consumes it in one transform pass without rebuilding selector lookup or "
         "reparsing bounded replacement cell payloads");
+    commit_notes.emplace_back(
+        "worksheet cell replacement accumulates CRC32 while appending transformed output "
+        "and checkpoints exact file-range segments around the bounded dimension chunk; "
+        "staging therefore skips a second temporary-file CRC pass, while PackageWriter "
+        "still validates the completed entry CRC and diagnoses any changed staged segment");
     if (replace_or_insert) {
         commit_notes.emplace_back(
             "worksheet cell upsert replaces existing cells, inserts missing cells into "
@@ -8340,13 +8473,16 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
     single_pass_stats.relationship_scan_slow_path_tag_count =
         transform_result.relationship_scan_slow_path_tag_count;
     single_pass_stats.temporary_write_us = transform_result.temporary_write_us;
+    single_pass_stats.crc32_us = transform_result.crc32_us;
+    single_pass_stats.crc32_segment_count =
+        static_cast<std::uint64_t>(transform_result.crc32_segments.size());
     replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
         std::move(output_chunks), policy,
         std::move(transform_result.analysis.payload_audit.notes),
         std::move(transform_result.analysis.payload_audit.audits),
         std::move(transform_result.relationship_reference_audit.notes),
         std::move(transform_result.relationship_reference_audit.audits),
-        std::move(replacement_reason), true, true, std::move(commit_notes),
+        std::move(replacement_reason), true, false, std::move(commit_notes),
         temp_file.path(), PartWriteMode::StreamRewrite, std::nullopt,
         single_pass_stats);
     temp_file.release();

@@ -17,7 +17,13 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "15"
+BENCHMARK_SCHEMA_VERSION = "20"
+MATRIX_SCHEMA_VERSION = "15"
+PROCESS_CPU_SCOPE = (
+    "WorkbookEditor open/materialize/mutation/save phase sum; excludes source fixture, "
+    "output-plan telemetry collection, result JSON, and compatibility QA"
+)
+DEFLATE_CPU_POSITIVE_MIN_UNCOMPRESSED_BYTES = 4 * 1024 * 1024
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -27,8 +33,14 @@ DEFAULT_CASES = [
 METRICS = [
     "total_editor_ms",
     "open_ms",
+    "materialize_ms",
     "mutation_ms",
     "save_ms",
+    "open_process_cpu_us",
+    "materialize_process_cpu_us",
+    "mutation_process_cpu_us",
+    "save_process_cpu_us",
+    "total_editor_process_cpu_us",
     "peak_memory_mb",
     "output_bytes",
     "copied_uncompressed_bytes",
@@ -39,6 +51,7 @@ METRICS = [
     "rewritten_compressed_bytes",
     "single_pass_transform_ms",
     "single_pass_transform_us",
+    "single_pass_worksheet_transform_count",
     "single_pass_source_scan_action_us",
     "single_pass_source_parsed_event_count",
     "single_pass_source_callback_event_count",
@@ -67,11 +80,26 @@ METRICS = [
     "single_pass_relationship_scan_boundary_carry_count",
     "single_pass_relationship_scan_slow_path_tag_count",
     "single_pass_temporary_write_us",
+    "single_pass_crc32_us",
+    "single_pass_crc32_segment_count",
+    "single_pass_commit_ms",
     "single_pass_output_append_call_count",
     "single_pass_output_flush_count",
     "single_pass_output_peak_buffer_bytes",
     "package_writer_total_us",
     "package_writer_total_process_cpu_us",
+    "rewritten_worksheet_entry_count",
+    "rewritten_worksheet_entry_input_bytes",
+    "rewritten_worksheet_entry_total_us",
+    "rewritten_worksheet_entry_total_process_cpu_us",
+    "rewritten_worksheet_entry_input_read_us",
+    "rewritten_worksheet_entry_input_read_wait_us",
+    "rewritten_worksheet_entry_writer_write_us",
+    "rewritten_worksheet_entry_writer_write_process_cpu_us",
+    "rewritten_worksheet_entry_writer_write_max_us",
+    "rewritten_worksheet_entry_close_us",
+    "rewritten_worksheet_entry_close_process_cpu_us",
+    "rewritten_worksheet_entry_deflate_writer_process_cpu_us",
     "target_worksheet_entry_total_us",
     "target_worksheet_entry_total_process_cpu_us",
     "target_worksheet_entry_prefetched_staged_file_chunk_count",
@@ -161,6 +189,46 @@ def metric_summary(values: list[int | float]) -> dict[str, int | float]:
     }
 
 
+def pre_warmup_observation(
+    warmup_reports: list[dict[str, Any]],
+    warmed_statistics: dict[str, Any],
+    metric_name: str,
+) -> dict[str, Any]:
+    if not warmup_reports:
+        return {
+            "status": "not_recorded",
+            "reason": "warmup_runs=0",
+            "cache_control": "none",
+            "cold_cache_claim": False,
+        }
+
+    first_warmup = warmup_reports[0]
+    first_value = first_warmup["result"][metric_name]
+    warmed_median = warmed_statistics[metric_name]["median"]
+    difference = first_value - warmed_median
+    difference_percent = (
+        None
+        if warmed_median == 0
+        else round((difference / warmed_median) * 100.0, 6)
+    )
+    return {
+        "status": "recorded",
+        "metric": metric_name,
+        "first_warmup_run": first_warmup["name"],
+        "first_warmup_value": first_value,
+        "warmed_measured_median": warmed_median,
+        "difference": difference,
+        "difference_percent": difference_percent,
+        "cache_control": "none",
+        "cold_cache_claim": False,
+        "interpretation": (
+            "First fresh-process observation recorded before this case completes its explicit "
+            "warm-up sequence. The reused source and OS file/page caches are not flushed or "
+            "otherwise controlled."
+        ),
+    }
+
+
 def measured_run_summary(reports: list[dict[str, Any]]) -> tuple[int, dict[str, Any]]:
     require(bool(reports), "measured run summary requires at least one report")
     elapsed = [int(report["result"]["total_editor_ms"]) for report in reports]
@@ -171,6 +239,11 @@ def measured_run_summary(reports: list[dict[str, Any]]) -> tuple[int, dict[str, 
     )
     statistics_report: dict[str, Any] = {}
     for metric in METRICS:
+        if not all(
+            metric in report["result"] or metric in report["byte_accounting"]
+            for report in reports
+        ):
+            continue
         values = []
         for report in reports:
             source = report["result"]
@@ -297,8 +370,153 @@ def inspect_archive(path: Path, compression_level: int, purpose: str) -> dict[st
     }
 
 
-def expected_inserted(case: PatchCase) -> int:
-    return case.edits - case.edits // 2 if case.scenario == "patch-upsert" else 0
+def expected_inserted(case: PatchCase, worksheets: int = 1) -> int:
+    per_worksheet = case.edits - case.edits // 2 if case.scenario == "patch-upsert" else 0
+    return per_worksheet * worksheets
+
+
+def expected_requested_edits(case: PatchCase, worksheets: int) -> int:
+    return (
+        case.edits * worksheets
+        if case.scenario in {"patch-replace", "patch-upsert"}
+        else case.edits
+    )
+
+
+def verify_rewritten_worksheet_entry_details(
+    result: dict[str, Any],
+    case: PatchCase,
+    worksheets: int,
+    output_compression_level: int,
+) -> None:
+    entries = list(result.get("rewritten_worksheet_entries", []))
+    expected_count = (
+        worksheets
+        if output_compression_level != 0
+        and case.scenario in {"patch-replace", "patch-upsert"}
+        else 0
+    )
+    require(len(entries) == expected_count,
+        "rewritten worksheet entry detail count mismatch")
+    expected_names = [
+        f"xl/worksheets/sheet{index + 1}.xml" for index in range(worksheets)
+    ] if expected_count else []
+    require([entry.get("entry_name") for entry in entries] == expected_names,
+        "rewritten worksheet entry detail order mismatch")
+
+    aggregate_fields = {
+        "input_bytes": "rewritten_worksheet_entry_input_bytes",
+        "total_us": "rewritten_worksheet_entry_total_us",
+        "total_process_cpu_us": "rewritten_worksheet_entry_total_process_cpu_us",
+        "input_read_us": "rewritten_worksheet_entry_input_read_us",
+        "input_read_wait_us": "rewritten_worksheet_entry_input_read_wait_us",
+        "writer_write_us": "rewritten_worksheet_entry_writer_write_us",
+        "writer_write_process_cpu_us":
+            "rewritten_worksheet_entry_writer_write_process_cpu_us",
+        "close_us": "rewritten_worksheet_entry_close_us",
+        "close_process_cpu_us": "rewritten_worksheet_entry_close_process_cpu_us",
+        "deflate_writer_process_cpu_us":
+            "rewritten_worksheet_entry_deflate_writer_process_cpu_us",
+    }
+    for entry_field, aggregate_field in aggregate_fields.items():
+        require(
+            sum(int(entry.get(entry_field)) for entry in entries)
+            == int(result.get(aggregate_field)),
+            f"rewritten worksheet entry detail {entry_field} aggregate mismatch",
+        )
+    require(
+        max((int(entry.get("writer_write_max_us")) for entry in entries), default=0)
+        == int(result.get("rewritten_worksheet_entry_writer_write_max_us")),
+        "rewritten worksheet entry detail maximum writer call mismatch",
+    )
+
+    for entry in entries:
+        require(entry.get("raw_compressed_copy") is False,
+            "rewritten worksheet entry detail cannot be raw-copy")
+        require(
+            int(entry.get("requested_compression_level")) == output_compression_level,
+            "rewritten worksheet entry detail compression level mismatch",
+        )
+        require(int(entry.get("uncompressed_bytes")) > 0,
+            "rewritten worksheet entry detail uncompressed bytes must be positive")
+        require(int(entry.get("input_bytes")) > 0,
+            "rewritten worksheet entry detail input bytes must be positive")
+        require(int(entry.get("input_read_calls")) > 0,
+            "rewritten worksheet entry detail read calls must be positive")
+        require(int(entry.get("writer_write_calls")) > 0,
+            "rewritten worksheet entry detail writer calls must be positive")
+        require(int(entry.get("total_us")) > 0,
+            "rewritten worksheet entry detail total time must be positive")
+        require(
+            0 <= int(entry.get("input_read_wait_us"))
+            <= int(entry.get("input_read_us")),
+            "rewritten worksheet entry detail wait must fit read time",
+        )
+        require(
+            0 < int(entry.get("writer_write_max_us"))
+            <= int(entry.get("writer_write_us")),
+            "rewritten worksheet entry detail maximum call must fit writer time",
+        )
+        deflate_process_cpu_us = int(entry.get("deflate_writer_process_cpu_us"))
+        if output_compression_level == 0:
+            require(deflate_process_cpu_us == 0,
+                "stored worksheet entry detail must not report DEFLATE CPU")
+        else:
+            require(
+                deflate_process_cpu_us
+                == int(entry.get("writer_write_process_cpu_us"))
+                + int(entry.get("close_process_cpu_us")),
+                "rewritten worksheet entry detail DEFLATE CPU accounting mismatch",
+            )
+
+    if not entries:
+        return
+    target = entries[0]
+    target_fields = {
+        "raw_compressed_copy": "target_worksheet_entry_raw_compressed_copy",
+        "reused_staged_crc32": "target_worksheet_entry_reused_staged_crc32",
+        "staged_file_read_prefetch":
+            "target_worksheet_entry_staged_file_read_prefetch",
+        "requested_compression_level":
+            "target_worksheet_entry_requested_compression_level",
+        "uncompressed_bytes": "target_worksheet_entry_uncompressed_bytes",
+        "input_bytes": "target_worksheet_entry_input_bytes",
+        "input_read_calls": "target_worksheet_entry_input_read_calls",
+        "writer_write_calls": "target_worksheet_entry_writer_write_calls",
+        "file_io_buffer_bytes": "target_worksheet_entry_file_io_buffer_bytes",
+        "writer_write_input_peak_bytes":
+            "target_worksheet_entry_writer_write_input_peak_bytes",
+        "writer_write_max_us": "target_worksheet_entry_writer_write_max_us",
+        "reused_staged_file_chunk_count":
+            "target_worksheet_entry_reused_staged_file_chunk_count",
+        "prefetched_staged_file_chunk_count":
+            "target_worksheet_entry_prefetched_staged_file_chunk_count",
+        "prefetched_staged_input_bytes":
+            "target_worksheet_entry_prefetched_staged_input_bytes",
+        "prefetch_peak_buffer_bytes":
+            "target_worksheet_entry_prefetch_peak_buffer_bytes",
+        "total_us": "target_worksheet_entry_total_us",
+        "total_process_cpu_us": "target_worksheet_entry_total_process_cpu_us",
+        "open_us": "target_worksheet_entry_open_us",
+        "input_read_us": "target_worksheet_entry_input_read_us",
+        "input_read_wait_us": "target_worksheet_entry_input_read_wait_us",
+        "writer_write_us": "target_worksheet_entry_writer_write_us",
+        "writer_write_process_cpu_us":
+            "target_worksheet_entry_writer_write_process_cpu_us",
+        "staged_crc_validation_us":
+            "target_worksheet_entry_staged_crc_validation_us",
+        "close_us": "target_worksheet_entry_close_us",
+        "close_process_cpu_us": "target_worksheet_entry_close_process_cpu_us",
+        "deflate_writer_process_cpu_us":
+            "target_worksheet_entry_deflate_writer_process_cpu_us",
+    }
+    for entry_field, target_field in target_fields.items():
+        require(target.get(entry_field) == result.get(target_field),
+            f"rewritten worksheet sheet1 detail {entry_field} mismatch")
+
+
+def worksheet_name(worksheet_index: int) -> str:
+    return "Data" if worksheet_index == 0 else f"Data{worksheet_index + 1}"
 
 
 def excel_column_name(column: int) -> str:
@@ -334,6 +552,7 @@ def verify_result(
     case: PatchCase,
     rows: int,
     cols: int,
+    worksheets: int,
     source_compression_level: int,
     output_compression_level: int,
     source_path: Path,
@@ -341,29 +560,47 @@ def verify_result(
     expect_reused_source: bool,
     source_pattern: str,
     source_external_hyperlink: bool,
+    expected_schema_version: str = BENCHMARK_SCHEMA_VERSION,
 ) -> tuple[dict[str, Any], dict[str, int], dict[str, Any]]:
     result = load_json(path)
     require(
-        result.get("workbook_editor_benchmark_schema_version") == BENCHMARK_SCHEMA_VERSION,
+        result.get("workbook_editor_benchmark_schema_version") == expected_schema_version,
         "workbook editor benchmark schema mismatch",
     )
     require(result.get("scenario") == case.scenario, f"{case.name} scenario mismatch")
     require(result.get("rows") == rows, f"{case.name} rows mismatch")
     require(result.get("cols") == cols, f"{case.name} cols mismatch")
-    require(result.get("source_cells") == rows * cols, f"{case.name} source cell mismatch")
-    require(result.get("requested_edits") == case.edits, f"{case.name} edit count mismatch")
+    schema_version = int(expected_schema_version)
+    if schema_version >= 19:
+        require(result.get("worksheets") == worksheets,
+            f"{case.name} worksheet count mismatch")
+    else:
+        require(worksheets == 1,
+            "pre-v19 benchmark schemas only support one worksheet")
+    source_cells = rows * cols * worksheets
+    require(result.get("source_cells") == source_cells,
+        f"{case.name} source cell mismatch")
+    require(result.get("requested_edits") == expected_requested_edits(case, worksheets),
+        f"{case.name} total edit count mismatch")
+    if schema_version >= 19:
+        require(result.get("requested_edits_per_worksheet") == case.edits,
+            f"{case.name} per-worksheet edit count mismatch")
     require(
-        result.get("inserted_coordinates") == expected_inserted(case),
+        result.get("inserted_coordinates") == expected_inserted(case, worksheets),
         f"{case.name} inserted count mismatch",
     )
     if case.scenario == "patch-upsert":
         require(result.get("single_pass_worksheet_transform") is True,
             "patch-upsert should use the single-pass worksheet transform")
+        if schema_version >= 19:
+            require(int(result.get("single_pass_worksheet_transform_count")) == worksheets,
+                "patch-upsert single-pass worksheet count mismatch")
         require(
-            int(result.get("single_pass_inserted_cell_count")) == expected_inserted(case),
+            int(result.get("single_pass_inserted_cell_count"))
+            == expected_inserted(case, worksheets),
             "patch-upsert single-pass inserted count mismatch",
         )
-        require(int(result.get("single_pass_scanned_source_cell_count")) == rows * cols,
+        require(int(result.get("single_pass_scanned_source_cell_count")) == source_cells,
             "patch-upsert single-pass source scan count mismatch")
         require(int(result.get("single_pass_staged_output_bytes")) > 0,
             "patch-upsert single-pass staged output bytes should be positive")
@@ -476,8 +713,8 @@ def verify_result(
         )
         require(0 < pass_through_batch_count < pass_through_batched_cell_count,
             "patch-upsert should combine consecutive pass-through cells")
-        require(pass_through_batched_cell_count <= rows * cols,
-            "pass-through batch cell count should fit the source worksheet")
+        require(pass_through_batched_cell_count <= source_cells,
+            "pass-through batch cell count should fit the source worksheets")
         require(pass_through_batched_bytes > pass_through_batched_cell_count,
             "pass-through batch bytes should exceed its source cell count")
         require(pass_through_batch_peak_cell_count > 1,
@@ -521,10 +758,19 @@ def verify_result(
             int(result.get("single_pass_relationship_scan_us"))
             + int(result.get("single_pass_temporary_write_us"))
         )
+        if schema_version >= 18:
+            measured_sink_us += int(result.get("single_pass_crc32_us"))
         require(
             measured_sink_us <= int(result.get("single_pass_transform_us")),
             "patch-upsert measured sink time should not exceed transform time",
         )
+        if schema_version >= 18:
+            require(result.get("single_pass_fused_crc32") is True,
+                "patch-upsert should fuse staged CRC32 into transform output")
+            require(int(result.get("single_pass_crc32_us")) >= 0,
+                "patch-upsert fused CRC32 time must be non-negative")
+            require(int(result.get("single_pass_crc32_segment_count")) >= 2 * worksheets,
+                "patch-upsert should expose bounded fused CRC32 segments")
     require(
         result.get("source_fixture_mode")
         == ("reused-existing-source" if expect_reused_source else "generated-source"),
@@ -547,11 +793,99 @@ def verify_result(
     require(result.get("office_open") == "not_run", "Office state must remain not_run")
     require(float(result.get("peak_memory_mb")) >= 0.0, "peak memory must be non-negative")
     require(int(result.get("total_editor_ms")) >= 0, "total editor time must be non-negative")
+    require(result.get("process_cpu_scope") == PROCESS_CPU_SCOPE,
+        "WorkbookEditor process CPU scope mismatch")
+    require(result.get("package_editor_crc32_backend") in {"minizip-ng", "portable"},
+        "PackageEditor CRC32 backend identity mismatch")
+    phase_process_cpu = [
+        int(result.get("open_process_cpu_us")),
+        int(result.get("materialize_process_cpu_us")),
+        int(result.get("mutation_process_cpu_us")),
+        int(result.get("save_process_cpu_us")),
+    ]
+    require(all(value >= 0 for value in phase_process_cpu),
+        "WorkbookEditor phase process CPU timings must be non-negative")
+    require(int(result.get("total_editor_process_cpu_us")) == sum(phase_process_cpu),
+        "WorkbookEditor total process CPU must equal its phase sum")
+    require(int(result.get("materialize_process_cpu_us")) == 0,
+        "public Patch cases must not report materialization process CPU")
+    require(int(result.get("single_pass_commit_ms")) >= 0,
+        "single-pass staged commit time must be non-negative")
     require(int(result.get("package_writer_total_us")) > 0,
         "package writer telemetry should report positive total time")
     require(int(result.get("package_writer_total_process_cpu_us")) >= 0,
         "package writer process CPU time must be non-negative")
+    if schema_version >= 20:
+        verify_rewritten_worksheet_entry_details(
+            result, case, worksheets, output_compression_level
+        )
     if output_compression_level != 0:
+        expected_rewritten_worksheet_entries = (
+            worksheets
+            if case.scenario in {"patch-replace", "patch-upsert"}
+            else 0
+        )
+        aggregate_input_bytes = 0
+        aggregate_total_us = 0
+        aggregate_writer_us = 0
+        if schema_version >= 19:
+            rewritten_worksheet_entry_count = int(
+                result.get("rewritten_worksheet_entry_count")
+            )
+            require(
+                rewritten_worksheet_entry_count == expected_rewritten_worksheet_entries,
+                "rewritten worksheet entry telemetry count mismatch",
+            )
+            aggregate_input_bytes = int(
+                result.get("rewritten_worksheet_entry_input_bytes")
+            )
+            aggregate_total_us = int(result.get("rewritten_worksheet_entry_total_us"))
+            aggregate_total_process_cpu_us = int(
+                result.get("rewritten_worksheet_entry_total_process_cpu_us")
+            )
+            aggregate_input_read_us = int(
+                result.get("rewritten_worksheet_entry_input_read_us")
+            )
+            aggregate_input_read_wait_us = int(
+                result.get("rewritten_worksheet_entry_input_read_wait_us")
+            )
+            aggregate_writer_us = int(
+                result.get("rewritten_worksheet_entry_writer_write_us")
+            )
+            aggregate_writer_process_cpu_us = int(
+                result.get("rewritten_worksheet_entry_writer_write_process_cpu_us")
+            )
+            aggregate_writer_max_us = int(
+                result.get("rewritten_worksheet_entry_writer_write_max_us")
+            )
+            aggregate_close_process_cpu_us = int(
+                result.get("rewritten_worksheet_entry_close_process_cpu_us")
+            )
+            aggregate_deflate_process_cpu_us = int(
+                result.get("rewritten_worksheet_entry_deflate_writer_process_cpu_us")
+            )
+            if expected_rewritten_worksheet_entries > 0:
+                require(aggregate_input_bytes > 0 and aggregate_total_us > 0,
+                    "rewritten worksheet aggregate telemetry should be positive")
+                require(0 <= aggregate_input_read_wait_us <= aggregate_input_read_us,
+                    "aggregate worksheet input wait must fit input read time")
+                require(0 < aggregate_writer_max_us <= aggregate_writer_us,
+                    "aggregate worksheet maximum writer call must fit writer time")
+                require(aggregate_total_process_cpu_us >= 0,
+                    "aggregate worksheet process CPU must be non-negative")
+                require(
+                    aggregate_deflate_process_cpu_us
+                    == aggregate_writer_process_cpu_us + aggregate_close_process_cpu_us,
+                    "aggregate worksheet DEFLATE process CPU accounting mismatch",
+                )
+            else:
+                require(
+                    aggregate_input_bytes == aggregate_total_us
+                    == aggregate_writer_us
+                    == aggregate_deflate_process_cpu_us
+                    == 0,
+                    "non-worksheet rewrite should not report aggregate worksheet traffic",
+                )
         require(result.get("target_worksheet_entry_telemetry") is True,
             "minizip Patch output should report target worksheet entry telemetry")
         require(
@@ -597,7 +931,12 @@ def verify_result(
                 == writer_process_cpu_us + close_process_cpu_us,
                 "rewritten target DEFLATE process CPU accounting mismatch",
             )
-            if int(result.get("target_worksheet_entry_uncompressed_bytes")) >= 1024 * 1024:
+            # A fast level-1 write slightly above 1 MiB can complete inside one
+            # Windows process-CPU clock tick and legitimately report zero.
+            if (
+                int(result.get("target_worksheet_entry_uncompressed_bytes"))
+                >= DEFLATE_CPU_POSITIVE_MIN_UNCOMPRESSED_BYTES
+            ):
                 require(deflate_writer_process_cpu_us > 0,
                     "large rewritten target should report positive DEFLATE process CPU")
         if case.scenario == "patch-upsert":
@@ -631,11 +970,12 @@ def verify_result(
                 <= maximum_file_read_calls + 2,
                 "patch-upsert writer calls should cover bounded file and memory chunks",
             )
+            writer_input_peak_bytes = int(
+                result.get("target_worksheet_entry_writer_write_input_peak_bytes")
+            )
             require(
-                int(result.get(
-                    "target_worksheet_entry_writer_write_input_peak_bytes"))
-                == min(input_bytes, file_io_buffer_bytes),
-                "patch-upsert writer input peak should match the bounded file IO buffer",
+                0 < writer_input_peak_bytes <= min(input_bytes, file_io_buffer_bytes),
+                "patch-upsert writer input peak should stay within the file IO buffer",
             )
             require(
                 0 < int(result.get("target_worksheet_entry_writer_write_max_us"))
@@ -650,9 +990,14 @@ def verify_result(
             )
             require(int(result.get("target_worksheet_entry_staged_crc_validation_us")) >= 0,
                 "patch-upsert staged CRC validation time must be non-negative")
-            if platform.system() == "Windows" and int(
-                result.get("target_worksheet_entry_uncompressed_bytes")
-            ) >= 4 * 1024 * 1024:
+            large_windows_staged_entry = (
+                platform.system() == "Windows"
+                and int(result.get("target_worksheet_entry_uncompressed_bytes"))
+                >= 4 * 1024 * 1024
+            )
+            if large_windows_staged_entry:
+                require(writer_input_peak_bytes == file_io_buffer_bytes,
+                    "large Windows patch-upsert writer input peak should fill one IO buffer")
                 require(result.get("target_worksheet_entry_staged_file_read_prefetch") is True,
                     "large Windows patch-upsert target should prefetch staged file chunks")
                 require(int(result.get(
@@ -665,6 +1010,26 @@ def verify_result(
                     "target_worksheet_entry_prefetch_peak_buffer_bytes"))
                     == 2 * file_io_buffer_bytes,
                     "large patch-upsert target should keep exactly two file IO buffers")
+            else:
+                require(result.get("target_worksheet_entry_staged_file_read_prefetch") is False,
+                    "small or non-Windows patch-upsert target should read synchronously")
+                require(
+                    int(result.get(
+                        "target_worksheet_entry_prefetched_staged_file_chunk_count")) == 0
+                    and int(result.get(
+                        "target_worksheet_entry_prefetched_staged_input_bytes")) == 0
+                    and int(result.get(
+                        "target_worksheet_entry_prefetch_peak_buffer_bytes")) == 0,
+                    "synchronous patch-upsert target should not report prefetch traffic",
+                )
+        if schema_version >= 19 and expected_rewritten_worksheet_entries > 0:
+            require(
+                aggregate_input_bytes >= int(result.get("target_worksheet_entry_input_bytes"))
+                and aggregate_total_us >= int(result.get("target_worksheet_entry_total_us"))
+                and aggregate_writer_us
+                >= int(result.get("target_worksheet_entry_writer_write_us")),
+                "rewritten worksheet aggregate should include the target worksheet",
+            )
     require(not result.get("materialized_worksheet"), "Patch case unexpectedly materialized sheet")
 
     copied_names = list(result.get("copied_entry_names", []))
@@ -686,10 +1051,11 @@ def verify_result(
             "document-properties should rewrite core/app parts",
         )
     else:
-        require(
-            "xl/worksheets/sheet1.xml" in rewritten_names,
-            "targeted Patch should rewrite the source worksheet entry",
-        )
+        expected_worksheet_entries = {
+            f"xl/worksheets/sheet{index + 1}.xml" for index in range(worksheets)
+        }
+        require(expected_worksheet_entries.issubset(rewritten_names),
+            "targeted Patch should rewrite every requested worksheet entry")
 
     accounting = account_plan_bytes(source_path, output_path, result)
     output_archive = inspect_archive(output_path, output_compression_level, "output")
@@ -719,6 +1085,8 @@ def run_single_case(
     source_external_hyperlink: bool,
     run_name: str,
     reuse_source: bool,
+    expected_schema_version: str = BENCHMARK_SCHEMA_VERSION,
+    worksheets: int = 1,
 ) -> dict[str, Any]:
     output_path = output_dir / f"{run_name}.xlsx"
     result_path = output_dir / f"{run_name}.json"
@@ -745,6 +1113,8 @@ def run_single_case(
         "--result",
         str(result_path),
     ]
+    if int(expected_schema_version) >= 19 or worksheets != 1:
+        command.extend(["--worksheets", str(worksheets)])
     if source_external_hyperlink:
         command.append("--source-external-hyperlink")
     if reuse_source:
@@ -755,6 +1125,7 @@ def run_single_case(
         case,
         rows,
         cols,
+        worksheets,
         source_compression_level,
         output_compression_level,
         source_path,
@@ -762,6 +1133,7 @@ def run_single_case(
         reuse_source,
         source_pattern,
         source_external_hyperlink,
+        expected_schema_version,
     )
     return {
         "name": run_name,
@@ -828,6 +1200,7 @@ def verify_workbook_with_openpyxl(
     cols: int,
     source_pattern: str,
     source_external_hyperlink: bool,
+    worksheets: int = 1,
 ) -> dict[str, Any]:
     try:
         import openpyxl
@@ -836,29 +1209,40 @@ def verify_workbook_with_openpyxl(
 
     workbook = openpyxl.load_workbook(path, read_only=True, data_only=False)
     try:
-        require(workbook.sheetnames == ["Data"], f"{case.name} sheet names mismatch")
-        worksheet = workbook["Data"]
+        expected_sheet_names = [worksheet_name(index) for index in range(worksheets)]
+        require(workbook.sheetnames == expected_sheet_names,
+            f"{case.name} sheet names mismatch")
         expected_rows = rows + expected_inserted(case)
-        require(worksheet.max_row == expected_rows, f"{case.name} max row mismatch")
-        require(worksheet.max_column == cols, f"{case.name} max column mismatch")
-        expected_first = 900000000 if case.scenario in {"patch-replace", "patch-upsert"} else 1001
-        require(worksheet["A1"].value == expected_first, f"{case.name} first cell mismatch")
-        require(
-            worksheet.cell(rows, cols).value
-            == expected_source_tail(case, rows, cols, source_pattern),
-            f"{case.name} source tail cell mismatch",
+        expected_first = (
+            900000000
+            if case.scenario in {"patch-replace", "patch-upsert"}
+            else 1001
         )
+        for sheet_name in expected_sheet_names:
+            worksheet = workbook[sheet_name]
+            require(worksheet.max_row == expected_rows,
+                f"{case.name} {sheet_name} max row mismatch")
+            require(worksheet.max_column == cols,
+                f"{case.name} {sheet_name} max column mismatch")
+            require(worksheet["A1"].value == expected_first,
+                f"{case.name} {sheet_name} first cell mismatch")
+            require(
+                worksheet.cell(rows, cols).value
+                == expected_source_tail(case, rows, cols, source_pattern),
+                f"{case.name} {sheet_name} source tail cell mismatch",
+            )
+            if case.scenario == "patch-upsert":
+                require(
+                    worksheet.cell(expected_rows, 1).value
+                    == 900000000 + case.edits - 1,
+                    f"patch-upsert {sheet_name} inserted tail mismatch",
+                )
+        worksheet = workbook[expected_sheet_names[0]]
         hyperlink_target = (
             verify_external_hyperlink_archive(path)
             if source_external_hyperlink
             else None
         )
-        if case.scenario == "patch-upsert":
-            require(
-                worksheet.cell(expected_rows, 1).value
-                == 900000000 + case.edits - 1,
-                "patch-upsert inserted tail mismatch",
-            )
         if case.scenario == "document-properties":
             require(
                 workbook.properties.title == "FastXLSX Patch Benchmark",
@@ -868,6 +1252,7 @@ def verify_workbook_with_openpyxl(
             "status": "opened",
             "openpyxl_version": openpyxl.__version__,
             "sheet_count": len(workbook.sheetnames),
+            "sheet_names": workbook.sheetnames,
             "sheet1_max_row": worksheet.max_row,
             "sheet1_max_column": worksheet.max_column,
             "sheet1_first_cell": worksheet["A1"].value,
@@ -886,6 +1271,7 @@ def run_case(
     case: PatchCase,
     rows: int,
     cols: int,
+    worksheets: int,
     source_compression_level: int,
     output_compression_level: int,
     source_pattern: str,
@@ -895,7 +1281,7 @@ def run_case(
     verify_openpyxl: bool,
 ) -> dict[str, Any]:
     base_name = compression_case_name(case, output_compression_level)
-    for run_index in range(1, warmup_runs + 1):
+    warmup_reports = [
         run_single_case(
             bench_exe,
             output_dir,
@@ -909,7 +1295,10 @@ def run_case(
             source_external_hyperlink,
             indexed_run_name(base_name, "warmup", run_index, warmup_runs),
             True,
+            worksheets=worksheets,
         )
+        for run_index in range(1, warmup_runs + 1)
+    ]
 
     measured = [
         run_single_case(
@@ -925,6 +1314,7 @@ def run_case(
             source_external_hyperlink,
             indexed_run_name(base_name, "run", run_index, measured_runs),
             True,
+            worksheets=worksheets,
         )
         for run_index in range(1, measured_runs + 1)
     ]
@@ -938,6 +1328,7 @@ def run_case(
             cols,
             source_pattern,
             source_external_hyperlink,
+            worksheets,
         )
         if verify_openpyxl
         else {"status": "not_requested"}
@@ -946,15 +1337,20 @@ def run_case(
         "name": base_name,
         "scenario": case.scenario,
         "output_compression_level": output_compression_level,
-        "requested_edits": case.edits,
+        "requested_edits": expected_requested_edits(case, worksheets),
+        "requested_edits_per_worksheet": case.edits,
+        "worksheets": worksheets,
         "warmup_runs": warmup_runs,
         "measured_runs": measured_runs,
         "representative_run": representative_index + 1,
         "statistics": statistics_report,
+        "pre_warmup_observation": pre_warmup_observation(
+            warmup_reports, statistics_report, "total_editor_ms"),
         "result": representative["result"],
         "byte_accounting": representative["byte_accounting"],
         "output_archive": representative["output_archive"],
         "openpyxl": openpyxl_report,
+        "warmup_observations": warmup_reports,
         "runs": measured,
     }
 
@@ -988,12 +1384,20 @@ def run_self_test() -> None:
             "result": {
                 "total_editor_ms": elapsed,
                 "open_ms": elapsed // 10,
+                "materialize_ms": 0,
                 "mutation_ms": 1,
                 "save_ms": elapsed - elapsed // 10 - 1,
+                "open_process_cpu_us": 100,
+                "materialize_process_cpu_us": 0,
+                "mutation_process_cpu_us": 200,
+                "save_process_cpu_us": 300,
+                "total_editor_process_cpu_us": 600,
+                "package_editor_crc32_backend": "minizip-ng",
                 "peak_memory_mb": 10.0 + index,
                 "output_bytes": 100 + index,
                 "single_pass_transform_ms": 1,
                 "single_pass_transform_us": 1000,
+                "single_pass_worksheet_transform_count": 1,
                 "single_pass_source_scan_action_us": 700,
                 "single_pass_source_parsed_event_count": 500,
                 "single_pass_source_callback_event_count": 300,
@@ -1022,11 +1426,27 @@ def run_self_test() -> None:
                 "single_pass_relationship_scan_boundary_carry_count": 1,
                 "single_pass_relationship_scan_slow_path_tag_count": 2,
                 "single_pass_temporary_write_us": 100,
+                "single_pass_fused_crc32": True,
+                "single_pass_crc32_us": 50,
+                "single_pass_crc32_segment_count": 2,
+                "single_pass_commit_ms": 1,
                 "single_pass_output_append_call_count": 100,
                 "single_pass_output_flush_count": 2,
                 "single_pass_output_peak_buffer_bytes": 262144,
                 "package_writer_total_us": 1000,
                 "package_writer_total_process_cpu_us": 900,
+                "rewritten_worksheet_entry_count": 1,
+                "rewritten_worksheet_entry_input_bytes": 100000,
+                "rewritten_worksheet_entry_total_us": 500,
+                "rewritten_worksheet_entry_total_process_cpu_us": 450,
+                "rewritten_worksheet_entry_input_read_us": 50,
+                "rewritten_worksheet_entry_input_read_wait_us": 10,
+                "rewritten_worksheet_entry_writer_write_us": 400,
+                "rewritten_worksheet_entry_writer_write_process_cpu_us": 350,
+                "rewritten_worksheet_entry_writer_write_max_us": 400,
+                "rewritten_worksheet_entry_close_us": 50,
+                "rewritten_worksheet_entry_close_process_cpu_us": 40,
+                "rewritten_worksheet_entry_deflate_writer_process_cpu_us": 390,
                 "target_worksheet_entry_total_us": 500,
                 "target_worksheet_entry_total_process_cpu_us": 450,
                 "target_worksheet_entry_prefetched_staged_file_chunk_count": 1,
@@ -1061,6 +1481,23 @@ def run_self_test() -> None:
     require(representative == 2, "median representative mismatch")
     require(statistics_report["total_editor_ms"] == {"min": 10, "median": 20, "max": 30},
         "elapsed statistics mismatch")
+    require(statistics_report["total_editor_process_cpu_us"]
+            == {"min": 600, "median": 600, "max": 600},
+        "process CPU statistics mismatch")
+    observation = pre_warmup_observation(
+        [{"name": "patch-upsert-warmup-01", "result": {"total_editor_ms": 30}}],
+        statistics_report,
+        "total_editor_ms",
+    )
+    require(observation["first_warmup_value"] == 30, "pre-warmup value mismatch")
+    require(observation["warmed_measured_median"] == 20, "warmed median mismatch")
+    require(observation["difference_percent"] == 50.0, "pre-warmup delta mismatch")
+    require(not observation["cold_cache_claim"], "pre-warmup must not claim cold cache")
+    require(
+        pre_warmup_observation([], statistics_report, "total_editor_ms")["status"]
+        == "not_recorded",
+        "missing pre-warmup status mismatch",
+    )
     require(indexed_run_name("case", "run", 1, 3) == "case-run-01", "run name mismatch")
     require(
         compression_case_name(PatchCase("patch-upsert", 1000), 6)
@@ -1106,6 +1543,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=Path("build/qa/patch-benchmark-matrix"))
     parser.add_argument("--rows", type=int, default=100000)
     parser.add_argument("--cols", type=int, default=10)
+    parser.add_argument("--worksheets", type=int, default=1)
     parser.add_argument("--source-compression-level", type=int, default=6)
     parser.add_argument(
         "--output-compression-level",
@@ -1133,6 +1571,7 @@ def main() -> int:
 
     require(args.rows > 0, "--rows must be positive")
     require(args.cols > 0, "--cols must be positive")
+    require(args.worksheets > 0, "--worksheets must be positive")
     require(0 <= args.source_compression_level <= 9,
         "source compression level must be 0..9")
     output_compression_levels = args.output_compression_levels or [6]
@@ -1174,6 +1613,7 @@ def main() -> int:
         args.source_external_hyperlink,
         "source-preparation",
         False,
+        worksheets=args.worksheets,
     )
     source_archive = inspect_archive(source_path, args.source_compression_level, "source")
 
@@ -1187,6 +1627,7 @@ def main() -> int:
                 case,
                 args.rows,
                 args.cols,
+                args.worksheets,
                 args.source_compression_level,
                 output_compression_level,
                 args.source_pattern,
@@ -1205,12 +1646,13 @@ def main() -> int:
             )
 
     matrix_report = {
-        "patch_benchmark_matrix_schema_version": "9",
+        "patch_benchmark_matrix_schema_version": MATRIX_SCHEMA_VERSION,
         "benchmark_executable": str(bench_exe),
         "output_dir": str(output_dir),
         "rows": args.rows,
         "cols": args.cols,
-        "source_cells": args.rows * args.cols,
+        "worksheets": args.worksheets,
+        "source_cells": args.rows * args.cols * args.worksheets,
         "source_compression_level": args.source_compression_level,
         "output_compression_levels": output_compression_levels,
         "source_pattern": args.source_pattern,
@@ -1223,6 +1665,9 @@ def main() -> int:
         "measured_runs_per_case": args.measured_runs,
         "representative_result_policy":
             "measured run nearest total_editor_ms median; earliest run breaks ties",
+        "warmup_observation_policy":
+            "Retain every warm-up result. Compare the first fresh-process warm-up observation "
+            "with the warmed measured median, but do not claim controlled cold-cache behavior.",
         "byte_accounting":
             "ZIP central-directory logical file_size and compressed compress_size; copied "
             "entries report source and output compressed bytes separately and additionally "
@@ -1230,9 +1675,12 @@ def main() -> int:
         "cases": case_reports,
         "comparison_scope":
             "Manual opt-in public WorkbookEditor Patch matrix. Source generation is a separate "
-            "process; every warm-up/measured run reuses the same source so benchmark process "
-            "PeakWorkingSet excludes WorkbookWriter fixture construction. openpyxl validates "
-            "only representative outputs after benchmark timing; Office remains not_run.",
+            "process; --edits applies independently to each worksheet, and every "
+            "warm-up/measured run reuses the same source so benchmark process "
+            "PeakWorkingSet excludes WorkbookWriter fixture construction. All warm-up results "
+            "are retained, but the reused source and OS caches are not reset, so the first "
+            "observation is not a controlled cold-cache result. openpyxl validates only "
+            "representative warmed outputs after benchmark timing; Office remains not_run.",
     }
     report_path = output_dir / "patch-benchmark-matrix-report.json"
     write_report(report_path, matrix_report)

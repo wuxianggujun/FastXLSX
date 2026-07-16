@@ -20,7 +20,19 @@ option(FASTXLSX_BUILD_REFERENCE_BENCHMARKS "Build opt-in third-party XLSX writer
 option(FASTXLSX_BUILD_QA_TOOLS "Build opt-in local QA tools" OFF)
 option(FASTXLSX_BUILD_FEATURE_SMOKES "Build small compile/runtime feature-profile smoke tools" OFF)
 option(FASTXLSX_ENABLE_MINIZIP_NG "Use minizip-ng for production stored/DEFLATE ZIP read and write" ON)
+option(FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING "Compile the internal direct-zlib package-writer profiling engine" OFF)
+option(FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING "Use the portable PackageEditor CRC32 implementation for internal A/B profiling" OFF)
 option(FASTXLSX_ENABLE_IMAGES "Enable stb-backed PNG/JPEG APIs and XLSX image features" ON)
+
+if(FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING AND NOT FASTXLSX_ENABLE_MINIZIP_NG)
+    message(FATAL_ERROR
+        "FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING requires FASTXLSX_ENABLE_MINIZIP_NG=ON")
+endif()
+
+if(FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING AND NOT FASTXLSX_ENABLE_MINIZIP_NG)
+    message(FATAL_ERROR
+        "FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING requires FASTXLSX_ENABLE_MINIZIP_NG=ON")
+endif()
 
 set(_fastxlsx_sources
     src/cell_store.cpp
@@ -90,6 +102,15 @@ if(FASTXLSX_ENABLE_MINIZIP_NG)
     find_package(minizip-ng CONFIG REQUIRED)
     target_link_libraries(fastxlsx PRIVATE MINIZIP::minizip-ng)
     target_compile_definitions(fastxlsx PRIVATE FASTXLSX_HAS_MINIZIP_NG=1)
+    if(FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING)
+        target_compile_definitions(fastxlsx PRIVATE
+            FASTXLSX_USE_PORTABLE_PACKAGE_EDITOR_CRC32=1)
+    endif()
+    if(FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING)
+        find_package(ZLIB REQUIRED)
+        target_link_libraries(fastxlsx PRIVATE ZLIB::ZLIB)
+        target_compile_definitions(fastxlsx PRIVATE FASTXLSX_HAS_DIRECT_ZLIB_PROFILING=1)
+    endif()
 endif()
 
 if(FASTXLSX_BUILD_TESTS)
@@ -144,6 +165,16 @@ install(
     NAMESPACE FastXLSX::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FastXLSX
 )
+
+set(FASTXLSX_CONFIG_DEPENDENCIES "")
+if(FASTXLSX_ENABLE_MINIZIP_NG)
+    string(APPEND FASTXLSX_CONFIG_DEPENDENCIES
+        "find_dependency(minizip-ng CONFIG)\n")
+endif()
+if(FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING)
+    string(APPEND FASTXLSX_CONFIG_DEPENDENCIES
+        "find_dependency(ZLIB)\n")
+endif()
 
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FastXLSXConfig.cmake.in

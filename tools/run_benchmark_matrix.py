@@ -2,7 +2,7 @@
 """Run an opt-in FastXLSX streaming writer benchmark matrix.
 
 This helper is intentionally outside CTest and CI. It wraps the existing
-fastxlsx_bench_streaming_writer executable, collects its schema-v5 JSON results,
+fastxlsx_bench_streaming_writer executable, collects its schema-v6 JSON results,
 and optionally verifies generated workbooks with openpyxl as local QA only.
 """
 
@@ -30,7 +30,8 @@ DEFAULT_CASES = [
     "strings:shared:unique",
 ]
 
-BENCHMARK_SCHEMA_VERSION = "5"
+BENCHMARK_SCHEMA_VERSION = "6"
+MATRIX_SCHEMA_VERSION = "3"
 DEFAULT_ZIP_COMPRESSION_LEVEL = -1
 MIN_ZIP_COMPRESSION_LEVEL = 0
 MAX_ZIP_COMPRESSION_LEVEL = 9
@@ -115,6 +116,45 @@ def metric_summary(values: list[int | float]) -> dict[str, int | float]:
     }
 
 
+def pre_warmup_observation(
+    warmup_reports: list[dict[str, Any]],
+    warmed_statistics: dict[str, Any],
+    metric_name: str,
+) -> dict[str, Any]:
+    if not warmup_reports:
+        return {
+            "status": "not_recorded",
+            "reason": "warmup_runs=0",
+            "cache_control": "none",
+            "cold_cache_claim": False,
+        }
+
+    first_warmup = warmup_reports[0]
+    first_value = first_warmup["result"][metric_name]
+    warmed_median = warmed_statistics[metric_name]["median"]
+    difference = first_value - warmed_median
+    difference_percent = (
+        None
+        if warmed_median == 0
+        else round((difference / warmed_median) * 100.0, 6)
+    )
+    return {
+        "status": "recorded",
+        "metric": metric_name,
+        "first_warmup_run": first_warmup["name"],
+        "first_warmup_value": first_value,
+        "warmed_measured_median": warmed_median,
+        "difference": difference,
+        "difference_percent": difference_percent,
+        "cache_control": "none",
+        "cold_cache_claim": False,
+        "interpretation": (
+            "First fresh-process observation recorded before this case completes its explicit "
+            "warm-up sequence. OS file/page caches are not flushed or otherwise controlled."
+        ),
+    }
+
+
 def measured_run_summary(reports: list[dict[str, Any]]) -> tuple[int, dict[str, Any]]:
     require(bool(reports), "measured run summary requires at least one report")
     elapsed_values = [int(report["result"]["elapsed_ms"]) for report in reports]
@@ -130,6 +170,15 @@ def measured_run_summary(reports: list[dict[str, Any]]) -> tuple[int, dict[str, 
         ),
         "package_close_ms": metric_summary(
             [int(report["result"]["package_close_ms"]) for report in reports]
+        ),
+        "generation_process_cpu_us": metric_summary(
+            [int(report["result"]["generation_process_cpu_us"]) for report in reports]
+        ),
+        "package_close_process_cpu_us": metric_summary(
+            [int(report["result"]["package_close_process_cpu_us"]) for report in reports]
+        ),
+        "total_process_cpu_us": metric_summary(
+            [int(report["result"]["total_process_cpu_us"]) for report in reports]
         ),
         "peak_memory_mb": metric_summary(
             [float(report["result"]["peak_memory_mb"]) for report in reports]
@@ -273,6 +322,23 @@ def verify_result_json(path: Path, case: MatrixCase, rows: int, cols: int, sheet
     require(int(data.get("elapsed_ms")) >= 0, f"{case.name} elapsed_ms mismatch")
     require(int(data.get("generation_ms")) >= 0, f"{case.name} generation_ms mismatch")
     require(int(data.get("package_close_ms")) >= 0, f"{case.name} package_close_ms mismatch")
+    require(
+        data.get("process_cpu_scope")
+        == "WorkbookWriter create/append/close; excludes result JSON and compatibility QA",
+        f"{case.name} process CPU scope mismatch",
+    )
+    generation_process_cpu_us = int(data.get("generation_process_cpu_us"))
+    package_close_process_cpu_us = int(data.get("package_close_process_cpu_us"))
+    total_process_cpu_us = int(data.get("total_process_cpu_us"))
+    require(generation_process_cpu_us >= 0,
+        f"{case.name} generation process CPU mismatch")
+    require(package_close_process_cpu_us >= 0,
+        f"{case.name} package-close process CPU mismatch")
+    require(
+        total_process_cpu_us
+        == generation_process_cpu_us + package_close_process_cpu_us,
+        f"{case.name} total process CPU accounting mismatch",
+    )
     require(int(data.get("worksheet_body_buffer_limit_bytes")) == 256 * 1024,
         f"{case.name} body buffer limit mismatch")
     require(0 < int(data.get("worksheet_body_buffer_peak_bytes")) <= 256 * 1024,
@@ -325,7 +391,7 @@ def build_matrix_report(bench_exe: Path, output_dir: Path, rows: int, cols: int,
     mixed_string_ratio: float, compression_levels: list[int | None],
     warmup_runs: int, measured_runs: int, reports: list[dict[str, Any]]) -> dict[str, Any]:
     return {
-        "benchmark_matrix_schema_version": "1",
+        "benchmark_matrix_schema_version": MATRIX_SCHEMA_VERSION,
         "benchmark_executable": str(bench_exe),
         "output_dir": str(output_dir),
         "rows": rows,
@@ -337,12 +403,18 @@ def build_matrix_report(bench_exe: Path, output_dir: Path, rows: int, cols: int,
         "warmup_runs_per_case": warmup_runs,
         "measured_runs_per_case": measured_runs,
         "representative_result_policy": "measured run nearest elapsed_ms median; earliest run breaks ties",
+        "warmup_observation_policy": (
+            "Retain every warm-up result. Compare the first fresh-process warm-up observation "
+            "with the warmed measured median, but do not claim controlled cold-cache behavior."
+        ),
         "cases": reports,
         "comparison_scope": (
-            "Manual opt-in repeated benchmark matrix. Each case retains every measured "
-            "schema-v5 JSON result and reports min/median/max statistics. Optional openpyxl "
-            "validation checks the representative workbook only; Office validation is a "
-            "separate local step and benchmark office_open fields remain not_run."
+            "Manual opt-in repeated benchmark matrix. Each case retains every warm-up and "
+            "measured schema-v6 JSON result, reports warmed min/median/max statistics, and "
+            "records the first pre-warmup process observation without controlling OS caches. "
+            "Optional openpyxl validation checks the representative warmed workbook only; "
+            "Office validation is a separate local step and benchmark office_open fields "
+            "remain not_run."
         ),
     }
 
@@ -412,12 +484,14 @@ def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, col
     base_name = case_run_name(case, compression_level)
     warmup_dir = output_dir / "warmup"
     warmup_dir.mkdir(parents=True, exist_ok=True)
-    for run_index in range(1, warmup_runs + 1):
+    warmup_reports = [
         run_single_case(
             bench_exe, warmup_dir, case, rows, cols, sheets, mixed_string_ratio,
             compression_level,
             indexed_run_name(base_name, "warmup", run_index, warmup_runs),
         )
+        for run_index in range(1, warmup_runs + 1)
+    ]
 
     measured_reports = [
         run_single_case(
@@ -444,6 +518,8 @@ def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, col
         "measured_runs": measured_runs,
         "representative_run": representative_index + 1,
         "statistics": statistics_report,
+        "pre_warmup_observation": pre_warmup_observation(
+            warmup_reports, statistics_report, "elapsed_ms"),
         "command": representative["command"],
         "stdout": representative["stdout"],
         "stderr": representative["stderr"],
@@ -452,6 +528,7 @@ def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, col
         "expected": representative["expected"],
         "result": representative["result"],
         "openpyxl": openpyxl_report,
+        "warmup_observations": warmup_reports,
         "runs": measured_reports,
     }
 
@@ -525,6 +602,9 @@ def run_self_test() -> None:
             "elapsed_ms": elapsed_ms,
             "generation_ms": elapsed_ms // 2,
             "package_close_ms": elapsed_ms - elapsed_ms // 2,
+            "generation_process_cpu_us": elapsed_ms * 400,
+            "package_close_process_cpu_us": elapsed_ms * 500,
+            "total_process_cpu_us": elapsed_ms * 900,
             "peak_memory_mb": peak_memory_mb,
             "output_bytes": 100,
             "temporary_worksheet_part_footprint_bytes": 200,
@@ -539,6 +619,25 @@ def run_self_test() -> None:
         "elapsed statistics mismatch")
     require(statistics_report["peak_memory_mb"] == {"min": 5.0, "median": 6.0, "max": 7.0},
         "memory statistics mismatch")
+    require(
+        statistics_report["total_process_cpu_us"]
+        == {"min": 9000, "median": 18000, "max": 27000},
+        "process CPU statistics mismatch",
+    )
+    observation = pre_warmup_observation(
+        [{"name": "numeric-inline-warmup-01", "result": {"elapsed_ms": 30}}],
+        statistics_report,
+        "elapsed_ms",
+    )
+    require(observation["first_warmup_value"] == 30, "pre-warmup value mismatch")
+    require(observation["warmed_measured_median"] == 20, "warmed median mismatch")
+    require(observation["difference_percent"] == 50.0, "pre-warmup delta mismatch")
+    require(not observation["cold_cache_claim"], "pre-warmup must not claim cold cache")
+    require(
+        pre_warmup_observation([], statistics_report, "elapsed_ms")["status"]
+        == "not_recorded",
+        "missing pre-warmup status mismatch",
+    )
     require(indexed_run_name("numeric-inline", "run", 2, 3) == "numeric-inline-run-02",
         "indexed run name mismatch")
 
@@ -550,7 +649,8 @@ def run_self_test() -> None:
             "string_distribution": repeated_distribution,
         },
     }])
-    require(report["benchmark_matrix_schema_version"] == "1", "matrix schema mismatch")
+    require(report["benchmark_matrix_schema_version"] == MATRIX_SCHEMA_VERSION,
+        "matrix schema mismatch")
     require(report["cells_per_case"] == 12, "matrix cell count mismatch")
     require(report["compression_levels"] == [-1, 3], "matrix compression levels mismatch")
     require(report["warmup_runs_per_case"] == 1, "matrix warmup count mismatch")
@@ -575,7 +675,7 @@ def main() -> int:
         type=parse_compression_level,
         help="ZIP compression level to pass to the benchmark. May be passed multiple times.")
     parser.add_argument("--warmup-runs", type=int, default=1,
-        help="Untimed process runs per case before measured runs. Default: 1.")
+        help="Pre-measurement process runs retained as observations. Default: 1.")
     parser.add_argument("--measured-runs", "--repeat", type=int, default=3,
         help="Measured process runs retained per case. Default: 3.")
     parser.add_argument("--case", action="append", dest="cases",

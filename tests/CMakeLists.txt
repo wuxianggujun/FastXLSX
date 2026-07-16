@@ -16,6 +16,31 @@ set_tests_properties(fastxlsx.unit PROPERTIES
     TIMEOUT 60
 )
 
+add_executable(fastxlsx_package_writer_direct_zlib_tests
+    test_package_writer_direct_zlib.cpp
+)
+
+target_link_libraries(fastxlsx_package_writer_direct_zlib_tests PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_package_writer_direct_zlib_tests PRIVATE cxx_std_20)
+if(FASTXLSX_ENABLE_MINIZIP_NG)
+    target_link_libraries(fastxlsx_package_writer_direct_zlib_tests PRIVATE MINIZIP::minizip-ng)
+endif()
+if(FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING)
+    target_link_libraries(fastxlsx_package_writer_direct_zlib_tests PRIVATE ZLIB::ZLIB)
+    target_compile_definitions(fastxlsx_package_writer_direct_zlib_tests PRIVATE
+        FASTXLSX_TEST_HAS_DIRECT_ZLIB_PROFILING=1
+    )
+endif()
+
+add_test(
+    NAME fastxlsx.package_writer_direct_zlib
+    COMMAND fastxlsx_package_writer_direct_zlib_tests
+)
+set_tests_properties(fastxlsx.package_writer_direct_zlib PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    TIMEOUT 60
+)
+
 add_executable(fastxlsx_formula_tests
     test_formula.cpp
 )

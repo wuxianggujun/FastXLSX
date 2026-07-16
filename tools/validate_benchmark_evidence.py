@@ -16,6 +16,7 @@ KINDS = {
     "streaming-writer",
     "workbook-editor",
     "package-editor-cell-replacement",
+    "package-writer",
     "reference-writer",
 }
 ROLES = {"result", "matrix-report", "summary", "office-report", "workbook"}
@@ -127,7 +128,7 @@ def self_test() -> None:
             "evidence_id": "sample",
             "created_utc": "2026-01-01T00:00:00Z",
             "git_revision": "0123456789abcdef",
-            "benchmark_kind": "streaming-writer",
+            "benchmark_kind": "package-writer",
             "environment": {
                 "os": "test",
                 "compiler": "test",

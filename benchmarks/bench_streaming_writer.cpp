@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
+#include <ctime>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -28,7 +29,7 @@ namespace {
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
 constexpr std::uint32_t kBenchmarkSheetLimit = 1024;
-constexpr std::string_view kBenchmarkSchemaVersion = "5";
+constexpr std::string_view kBenchmarkSchemaVersion = "6";
 constexpr std::string_view kPackageEntrySourceMode = "worksheet-file-backed-chunked";
 constexpr std::string_view kTemporaryWorksheetPartFootprint = "worksheet-body-file-bytes";
 
@@ -342,6 +343,41 @@ std::uint64_t peak_memory_bytes()
     return 0;
 }
 
+std::uint64_t process_cpu_microseconds() noexcept
+{
+#ifdef _WIN32
+    FILETIME created {};
+    FILETIME exited {};
+    FILETIME kernel {};
+    FILETIME user {};
+    if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user) == 0) {
+        return 0;
+    }
+
+    ULARGE_INTEGER kernel_ticks {};
+    kernel_ticks.LowPart = kernel.dwLowDateTime;
+    kernel_ticks.HighPart = kernel.dwHighDateTime;
+    ULARGE_INTEGER user_ticks {};
+    user_ticks.LowPart = user.dwLowDateTime;
+    user_ticks.HighPart = user.dwHighDateTime;
+    return (kernel_ticks.QuadPart + user_ticks.QuadPart) / 10U;
+#else
+    const std::clock_t value = std::clock();
+    if (value == static_cast<std::clock_t>(-1)) {
+        return 0;
+    }
+    return static_cast<std::uint64_t>(
+        static_cast<long double>(value) * 1'000'000.0L
+        / static_cast<long double>(CLOCKS_PER_SEC));
+#endif
+}
+
+std::uint64_t process_cpu_delta(
+    std::uint64_t started, std::uint64_t finished) noexcept
+{
+    return finished >= started ? finished - started : 0;
+}
+
 std::string json_escape(std::string_view value)
 {
     std::string escaped;
@@ -379,7 +415,10 @@ void ensure_parent_directory(const std::filesystem::path& path)
 }
 
 void write_result_json(const Options& options, std::uint64_t generation_ms,
-    std::uint64_t package_close_ms, std::uint64_t elapsed_ms, std::uint64_t peak_bytes,
+    std::uint64_t package_close_ms, std::uint64_t elapsed_ms,
+    std::uint64_t generation_process_cpu_us,
+    std::uint64_t package_close_process_cpu_us,
+    std::uint64_t total_process_cpu_us, std::uint64_t peak_bytes,
     std::uint64_t output_bytes, std::uint64_t temporary_worksheet_part_footprint_bytes,
     std::uint64_t worksheet_body_buffer_peak_bytes,
     std::uint64_t worksheet_body_flush_count,
@@ -445,6 +484,11 @@ void write_result_json(const Options& options, std::uint64_t generation_ms,
     out << "  \"generation_ms\": " << generation_ms << ",\n";
     out << "  \"package_close_ms\": " << package_close_ms << ",\n";
     out << "  \"elapsed_ms\": " << elapsed_ms << ",\n";
+    out << "  \"process_cpu_scope\": \"WorkbookWriter create/append/close; excludes result JSON and compatibility QA\",\n";
+    out << "  \"generation_process_cpu_us\": " << generation_process_cpu_us << ",\n";
+    out << "  \"package_close_process_cpu_us\": "
+        << package_close_process_cpu_us << ",\n";
+    out << "  \"total_process_cpu_us\": " << total_process_cpu_us << ",\n";
     out << "  \"million_cells_per_second\": "
         << (elapsed_ms == 0 ? 0.0
                             : static_cast<double>(cells) / static_cast<double>(elapsed_ms) / 1000.0)
@@ -469,6 +513,7 @@ void run_benchmark(const Options& options)
     writer_options.zip_compression_level = options.zip_compression_level;
 
     const auto started = std::chrono::steady_clock::now();
+    const std::uint64_t process_cpu_started = process_cpu_microseconds();
     auto workbook = fastxlsx::WorkbookWriter::create(options.output, writer_options);
     StringDistributionStats string_distribution;
 
@@ -498,8 +543,10 @@ void run_benchmark(const Options& options)
     }
 
     const auto generation_finished = std::chrono::steady_clock::now();
+    const std::uint64_t generation_process_cpu_finished = process_cpu_microseconds();
     workbook.close();
     const auto finished = std::chrono::steady_clock::now();
+    const std::uint64_t process_cpu_finished = process_cpu_microseconds();
     const auto generation_ms = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             generation_finished - started).count());
@@ -508,6 +555,12 @@ void run_benchmark(const Options& options)
             finished - generation_finished).count());
     const auto elapsed_ms = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(finished - started).count());
+    const std::uint64_t generation_process_cpu_us =
+        process_cpu_delta(process_cpu_started, generation_process_cpu_finished);
+    const std::uint64_t package_close_process_cpu_us =
+        process_cpu_delta(generation_process_cpu_finished, process_cpu_finished);
+    const std::uint64_t total_process_cpu_us =
+        process_cpu_delta(process_cpu_started, process_cpu_finished);
     const auto peak_bytes = peak_memory_bytes();
     const auto output_bytes = static_cast<std::uint64_t>(std::filesystem::file_size(options.output));
 #ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
@@ -526,7 +579,9 @@ void run_benchmark(const Options& options)
     const std::uint64_t active_worksheet_temporary_files_after_close = 0;
 #endif
     write_result_json(
-        options, generation_ms, package_close_ms, elapsed_ms, peak_bytes, output_bytes,
+        options, generation_ms, package_close_ms, elapsed_ms,
+        generation_process_cpu_us, package_close_process_cpu_us,
+        total_process_cpu_us, peak_bytes, output_bytes,
         temporary_worksheet_part_footprint_bytes, worksheet_body_buffer_peak_bytes,
         worksheet_body_flush_count, active_worksheet_temporary_files_after_close,
         string_distribution);

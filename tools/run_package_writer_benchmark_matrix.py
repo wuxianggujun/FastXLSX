@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run an isolated repeated FastXLSX package-writer buffer matrix."""
+"""Run an isolated repeated FastXLSX package-writer backend/buffer matrix."""
 
 from __future__ import annotations
 
@@ -17,13 +17,32 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "1"
-MATRIX_SCHEMA_VERSION = "1"
+BENCHMARK_SCHEMA_VERSION = "2"
+MATRIX_SCHEMA_VERSION = "2"
 DEFAULT_BUFFER_KIB = [256, 512, 1024, 2048, 4096]
+DEFAULT_DEFLATE_OUTPUT_KIB = [32, 128, 512, 1024]
+BACKENDS = ["minizip", "direct-zlib-raw", "direct-zlib-one-pass"]
 METRICS = [
     "write_ms",
+    "pipeline_total_us",
+    "pipeline_total_process_cpu_us",
     "output_bytes",
     "peak_memory_mb",
+    "direct_deflate_total_us",
+    "direct_deflate_total_process_cpu_us",
+    "direct_deflate_input_bytes",
+    "direct_deflate_input_read_calls",
+    "direct_deflate_input_read_us",
+    "direct_deflate_input_crc32_us",
+    "direct_deflate_calls",
+    "direct_deflate_us",
+    "direct_deflate_max_us",
+    "direct_deflate_output_bytes",
+    "direct_deflate_output_write_calls",
+    "direct_deflate_output_write_us",
+    "direct_deflate_output_write_max_us",
+    "direct_deflate_input_buffer_bytes",
+    "direct_deflate_output_buffer_peak_bytes",
     "package_writer_total_us",
     "package_writer_total_process_cpu_us",
     "package_writer_open_us",
@@ -33,6 +52,13 @@ METRICS = [
     "target_entry_open_us",
     "target_entry_close_us",
     "target_entry_close_process_cpu_us",
+    "target_entry_direct_zlib_output_bytes",
+    "target_entry_direct_zlib_output_buffer_peak_bytes",
+    "target_entry_direct_zlib_deflate_calls",
+    "target_entry_direct_zlib_deflate_us",
+    "target_entry_direct_zlib_engine_process_cpu_us",
+    "target_entry_direct_zlib_deflate_max_us",
+    "target_entry_direct_zlib_crc32_us",
     "target_entry_input_read_calls",
     "target_entry_input_read_us",
     "target_entry_input_read_wait_us",
@@ -68,6 +94,20 @@ def validate_buffer_kib(value: int) -> int:
     return value
 
 
+def validate_deflate_output_kib(value: int) -> int:
+    if value < 16 or value > 4096 or value & (value - 1):
+        raise ValueError(
+            "direct DEFLATE output buffer must be a power of two from 16 KiB to 4096 KiB"
+        )
+    return value
+
+
+def validate_backend(value: str) -> str:
+    if value not in BACKENDS:
+        raise ValueError(f"unsupported package writer benchmark backend: {value}")
+    return value
+
+
 def validate_compression_level(value: int) -> int:
     if value < 1 or value > 9:
         raise ValueError("compression level must be between 1 and 9")
@@ -93,7 +133,7 @@ def measured_run_summary(
     runs: list[dict[str, Any]],
 ) -> tuple[int, dict[str, dict[str, int | float]]]:
     require(bool(runs), "measured runs must not be empty")
-    elapsed = [run["result"]["target_entry_total_us"] for run in runs]
+    elapsed = [run["result"]["pipeline_total_us"] for run in runs]
     elapsed_median = statistics.median(elapsed)
     representative_index = min(
         range(len(runs)),
@@ -235,8 +275,10 @@ def validate_result(
     rows: int,
     cols: int,
     pattern: str,
+    backend: str,
     compression_level: int,
     buffer_kib: int,
+    deflate_output_kib: int,
     payload_size: int,
     payload_crc32: int,
 ) -> dict[str, Any]:
@@ -248,37 +290,209 @@ def validate_result(
     require(result.get("mode") == "timed-write", "timed mode mismatch")
     require(result.get("rows") == rows and result.get("cols") == cols, "timed shape mismatch")
     require(result.get("pattern") == pattern, "timed pattern mismatch")
+    require(result.get("backend") == backend, "backend mismatch")
     require(result.get("compression_level") == compression_level, "compression level mismatch")
     buffer_bytes = buffer_kib * 1024
     require(result.get("file_io_buffer_bytes") == buffer_bytes, "file buffer mismatch")
+    expected_deflate_output_bytes = (
+        deflate_output_kib * 1024 if backend != "minizip" else 0
+    )
+    require(
+        result.get("direct_deflate_output_buffer_bytes") == expected_deflate_output_bytes,
+        "direct DEFLATE output buffer mismatch",
+    )
     require(result.get("payload_bytes") == payload_size, "timed payload size mismatch")
     require(result.get("payload_crc32") == payload_crc32, "timed payload CRC mismatch")
-    require(result.get("target_entry_input_bytes") == payload_size, "entry input byte mismatch")
-    expected_calls = (payload_size + buffer_bytes - 1) // buffer_bytes
-    require(result.get("target_entry_input_read_calls") == expected_calls, "input read count mismatch")
-    require(result.get("target_entry_writer_write_calls") == expected_calls, "writer call count mismatch")
+    require(result.get("pipeline_total_us", 0) > 0, "pipeline timing is missing")
     require(
-        result.get("target_entry_writer_write_input_peak_bytes")
-        == min(payload_size, buffer_bytes),
-        "writer input peak mismatch",
+        result.get("temporary_compressed_file_removed") is True,
+        "temporary compressed output was not removed",
     )
-    require(result.get("target_entry_reused_staged_crc32") is True, "staged CRC was not reused")
-    if platform.system() == "Windows" and payload_size >= 4 * 1024 * 1024:
+
+    direct_helper_metrics = [
+        "direct_deflate_total_us",
+        "direct_deflate_total_process_cpu_us",
+        "direct_deflate_input_bytes",
+        "direct_deflate_input_read_calls",
+        "direct_deflate_input_read_us",
+        "direct_deflate_input_crc32_us",
+        "direct_deflate_input_crc32",
+        "direct_deflate_calls",
+        "direct_deflate_us",
+        "direct_deflate_max_us",
+        "direct_deflate_output_bytes",
+        "direct_deflate_output_write_calls",
+        "direct_deflate_output_write_us",
+        "direct_deflate_output_write_max_us",
+        "direct_deflate_input_buffer_bytes",
+        "direct_deflate_output_buffer_peak_bytes",
+    ]
+    one_pass_metrics = [
+        "target_entry_direct_zlib_output_bytes",
+        "target_entry_direct_zlib_output_buffer_bytes",
+        "target_entry_direct_zlib_output_buffer_peak_bytes",
+        "target_entry_direct_zlib_deflate_calls",
+        "target_entry_direct_zlib_deflate_us",
+        "target_entry_direct_zlib_engine_process_cpu_us",
+        "target_entry_direct_zlib_deflate_max_us",
+        "target_entry_direct_zlib_crc32_us",
+    ]
+
+    if backend == "direct-zlib-raw":
+        require(
+            result.get("direct_deflate_input_bytes") == payload_size,
+            "direct DEFLATE input byte mismatch",
+        )
+        require(
+            result.get("direct_deflate_input_crc32") == payload_crc32,
+            "direct DEFLATE input CRC mismatch",
+        )
+        expected_direct_reads = (payload_size + buffer_bytes - 1) // buffer_bytes
+        require(
+            result.get("direct_deflate_input_read_calls") == expected_direct_reads,
+            "direct DEFLATE input read count mismatch",
+        )
+        require(result.get("direct_deflate_calls", 0) > 0, "direct DEFLATE calls missing")
+        require(
+            result.get("direct_deflate_output_write_calls", 0) > 0,
+            "direct DEFLATE output writes missing",
+        )
+        require(
+            0 < result.get("direct_deflate_output_buffer_peak_bytes", 0)
+            <= expected_deflate_output_bytes,
+            "direct DEFLATE output buffer peak mismatch",
+        )
+        compressed_input_bytes = result.get("direct_deflate_output_bytes", 0)
+        require(compressed_input_bytes > 0, "direct DEFLATE produced no bytes")
+        require(
+            result.get("target_entry_raw_compressed_copy") is True,
+            "direct backend did not use raw compressed package copy",
+        )
+        require(
+            result.get("target_entry_reused_staged_crc32") is False,
+            "raw package copy unexpectedly reported staged CRC reuse",
+        )
+        require(
+            result.get("target_entry_direct_zlib_raw") is False,
+            "two-pass backend unexpectedly reported one-pass direct zlib",
+        )
+        require(
+            all(result.get(metric) == 0 for metric in one_pass_metrics),
+            "two-pass backend reported one-pass direct zlib telemetry",
+        )
+        exact_writer_calls = True
+    elif backend == "direct-zlib-one-pass":
+        require(
+            all(result.get(metric) == 0 for metric in direct_helper_metrics),
+            "one-pass backend reported two-pass helper telemetry",
+        )
+        require(
+            result.get("target_entry_raw_compressed_copy") is False,
+            "one-pass backend unexpectedly used a precompressed source",
+        )
+        require(
+            result.get("target_entry_direct_zlib_raw") is True,
+            "one-pass backend did not activate direct zlib raw output",
+        )
+        require(
+            result.get("target_entry_reused_staged_crc32") is True,
+            "one-pass backend did not retain staged CRC metadata",
+        )
+        require(
+            result.get("target_entry_direct_zlib_output_buffer_bytes")
+            == expected_deflate_output_bytes,
+            "one-pass output buffer mismatch",
+        )
+        require(
+            0 < result.get("target_entry_direct_zlib_output_buffer_peak_bytes", 0)
+            <= expected_deflate_output_bytes,
+            "one-pass output buffer peak mismatch",
+        )
+        require(
+            result.get("target_entry_direct_zlib_deflate_calls", 0) > 0,
+            "one-pass DEFLATE calls missing",
+        )
+        compressed_input_bytes = payload_size
+        exact_writer_calls = False
+    else:
+        require(
+            all(result.get(metric) == 0 for metric in direct_helper_metrics),
+            "minizip backend reported direct DEFLATE telemetry",
+        )
+        require(
+            all(result.get(metric) == 0 for metric in one_pass_metrics),
+            "minizip backend reported one-pass direct zlib telemetry",
+        )
+        compressed_input_bytes = payload_size
+        require(
+            result.get("target_entry_raw_compressed_copy") is False,
+            "minizip backend unexpectedly used raw compressed package copy",
+        )
+        require(result.get("target_entry_reused_staged_crc32") is True, "staged CRC was not reused")
+        require(
+            result.get("target_entry_direct_zlib_raw") is False,
+            "minizip backend unexpectedly reported one-pass direct zlib",
+        )
+        exact_writer_calls = True
+
+    require(
+        result.get("target_entry_input_bytes") == compressed_input_bytes,
+        "entry input byte mismatch",
+    )
+    expected_calls = (compressed_input_bytes + buffer_bytes - 1) // buffer_bytes
+    require(result.get("target_entry_input_read_calls") == expected_calls, "input read count mismatch")
+    if exact_writer_calls:
+        require(result.get("target_entry_writer_write_calls") == expected_calls, "writer call count mismatch")
+        require(
+            result.get("target_entry_writer_write_input_peak_bytes")
+            == min(compressed_input_bytes, buffer_bytes),
+            "writer input peak mismatch",
+        )
+    else:
+        require(result.get("target_entry_writer_write_calls", 0) > 0, "one-pass writer calls missing")
+        require(
+            result.get("target_entry_writer_write_input_peak_bytes")
+            == result.get("target_entry_direct_zlib_output_buffer_peak_bytes"),
+            "one-pass writer/output peak mismatch",
+        )
+    if (
+        backend != "direct-zlib-raw"
+        and platform.system() == "Windows"
+        and compressed_input_bytes >= 4 * 1024 * 1024
+    ):
         require(result.get("target_entry_staged_file_read_prefetch") is True, "prefetch was not active")
         require(
             result.get("target_entry_prefetched_staged_file_chunk_count") == 1,
             "prefetched chunk count mismatch",
         )
         require(
-            result.get("target_entry_prefetched_staged_input_bytes") == payload_size,
+            result.get("target_entry_prefetched_staged_input_bytes") == compressed_input_bytes,
             "prefetched byte count mismatch",
         )
         require(
             result.get("target_entry_prefetch_peak_buffer_bytes") == 2 * buffer_bytes,
             "prefetch buffer peak mismatch",
         )
+    else:
+        require(
+            result.get("target_entry_staged_file_read_prefetch") is False,
+            "prefetch unexpectedly active below threshold",
+        )
     require(output.exists() and output.stat().st_size == result.get("output_bytes"), "output size mismatch")
-    return inspect_archive(output, payload_size, payload_crc32)
+    archive = inspect_archive(output, payload_size, payload_crc32)
+    if backend == "direct-zlib-raw":
+        require(
+            archive["worksheet_compressed_bytes"]
+            == result.get("direct_deflate_output_bytes"),
+            "raw package compressed byte count mismatch",
+        )
+    elif backend == "direct-zlib-one-pass":
+        require(
+            archive["worksheet_compressed_bytes"]
+            == result.get("target_entry_direct_zlib_output_bytes"),
+            "one-pass compressed byte count mismatch",
+        )
+    return archive
 
 
 def run_once(
@@ -291,8 +505,10 @@ def run_once(
     rows: int,
     cols: int,
     pattern: str,
+    backend: str,
     compression_level: int,
     buffer_kib: int,
+    deflate_output_kib: int,
     payload: Path,
     payload_size: int,
     payload_crc32: int,
@@ -308,10 +524,14 @@ def run_once(
         str(cols),
         "--pattern",
         pattern,
+        "--backend",
+        backend,
         "--compression-level",
         str(compression_level),
         "--file-buffer-kib",
         str(buffer_kib),
+        "--deflate-output-kib",
+        str(deflate_output_kib if deflate_output_kib > 0 else 32),
         "--payload-size",
         str(payload_size),
         "--payload-crc32",
@@ -331,8 +551,10 @@ def run_once(
         rows,
         cols,
         pattern,
+        backend,
         compression_level,
         buffer_kib,
+        deflate_output_kib,
         payload_size,
         payload_crc32,
     )
@@ -376,8 +598,10 @@ def run_case(
     rows: int,
     cols: int,
     pattern: str,
+    backend: str,
     compression_level: int,
     buffer_kib: int,
+    deflate_output_kib: int,
     payload: Path,
     payload_size: int,
     payload_crc32: int,
@@ -385,7 +609,15 @@ def run_case(
     measured_runs: int,
     verify_openpyxl: bool,
 ) -> dict[str, Any]:
-    base_name = f"buffer-{buffer_kib}kib-level-{compression_level}"
+    output_suffix = (
+        f"-deflate-output-{deflate_output_kib}kib"
+        if backend != "minizip"
+        else ""
+    )
+    base_name = (
+        f"backend-{backend}-buffer-{buffer_kib}kib-level-{compression_level}"
+        f"{output_suffix}"
+    )
     warmups = [
         run_once(
             bench_exe,
@@ -397,8 +629,10 @@ def run_case(
             rows,
             cols,
             pattern,
+            backend,
             compression_level,
             buffer_kib,
+            deflate_output_kib,
             payload,
             payload_size,
             payload_crc32,
@@ -416,8 +650,10 @@ def run_case(
             rows,
             cols,
             pattern,
+            backend,
             compression_level,
             buffer_kib,
+            deflate_output_kib,
             payload,
             payload_size,
             payload_crc32,
@@ -435,8 +671,12 @@ def run_case(
     )
     return {
         "name": base_name,
+        "backend": backend,
         "compression_level": compression_level,
         "file_buffer_kib": buffer_kib,
+        "direct_deflate_output_buffer_kib": (
+            deflate_output_kib if backend != "minizip" else 0
+        ),
         "warmup_runs": warmup_runs,
         "measured_runs": measured_runs,
         "representative_run": representative_index + 1,
@@ -459,13 +699,24 @@ def run_self_test() -> None:
             pass
         else:
             raise AssertionError(f"invalid buffer accepted: {invalid}")
+    for value in DEFAULT_DEFLATE_OUTPUT_KIB:
+        require(validate_deflate_output_kib(value) == value, "valid DEFLATE buffer rejected")
+    for invalid in [0, 15, 24, 8192]:
+        try:
+            validate_deflate_output_kib(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"invalid DEFLATE buffer accepted: {invalid}")
+    for backend in BACKENDS:
+        require(validate_backend(backend) == backend, "valid backend rejected")
     reports = [
         {"result": {metric: index + 1 for metric in METRICS}}
         for index in [2, 0, 1]
     ]
     representative, summary = measured_run_summary(reports)
     require(representative == 2, "representative selection mismatch")
-    require(summary["target_entry_total_us"] == {"min": 1, "median": 2, "max": 3},
+    require(summary["pipeline_total_us"] == {"min": 1, "median": 2, "max": 3},
         "statistics mismatch")
     require(indexed_run_name("case", "run", 1, 3) == "case-run-01", "run name mismatch")
     with tempfile.TemporaryDirectory() as directory:
@@ -503,6 +754,8 @@ def main() -> int:
     )
     parser.add_argument("--compression-level", type=int, action="append")
     parser.add_argument("--file-buffer-kib", type=int, action="append")
+    parser.add_argument("--backend", choices=BACKENDS, action="append")
+    parser.add_argument("--deflate-output-kib", type=int, action="append")
     parser.add_argument("--warmup-runs", type=int, default=2)
     parser.add_argument("--measured-runs", type=int, default=5)
     parser.add_argument("--verify-openpyxl", action="store_true")
@@ -519,10 +772,21 @@ def main() -> int:
     require(args.measured_runs > 0, "measured runs must be positive")
     compression_levels = args.compression_level or [1]
     buffer_values = args.file_buffer_kib or DEFAULT_BUFFER_KIB
+    backends = args.backend or ["minizip"]
+    deflate_output_values = args.deflate_output_kib or DEFAULT_DEFLATE_OUTPUT_KIB
     compression_levels = [validate_compression_level(value) for value in compression_levels]
     buffer_values = [validate_buffer_kib(value) for value in buffer_values]
+    backends = [validate_backend(value) for value in backends]
+    deflate_output_values = [
+        validate_deflate_output_kib(value) for value in deflate_output_values
+    ]
     require(len(set(compression_levels)) == len(compression_levels), "duplicate compression level")
     require(len(set(buffer_values)) == len(buffer_values), "duplicate file buffer")
+    require(len(set(backends)) == len(backends), "duplicate backend")
+    require(
+        len(set(deflate_output_values)) == len(deflate_output_values),
+        "duplicate direct DEFLATE output buffer",
+    )
 
     bench_exe = args.bench_exe.resolve()
     require(bench_exe.is_file(), f"benchmark executable does not exist: {bench_exe}")
@@ -536,29 +800,42 @@ def main() -> int:
     cases: list[dict[str, Any]] = []
     for compression_level in compression_levels:
         for buffer_kib in buffer_values:
-            case = run_case(
-                bench_exe,
-                output_dir,
-                args.rows,
-                args.cols,
-                args.pattern,
-                compression_level,
-                buffer_kib,
-                payload,
-                preparation["payload_bytes"],
-                preparation["payload_crc32"],
-                args.warmup_runs,
-                args.measured_runs,
-                args.verify_openpyxl,
-            )
-            cases.append(case)
-            statistics_report = case["statistics"]
-            print(
-                f"{case['name']}: entry={statistics_report['target_entry_total_us']['median']} us, "
-                f"writer={statistics_report['target_entry_writer_write_us']['median']} us, "
-                f"cpu={statistics_report['target_entry_deflate_writer_process_cpu_us']['median']} us, "
-                f"peak={statistics_report['peak_memory_mb']['median']} MB"
-            )
+            for backend in backends:
+                backend_output_values = (
+                    deflate_output_values if backend != "minizip" else [0]
+                )
+                for deflate_output_kib in backend_output_values:
+                    case = run_case(
+                        bench_exe,
+                        output_dir,
+                        args.rows,
+                        args.cols,
+                        args.pattern,
+                        backend,
+                        compression_level,
+                        buffer_kib,
+                        deflate_output_kib,
+                        payload,
+                        preparation["payload_bytes"],
+                        preparation["payload_crc32"],
+                        args.warmup_runs,
+                        args.measured_runs,
+                        args.verify_openpyxl,
+                    )
+                    cases.append(case)
+                    statistics_report = case["statistics"]
+                    deflate_us = (
+                        statistics_report["target_entry_direct_zlib_deflate_us"]["median"]
+                        if backend == "direct-zlib-one-pass"
+                        else statistics_report["direct_deflate_us"]["median"]
+                    )
+                    print(
+                        f"{case['name']}: pipeline="
+                        f"{statistics_report['pipeline_total_us']['median']} us, "
+                        f"deflate={deflate_us} us, "
+                        f"writer={statistics_report['target_entry_writer_write_us']['median']} us, "
+                        f"peak={statistics_report['peak_memory_mb']['median']} MB"
+                    )
 
     report = {
         "package_writer_matrix_schema_version": MATRIX_SCHEMA_VERSION,
@@ -570,15 +847,20 @@ def main() -> int:
         "pattern": args.pattern,
         "compression_levels": compression_levels,
         "file_buffer_kib_values": buffer_values,
+        "backends": backends,
+        "direct_deflate_output_buffer_kib_values": deflate_output_values,
         "warmup_runs_per_case": args.warmup_runs,
         "measured_runs_per_case": args.measured_runs,
         "representative_result_policy":
-            "Measured run nearest target_entry_total_us median; earliest run breaks ties.",
+            "Measured run nearest pipeline_total_us median; earliest run breaks ties.",
         "process_priority": "Windows High priority" if platform.system() == "Windows" else "inherited",
         "preparation": preparation,
         "cases": cases,
         "scope":
-            "Isolated staged worksheet payload -> production minizip-ng package writer. "
+            "Isolated staged worksheet payload -> production minizip-ng DEFLATE or "
+            "benchmark-only direct zlib raw-DEFLATE plus production raw-copy package writer. "
+            "The one-pass direct zlib backend streams bounded raw DEFLATE output directly "
+            "into the production minizip raw-entry writer. "
             "Payload generation and openpyxl validation are outside timed benchmark processes; "
             "Office remains not_run.",
     }

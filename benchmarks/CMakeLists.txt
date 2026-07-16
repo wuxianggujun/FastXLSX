@@ -12,6 +12,7 @@ add_executable(fastxlsx_bench_package_editor_cell_replacement
 
 add_executable(fastxlsx_bench_package_writer
     bench_package_writer.cpp
+    package_writer_direct_deflate.cpp
 )
 
 target_link_libraries(fastxlsx_bench_streaming_writer PRIVATE FastXLSX::fastxlsx)
@@ -27,6 +28,13 @@ target_compile_definitions(fastxlsx_bench_workbook_editor PRIVATE
     FASTXLSX_BENCH_DEFAULT_OUTPUT_DIR="${CMAKE_CURRENT_BINARY_DIR}"
     FASTXLSX_ENABLE_TEST_HOOKS=1
 )
+if(FASTXLSX_ENABLE_MINIZIP_NG AND NOT FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING)
+    target_compile_definitions(fastxlsx_bench_workbook_editor PRIVATE
+        FASTXLSX_BENCH_PACKAGE_EDITOR_CRC_MINIZIP_NG=1)
+else()
+    target_compile_definitions(fastxlsx_bench_workbook_editor PRIVATE
+        FASTXLSX_BENCH_PACKAGE_EDITOR_CRC_PORTABLE=1)
+endif()
 
 target_link_libraries(fastxlsx_bench_package_editor_cell_replacement PRIVATE FastXLSX::fastxlsx)
 target_compile_features(fastxlsx_bench_package_editor_cell_replacement PRIVATE cxx_std_20)
@@ -43,6 +51,13 @@ target_compile_definitions(fastxlsx_bench_package_writer PRIVATE
 
 if(FASTXLSX_ENABLE_MINIZIP_NG)
     target_compile_definitions(fastxlsx_bench_streaming_writer PRIVATE FASTXLSX_BENCH_HAS_MINIZIP_NG=1)
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(fastxlsx_bench_package_writer PRIVATE ZLIB::ZLIB)
+    target_compile_definitions(fastxlsx_bench_package_writer PRIVATE FASTXLSX_BENCH_HAS_ZLIB=1)
+    if(FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING)
+        target_compile_definitions(fastxlsx_bench_package_writer PRIVATE
+            FASTXLSX_BENCH_HAS_DIRECT_ZLIB_PROFILING=1)
+    endif()
 endif()
 
 if(WIN32)

@@ -11,6 +11,13 @@ FastXLSX 本身使用 MIT License，见 `LICENSE`。发布制品前应以 resolv
 - 当前实现 private link；安装配置在启用时要求 consumer 可解析 minizip-ng。
 - License：按 resolved vcpkg metadata/上游包复核。
 
+### zlib
+
+- 来源：`runtime-minizip` 安装的 `minizip-ng[core,zlib]` dependency graph。
+- 用途：production minizip-ng 的 DEFLATE dependency；显式 `FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING=ON` 时还供 internal one-pass direct-raw-DEFLATE engine 使用。
+- 默认 FastXLSX production target 不直接链接 `ZLIB::ZLIB`；只有 profiling build private-link zlib，且对应非默认安装配置要求 consumer 可解析 `ZLIB::ZLIB`。
+- License：zlib License；发布前按 resolved vcpkg package 复核并随制品保留相应 notice。
+
 ### stb
 
 - vcpkg feature：`images`。

@@ -1,4 +1,5 @@
 #include "../src/package_writer.hpp"
+#include "package_writer_direct_deflate.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,10 +10,12 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -25,7 +28,7 @@
 
 namespace {
 
-constexpr std::string_view kBenchmarkSchemaVersion = "1";
+constexpr std::string_view kBenchmarkSchemaVersion = "2";
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
 
@@ -42,9 +45,11 @@ struct Options {
     std::uint32_t rows = 100000;
     std::uint32_t cols = 10;
     std::string pattern = "numeric";
+    std::string backend = "minizip";
     int compression_level = 1;
     std::size_t file_io_buffer_size =
         fastxlsx::detail::package_writer_default_file_io_buffer_size;
+    std::size_t deflate_output_buffer_size = 32U * 1024U;
     bool prepare_only = false;
     std::uint64_t payload_size = 0;
     std::uint32_t payload_crc32 = 0;
@@ -113,6 +118,20 @@ std::size_t parse_buffer_kib(std::string_view value)
     return bytes;
 }
 
+std::size_t parse_deflate_output_buffer_kib(std::string_view value)
+{
+    const std::uint64_t kib = parse_u64(value, "--deflate-output-kib");
+    if (kib > std::numeric_limits<std::size_t>::max() / 1024U) {
+        fail("--deflate-output-kib is too large");
+    }
+    const std::size_t bytes = static_cast<std::size_t>(kib * 1024U);
+    if (bytes < 16U * 1024U || bytes > 4U * 1024U * 1024U
+        || (bytes & (bytes - 1U)) != 0U) {
+        fail("--deflate-output-kib must select a power of two from 16 KiB to 4096 KiB");
+    }
+    return bytes;
+}
+
 Options parse_options(int argc, char** argv)
 {
     Options options;
@@ -131,10 +150,15 @@ Options parse_options(int argc, char** argv)
             options.cols = parse_u32(next_value(), argument);
         } else if (argument == "--pattern") {
             options.pattern = std::string(next_value());
+        } else if (argument == "--backend") {
+            options.backend = std::string(next_value());
         } else if (argument == "--compression-level") {
             options.compression_level = parse_compression_level(next_value());
         } else if (argument == "--file-buffer-kib") {
             options.file_io_buffer_size = parse_buffer_kib(next_value());
+        } else if (argument == "--deflate-output-kib") {
+            options.deflate_output_buffer_size =
+                parse_deflate_output_buffer_kib(next_value());
         } else if (argument == "--payload-size") {
             options.payload_size = parse_u64(next_value(), argument);
         } else if (argument == "--payload-crc32") {
@@ -151,7 +175,9 @@ Options parse_options(int argc, char** argv)
             std::cout
                 << "Usage: fastxlsx_bench_package_writer [--rows N] [--cols N] "
                    "[--pattern numeric|mixed-inline|formula] [--compression-level 1..9] "
+                   "[--backend minizip|direct-zlib-raw|direct-zlib-one-pass] "
                    "[--file-buffer-kib 64..4096] [--payload-size N] "
+                   "[--deflate-output-kib 16..4096] "
                    "[--payload-crc32 N] [--payload PATH] [--output PATH] "
                    "[--result PATH] [--prepare-only]\n";
             std::exit(0);
@@ -170,6 +196,20 @@ Options parse_options(int argc, char** argv)
         && options.pattern != "formula") {
         fail("--pattern must be numeric, mixed-inline, or formula");
     }
+    if (options.backend != "minizip" && options.backend != "direct-zlib-raw"
+        && options.backend != "direct-zlib-one-pass") {
+        fail("--backend must be minizip, direct-zlib-raw, or direct-zlib-one-pass");
+    }
+#ifndef FASTXLSX_BENCH_HAS_ZLIB
+    if (options.backend != "minizip") {
+        fail("direct zlib backends require a minizip/zlib benchmark build");
+    }
+#endif
+#ifndef FASTXLSX_BENCH_HAS_DIRECT_ZLIB_PROFILING
+    if (options.backend == "direct-zlib-one-pass") {
+        fail("direct-zlib-one-pass requires FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING=ON");
+    }
+#endif
     const std::uint64_t cells = static_cast<std::uint64_t>(options.rows) * options.cols;
     if (cells > std::numeric_limits<std::uint32_t>::max()) {
         fail("rows * cols is too large for this benchmark");
@@ -423,11 +463,15 @@ void write_prepare_result(const Options& options, const PayloadMetadata& metadat
         << "\"\n}\n";
 }
 
-void write_benchmark_result(const Options& options, std::uint64_t write_ms,
+void write_benchmark_result(const Options& options, std::uint64_t pipeline_total_us,
     std::uint64_t output_bytes, double peak_memory_mb,
-    const fastxlsx::detail::PackageWriterTelemetry& telemetry)
+    const fastxlsx::detail::PackageWriterTelemetry& telemetry,
+    const std::optional<fastxlsx::benchmarks::DirectDeflateTelemetry>& direct_deflate,
+    bool temporary_compressed_file_removed)
 {
     const auto& entry = worksheet_telemetry(telemetry);
+    const fastxlsx::benchmarks::DirectDeflateTelemetry direct =
+        direct_deflate.value_or(fastxlsx::benchmarks::DirectDeflateTelemetry {});
     ensure_parent_directory(options.result);
     std::ofstream output(options.result, std::ios::binary | std::ios::trunc);
     if (!output) {
@@ -442,13 +486,47 @@ void write_benchmark_result(const Options& options, std::uint64_t write_ms,
         << "  \"source_cells\": "
         << static_cast<std::uint64_t>(options.rows) * options.cols << ",\n"
         << "  \"pattern\": \"" << json_escape(options.pattern) << "\",\n"
+        << "  \"backend\": \"" << json_escape(options.backend) << "\",\n"
         << "  \"compression_level\": " << options.compression_level << ",\n"
         << "  \"file_io_buffer_bytes\": " << options.file_io_buffer_size << ",\n"
+        << "  \"direct_deflate_output_buffer_bytes\": "
+        << (direct_deflate.has_value()
+                ? options.deflate_output_buffer_size
+                : entry.direct_zlib_output_buffer_bytes)
+        << ",\n"
         << "  \"payload_bytes\": " << options.payload_size << ",\n"
         << "  \"payload_crc32\": " << options.payload_crc32 << ",\n"
-        << "  \"write_ms\": " << write_ms << ",\n"
+        << "  \"write_ms\": " << pipeline_total_us / 1000U << ",\n"
+        << "  \"pipeline_total_us\": " << pipeline_total_us << ",\n"
+        << "  \"pipeline_total_process_cpu_us\": "
+        << telemetry.total_process_cpu_us + direct.total_process_cpu_us << ",\n"
         << "  \"output_bytes\": " << output_bytes << ",\n"
         << "  \"peak_memory_mb\": " << peak_memory_mb << ",\n"
+        << "  \"direct_deflate_total_us\": " << direct.total_us << ",\n"
+        << "  \"direct_deflate_total_process_cpu_us\": "
+        << direct.total_process_cpu_us << ",\n"
+        << "  \"direct_deflate_input_bytes\": " << direct.input_bytes << ",\n"
+        << "  \"direct_deflate_input_read_calls\": "
+        << direct.input_read_calls << ",\n"
+        << "  \"direct_deflate_input_read_us\": " << direct.input_read_us << ",\n"
+        << "  \"direct_deflate_input_crc32_us\": " << direct.input_crc32_us << ",\n"
+        << "  \"direct_deflate_input_crc32\": " << direct.input_crc32 << ",\n"
+        << "  \"direct_deflate_calls\": " << direct.deflate_calls << ",\n"
+        << "  \"direct_deflate_us\": " << direct.deflate_us << ",\n"
+        << "  \"direct_deflate_max_us\": " << direct.deflate_max_us << ",\n"
+        << "  \"direct_deflate_output_bytes\": " << direct.output_bytes << ",\n"
+        << "  \"direct_deflate_output_write_calls\": "
+        << direct.output_write_calls << ",\n"
+        << "  \"direct_deflate_output_write_us\": "
+        << direct.output_write_us << ",\n"
+        << "  \"direct_deflate_output_write_max_us\": "
+        << direct.output_write_max_us << ",\n"
+        << "  \"direct_deflate_input_buffer_bytes\": "
+        << direct.input_buffer_bytes << ",\n"
+        << "  \"direct_deflate_output_buffer_peak_bytes\": "
+        << direct.output_buffer_peak_bytes << ",\n"
+        << "  \"temporary_compressed_file_removed\": "
+        << (temporary_compressed_file_removed ? "true" : "false") << ",\n"
         << "  \"package_writer_total_us\": " << telemetry.total_us << ",\n"
         << "  \"package_writer_total_process_cpu_us\": "
         << telemetry.total_process_cpu_us << ",\n"
@@ -461,6 +539,26 @@ void write_benchmark_result(const Options& options, std::uint64_t write_ms,
         << "  \"target_entry_close_us\": " << entry.close_us << ",\n"
         << "  \"target_entry_close_process_cpu_us\": "
         << entry.close_process_cpu_us << ",\n"
+        << "  \"target_entry_raw_compressed_copy\": "
+        << (entry.raw_compressed_copy ? "true" : "false") << ",\n"
+        << "  \"target_entry_direct_zlib_raw\": "
+        << (entry.direct_zlib_raw ? "true" : "false") << ",\n"
+        << "  \"target_entry_direct_zlib_output_bytes\": "
+        << entry.direct_zlib_output_bytes << ",\n"
+        << "  \"target_entry_direct_zlib_output_buffer_bytes\": "
+        << entry.direct_zlib_output_buffer_bytes << ",\n"
+        << "  \"target_entry_direct_zlib_output_buffer_peak_bytes\": "
+        << entry.direct_zlib_output_buffer_peak_bytes << ",\n"
+        << "  \"target_entry_direct_zlib_deflate_calls\": "
+        << entry.direct_zlib_deflate_calls << ",\n"
+        << "  \"target_entry_direct_zlib_deflate_us\": "
+        << entry.direct_zlib_deflate_us << ",\n"
+        << "  \"target_entry_direct_zlib_engine_process_cpu_us\": "
+        << entry.direct_zlib_engine_process_cpu_us << ",\n"
+        << "  \"target_entry_direct_zlib_deflate_max_us\": "
+        << entry.direct_zlib_deflate_max_us << ",\n"
+        << "  \"target_entry_direct_zlib_crc32_us\": "
+        << entry.direct_zlib_crc32_us << ",\n"
         << "  \"target_entry_input_bytes\": " << entry.input_bytes << ",\n"
         << "  \"target_entry_input_read_calls\": " << entry.input_read_calls << ",\n"
         << "  \"target_entry_input_read_us\": " << entry.input_read_us << ",\n"
@@ -496,6 +594,18 @@ void write_benchmark_result(const Options& options, std::uint64_t write_ms,
         << "\"\n}\n";
 }
 
+std::vector<fastxlsx::detail::PackageEntry> package_entries(
+    fastxlsx::detail::PackageEntry worksheet_entry)
+{
+    std::vector<fastxlsx::detail::PackageEntry> entries;
+    entries.emplace_back("[Content_Types].xml", content_types_xml());
+    entries.emplace_back("_rels/.rels", package_relationships_xml());
+    entries.emplace_back("xl/workbook.xml", workbook_xml());
+    entries.emplace_back("xl/_rels/workbook.xml.rels", workbook_relationships_xml());
+    entries.push_back(std::move(worksheet_entry));
+    return entries;
+}
+
 void run_timed_write(const Options& options)
 {
     std::error_code error;
@@ -505,39 +615,73 @@ void run_timed_write(const Options& options)
         fail("payload size does not match --payload-size");
     }
 
-    fastxlsx::detail::PackageEntryChunk worksheet_chunk =
-        fastxlsx::detail::PackageEntryChunk::file(options.payload);
-    worksheet_chunk.has_expected_size = true;
-    worksheet_chunk.expected_size = options.payload_size;
-    worksheet_chunk.has_expected_crc32 = true;
-    worksheet_chunk.expected_crc32 = options.payload_crc32;
-
-    std::vector<fastxlsx::detail::PackageEntry> entries;
-    entries.emplace_back("[Content_Types].xml", content_types_xml());
-    entries.emplace_back("_rels/.rels", package_relationships_xml());
-    entries.emplace_back("xl/workbook.xml", workbook_xml());
-    entries.emplace_back("xl/_rels/workbook.xml.rels", workbook_relationships_xml());
-    entries.emplace_back("xl/worksheets/sheet1.xml",
-        std::vector<fastxlsx::detail::PackageEntryChunk> {std::move(worksheet_chunk)});
-
     ensure_parent_directory(options.output);
     fastxlsx::detail::PackageWriterTelemetry telemetry;
     fastxlsx::detail::PackageWriterOptions writer_options;
     writer_options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
     writer_options.compression_level = options.compression_level;
     writer_options.file_io_buffer_size = options.file_io_buffer_size;
+    writer_options.deflate_engine = options.backend == "direct-zlib-one-pass"
+        ? fastxlsx::detail::PackageWriterDeflateEngine::DirectZlibRaw
+        : fastxlsx::detail::PackageWriterDeflateEngine::MinizipNg;
+    writer_options.deflate_output_buffer_size = options.deflate_output_buffer_size;
     writer_options.telemetry = &telemetry;
-    const auto started = std::chrono::steady_clock::now();
-    fastxlsx::detail::write_package(options.output, entries, writer_options);
-    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - started);
+
+    std::optional<fastxlsx::benchmarks::DirectDeflateTelemetry> direct_deflate;
+    std::filesystem::path temporary_compressed_path = options.output;
+    temporary_compressed_path += ".worksheet.deflate";
+    bool temporary_compressed_file_removed = options.backend != "direct-zlib-raw";
+    const auto pipeline_started = std::chrono::steady_clock::now();
+    try {
+        std::vector<fastxlsx::detail::PackageEntry> entries;
+        if (options.backend == "direct-zlib-raw") {
+            direct_deflate = fastxlsx::benchmarks::write_raw_deflate_file(
+                options.payload, temporary_compressed_path, options.file_io_buffer_size,
+                options.deflate_output_buffer_size, options.compression_level,
+                options.payload_size, options.payload_crc32);
+            fastxlsx::detail::PackageRawCompressedEntrySource raw_source;
+            raw_source.path = temporary_compressed_path;
+            raw_source.compressed_size = direct_deflate->output_bytes;
+            raw_source.uncompressed_size = options.payload_size;
+            raw_source.crc32 = options.payload_crc32;
+            raw_source.compression_method = 8;
+            entries = package_entries(fastxlsx::detail::PackageEntry::raw_compressed_copy(
+                "xl/worksheets/sheet1.xml", std::move(raw_source)));
+        } else {
+            fastxlsx::detail::PackageEntryChunk worksheet_chunk =
+                fastxlsx::detail::PackageEntryChunk::file(options.payload);
+            worksheet_chunk.has_expected_size = true;
+            worksheet_chunk.expected_size = options.payload_size;
+            worksheet_chunk.has_expected_crc32 = true;
+            worksheet_chunk.expected_crc32 = options.payload_crc32;
+            entries = package_entries(fastxlsx::detail::PackageEntry(
+                "xl/worksheets/sheet1.xml",
+                std::vector<fastxlsx::detail::PackageEntryChunk> {std::move(worksheet_chunk)}));
+        }
+        fastxlsx::detail::write_package(options.output, entries, writer_options);
+    } catch (...) {
+        std::error_code ignored;
+        std::filesystem::remove(temporary_compressed_path, ignored);
+        throw;
+    }
+    const std::uint64_t pipeline_total_us = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - pipeline_started).count());
+
+    if (direct_deflate.has_value()) {
+        temporary_compressed_file_removed =
+            std::filesystem::remove(temporary_compressed_path, error);
+        if (error || !temporary_compressed_file_removed) {
+            fail("failed to remove direct zlib benchmark temporary output");
+        }
+    }
 
     const std::uint64_t output_bytes = std::filesystem::file_size(options.output, error);
     if (error || output_bytes == 0) {
         fail("package writer produced no output");
     }
-    write_benchmark_result(options, static_cast<std::uint64_t>(elapsed.count()),
-        output_bytes, peak_working_set_mb(), telemetry);
+    write_benchmark_result(options, pipeline_total_us, output_bytes, peak_working_set_mb(),
+        telemetry, direct_deflate, temporary_compressed_file_removed);
 }
 
 } // namespace

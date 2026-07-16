@@ -98,6 +98,8 @@ struct SinglePassWorksheetTransformStats {
     std::uint64_t relationship_scan_boundary_carry_count = 0;
     std::uint64_t relationship_scan_slow_path_tag_count = 0;
     std::uint64_t temporary_write_us = 0;
+    std::uint64_t crc32_us = 0;
+    std::uint64_t crc32_segment_count = 0;
 };
 
 struct PackagePartReplacement {
@@ -154,6 +156,9 @@ struct PackagePartReplacement {
     std::uint64_t single_pass_relationship_scan_boundary_carry_count = 0;
     std::uint64_t single_pass_relationship_scan_slow_path_tag_count = 0;
     std::uint64_t single_pass_temporary_write_us = 0;
+    bool single_pass_fused_crc32 = false;
+    std::uint64_t single_pass_crc32_us = 0;
+    std::uint64_t single_pass_crc32_segment_count = 0;
     std::uint64_t single_pass_commit_ms = 0;
 };
 
@@ -234,6 +239,9 @@ struct PackageEditorOutputEntryPlan {
     std::uint64_t single_pass_relationship_scan_boundary_carry_count = 0;
     std::uint64_t single_pass_relationship_scan_slow_path_tag_count = 0;
     std::uint64_t single_pass_temporary_write_us = 0;
+    bool single_pass_fused_crc32 = false;
+    std::uint64_t single_pass_crc32_us = 0;
+    std::uint64_t single_pass_crc32_segment_count = 0;
     std::uint64_t single_pass_commit_ms = 0;
     std::string file_backed_source_copy_reason;
     std::string materialized_replacement_reason;

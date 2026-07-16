@@ -24,6 +24,7 @@
         "streaming-writer",
         "workbook-editor",
         "package-editor-cell-replacement",
+        "package-writer",
         "reference-writer"
       ]
     },

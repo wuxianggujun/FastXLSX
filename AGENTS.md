@@ -37,6 +37,7 @@ FastXLSX 是 C++20 / MSVC 2026 优先的 XLSX 创建与编辑库，公开 Stream
 ## 依赖
 
 - vcpkg 默认 features：`runtime-minizip`、`images`。
+- Production 只直接链接/export minizip-ng；`FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING` 默认 OFF，只有 benchmark/profile build 才直接链接 `ZLIB::ZLIB` 并编译 one-pass direct engine。
 - `planned-xml` 只包含当前未链接的 zlib-ng/Expat/pugixml。
 - `planned-dev` 当前未自动接线 Catch2/Google Benchmark。
 - OpenXLSX、xlnt 等只作 reference benchmark。
@@ -52,6 +53,10 @@ ctest --preset windows-nmake-release
 
 Stored bootstrap：`windows-nmake-release-stored`。No-images：`windows-nmake-release-no-images`，并运行 `build\windows-nmake-release-no-images\fastxlsx_image_disabled_smoke.exe`。
 
+Direct-zlib profiling：`windows-nmake-release-direct-zlib-profile`；它不是 production/install 默认 profile。
+
+Patch CRC internal A/B：`windows-nmake-release-patch-crc-minizip-profile` 与 `windows-nmake-release-patch-crc-portable-profile`；两者都使用 minizip package backend，后者只强制 portable PackageEditor CRC。它们不是 public/install profile。
+
 普通终端缺少 `cl`/`nmake` 时必须先加载 VS `vcvars64.bat`；不要把环境失败误判为代码失败。
 
 ## 验证
@@ -61,7 +66,8 @@ Stored bootstrap：`windows-nmake-release-stored`。No-images：`windows-nmake-r
 - In-memory：typed strict diagnostics、explicit lossy、generic policy mismatch、guardrail、no-state-pollution、two-phase save handoff、post-stage failure retry、move/handle lifecycle。
 - Streaming：row order、无 DOM/dense matrix、package side effects。
 - CTest 普通上限 60 秒；public-state 测试已全部拆为 standalone targets，不再保留专用 120 秒 legacy shard。
-- Benchmark：只有 `benchmarks/evidence/` 中通过 validator 的 bundle 可用于 release claim；当前有 4 个 production Streaming bundle、16 个 Patch bundle 与 1 个 OpenXLSX reference bundle，共 21 个，均只支持各自 manifest 限定的单机 workload 结论。Patch matrix 对 planned raw-copy entry 验证 exact compressed payload，并分列 names/count/bytes；single-pass profile 还必须分列 parser/source-callback/coalesced/action traffic、aggregate/canonical inline-string fast-path、complete-cell 与 canonical complete-cell count/bytes/type counters、pass-through batching、output batching、relationship scanner、relationship/temporary IO、target-entry writer、staged CRC reuse/validation、staged-file prefetch activation/chunks/bytes/buffer/read/wait、file IO buffer、writer input peak/call count/maximum call wall time、requested compression level 与 writer process CPU。Strict targeted replace 使用 one-inflate direct-range；missing-cell upsert、relationship-bearing worksheet 与其他 fallback 使用 256 KiB batched single-pass source-order transform。Windows production 对至少 4 MiB staged file chunk 使用两个固定 512 KiB overlapped-read buffer，小/raw-copy/stored/non-Windows 路径同步读取。Streaming executable schema 为 v5，Patch `WorkbookEditor` executable schema 为 v15，Patch matrix 为 v9，isolated package-writer executable/matrix 为 v1；DEFLATE writer CPU 是 minizip write/close 的 process CPU envelope，不是纯 encoder CPU。同机 numeric/mixed reference 只支持所记录 workload 的 2.01×/2.64×吞吐比，不得泛化为全功能胜出。
+- Benchmark：只有 `benchmarks/evidence/` 中通过 validator 的 bundle 可用于 release claim；当前有 4 个 production Streaming bundle、16 个 Patch bundle 与 1 个 OpenXLSX reference bundle，共 21 个，均只支持各自 manifest 限定的单机 workload 结论。Patch matrix 对 planned raw-copy entry 验证 exact compressed payload，并分列 names/count/bytes；single-pass profile 还必须分列 parser/source-callback/coalesced/action traffic、aggregate/canonical inline-string fast-path、complete-cell 与 canonical complete-cell count/bytes/type counters、pass-through batching、output batching、relationship scanner、relationship/temporary IO、CRC backend、fused CRC wall/segment count、single-pass commit、target-entry writer、staged CRC reuse/validation、staged-file prefetch activation/chunks/bytes/buffer/read/wait、file IO buffer、writer input peak/call count/maximum call wall time、requested compression level，以及 open/materialize/mutation/save/total editor 与 writer process CPU。多 worksheet profile 还要核对 sheet names/value/dimension、按表 edits/inserted、aggregate transform/CRC segments、rewritten worksheet entry 聚合总账，以及 schema-v20 `rewritten_worksheet_entries` 的顺序、逐字段 sum/max 与 sheet1 legacy 字段一致性。Strict targeted replace 使用 one-inflate direct-range；missing-cell upsert、relationship-bearing worksheet 与其他 fallback 使用 256 KiB batched single-pass source-order transform。Fused path 在 transform append 时计算 CRC checkpoints，commit 不重读 temporary worksheet，但 PackageWriter completed-entry CRC、same-size mutation output protection 与 retry gate 必须保留。Windows production 对至少 4 MiB staged file chunk 使用两个固定 512 KiB overlapped-read buffer，小/raw-copy/stored/non-Windows 路径同步读取且不得报告 prefetch traffic。Streaming executable/matrix schema 为 v6/v3；Patch `WorkbookEditor` executable/matrix schema 为 v20/v15；isolated package-writer executable/matrix 为 v2、balanced paired matrix 为 v1；internal Patch CRC/fusion paired runner 为 v3；最新 tracked Streaming/Patch/isolated evidence 仍分别为 v5/v9/v1。重复矩阵保留全部 warm-up result；第一轮 observation 必须标记 `cache_control=none`、`cold_cache_claim=false`，release representative 使用 warmed measured median。Minizip DEFLATE writer CPU 是 write/close process CPU envelope；direct-zlib engine CPU 只覆盖 `deflateInit2`/`deflate`/`deflateEnd`，不得混入 CRC/read/raw-output write/entry close。同机 numeric/mixed reference 只支持所记录 workload 的 2.01×/2.64×吞吐比，不得泛化为全功能胜出。
+- Worksheet scaling runner schema v2 使用反转 rotation 对 1/2/4-sheet variants 做 position-balanced `fixed-shape`/`fixed-total` profile；后者必须记录 row-number/XML-size 差异。两种协议都保留全部 raw result、position statistics、同轮 baseline ratio、逐 worksheet entry min/median/max 与 OpenPyXL。Windows 快速 DEFLATE 的 process CPU 可能因约 15.625 ms tick 量化为 0，只有至少 4 MiB 的 rewritten target 才强制正值。
 - 文档：Markdown links、UTF-8/LF、deleted-doc refs、high-risk wording、`git diff --check`。
 
 ## 项目 Skills

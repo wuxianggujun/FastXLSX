@@ -2,9 +2,7 @@
 
 include(CMakeFindDependencyMacro)
 
-if(@FASTXLSX_ENABLE_MINIZIP_NG@)
-    find_dependency(minizip-ng CONFIG)
-endif()
+@FASTXLSX_CONFIG_DEPENDENCIES@
 
 include("${CMAKE_CURRENT_LIST_DIR}/FastXLSXTargets.cmake")
 

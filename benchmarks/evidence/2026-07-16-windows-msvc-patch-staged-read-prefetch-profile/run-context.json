@@ -1,0 +1,53 @@
+{
+  "run_context_schema_version": "1",
+  "optimized_git_revision": "f367e21bbb8c72919863b1e7504517121842dea8",
+  "baseline_git_revision": "9b346fee926ac4d904efcc76fb3b5f63d929ebbf",
+  "date_local": "2026-07-16",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680,
+    "openpyxl_version": "3.1.2"
+  },
+  "benchmark_protocol": {
+    "runner": "tools/run_patch_benchmark_matrix.py",
+    "optimized_executable": "build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe",
+    "baseline_executable": "C:/Users/wuxianggujun/CodeSpace/CMakeProjects/FastXLSX-benchmark-baseline-v13/build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_workbook_editor.exe",
+    "common_arguments": "--rows 100000 --cols 10 --case patch-upsert:1000 --warmup-runs 2 --measured-runs 5 --source-compression-level 6 --output-compression-level 1 --verify-openpyxl",
+    "profiles": [
+      "--source-pattern numeric",
+      "--source-pattern mixed-inline",
+      "--source-pattern formula --source-external-hyperlink"
+    ],
+    "orders": [
+      {
+        "name": "reverse",
+        "sequence": ["optimized-v14", "baseline-v13"]
+      },
+      {
+        "name": "forward",
+        "sequence": ["baseline-v13", "optimized-v14"]
+      }
+    ],
+    "source_generation": "Each matrix generated one deterministic source workbook in a separate preparation process. Baseline and optimized source SHA-256 values matched for every profile in both orders.",
+    "representative_policy": "Measured run nearest total_editor_ms median; earliest run breaks ties.",
+    "process_priority": "Benchmark runner parents used Windows High priority and child benchmark processes inherited that priority.",
+    "verification": "Every matrix passed schema telemetry, output-plan byte accounting and raw compressed-payload checks. The representative output for every matrix opened with openpyxl after benchmark timing; formula profiles retained the recorded external hyperlink target.",
+    "cache_measurement": "Repeated runs were warmed, but no ETW trace or physical OS cache-hit attribution was collected. Only executable foreground read/wait telemetry is claimed."
+  },
+  "validation": {
+    "focused_tests": "passed: package reader ZIP failures, public Patch cells and public save compression",
+    "production_ctest": "132/132 passed",
+    "stored_ctest": "132/132 passed",
+    "no_images_profile": "build and image-disabled runtime smoke passed",
+    "install_consumer_smoke": "passed for production, stored-only and no-images installations",
+    "benchmark_runner_self_test": "passed",
+    "evidence_validator_self_test": "passed",
+    "evidence_bundle_validation": "passed: 20 bundles",
+    "office_open": "not_run"
+  },
+  "resource_lifecycle": "No background worker was introduced. Pending OVERLAPPED I/O is cancelled and joined by local RAII state; benchmark sources, outputs, install consumers and detached baseline worktree were removed after evidence capture.",
+  "qualification": "Elapsed time is system-sensitive. Claims are limited to the recorded same-machine warmed dual-order protocol and are not generalized to arbitrary workbooks, other machines, Office compatibility, physical cache-hit rate or full-feature superiority."
+}

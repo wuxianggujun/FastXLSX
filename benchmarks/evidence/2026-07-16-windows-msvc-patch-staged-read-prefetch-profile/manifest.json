@@ -1,0 +1,150 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-16-windows-msvc-patch-staged-read-prefetch-profile",
+  "created_utc": "2026-07-16T06:03:19Z",
+  "git_revision": "f367e21bbb8c72919863b1e7504517121842dea8",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "forward-baseline-v13-formula-hyperlink-matrix.json",
+      "sha256": "88555704f7cbcac0e581da445254c740f28fd2192f5b6cf6941afb8573297743",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-baseline-v13-mixed-inline-matrix.json",
+      "sha256": "2e0d63f1b940483ef824756df04594921a45c42ff05a9b60ef46ac6256b031b7",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-baseline-v13-numeric-matrix.json",
+      "sha256": "b359c0dd39a2d008fe43acc1ba313be47f19a138190162b9afebeb2e47b320ff",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-optimized-v14-formula-hyperlink-matrix.json",
+      "sha256": "ed1b7d445dd265f6ab2af50ed37ba315aedada038aef49744d2be7a7a271fda9",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-optimized-v14-mixed-inline-matrix.json",
+      "sha256": "83f36239ee441e2edd960edb76c16baddeb5f8cfff664a947bc66d6a7854681e",
+      "role": "matrix-report"
+    },
+    {
+      "path": "forward-optimized-v14-numeric-matrix.json",
+      "sha256": "8d88e4f3888f713a766623bf912a7f14b17dd7500f8e931a1435dbb77b26fa0c",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-baseline-v13-formula-hyperlink-matrix.json",
+      "sha256": "84dd4650e89a2be3a889deb3185771824f91a3eb653b6d0db17ed271fce6b7e7",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-baseline-v13-mixed-inline-matrix.json",
+      "sha256": "150bbe433f481882c5ddde65ec8ab9093ae0508e34ed426e0958a7aef067e706",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-baseline-v13-numeric-matrix.json",
+      "sha256": "9a20b0d1318647e59648b0e48fa871f780c72512bb49bf2bde859522d0c597e2",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-optimized-v14-formula-hyperlink-matrix.json",
+      "sha256": "633acc71786e3abf3a3763814f18a552bafef6224fca8d62007b00cf44358521",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-optimized-v14-mixed-inline-matrix.json",
+      "sha256": "5a285a22c831485445ebe9011effd504c05ac2ba12bc2fb9ffa7e221693519fb",
+      "role": "matrix-report"
+    },
+    {
+      "path": "reverse-optimized-v14-numeric-matrix.json",
+      "sha256": "4fd77446b48741a6492f8551319f7cb6bab9e610939eaa966a4d89ac35e43b5f",
+      "role": "matrix-report"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "15c063b7b214dfad491fae5d25b5e1092def7cac2bb1e32ed0aff9db65daa9f6",
+      "role": "summary"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "8d66354a9a55efdd6c8af7f858a443ad35a0a370d70cd9837f34d4ed2fdb11ad",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "Patch benchmark schema v14 and matrix schema v8 add bounded staged-file prefetch activation, chunk/byte/buffer and foreground completion-wait telemetry while retaining all earlier Patch telemetry.",
+      "artifact_paths": [
+        "forward-optimized-v14-formula-hyperlink-matrix.json",
+        "forward-optimized-v14-mixed-inline-matrix.json",
+        "forward-optimized-v14-numeric-matrix.json",
+        "reverse-optimized-v14-formula-hyperlink-matrix.json",
+        "reverse-optimized-v14-mixed-inline-matrix.json",
+        "reverse-optimized-v14-numeric-matrix.json",
+        "summary.json"
+      ]
+    },
+    {
+      "statement": "On this machine and the recorded warmed dual-order one-million-cell workloads, the two-buffer prefetch was active in every optimized matrix and reduced foreground staged-file input-read median time by 78.75%-91.79%; median completion wait remained 62-135 us.",
+      "artifact_paths": [
+        "forward-baseline-v13-formula-hyperlink-matrix.json",
+        "forward-baseline-v13-mixed-inline-matrix.json",
+        "forward-baseline-v13-numeric-matrix.json",
+        "forward-optimized-v14-formula-hyperlink-matrix.json",
+        "forward-optimized-v14-mixed-inline-matrix.json",
+        "forward-optimized-v14-numeric-matrix.json",
+        "reverse-baseline-v13-formula-hyperlink-matrix.json",
+        "reverse-baseline-v13-mixed-inline-matrix.json",
+        "reverse-baseline-v13-numeric-matrix.json",
+        "reverse-optimized-v14-formula-hyperlink-matrix.json",
+        "reverse-optimized-v14-mixed-inline-matrix.json",
+        "reverse-optimized-v14-numeric-matrix.json",
+        "summary.json"
+      ]
+    },
+    {
+      "statement": "The optimized path used exactly two fixed 1 MiB buffers and paired process peak-working-set medians changed by at most 0.02734 MB. Target-entry median improved in five of six pairs; reverse-order numeric writer noise prevents a universal target-entry or total-editor throughput claim, and physical OS cache-hit rate was not measured.",
+      "artifact_paths": [
+        "forward-baseline-v13-formula-hyperlink-matrix.json",
+        "forward-baseline-v13-mixed-inline-matrix.json",
+        "forward-baseline-v13-numeric-matrix.json",
+        "forward-optimized-v14-formula-hyperlink-matrix.json",
+        "forward-optimized-v14-mixed-inline-matrix.json",
+        "forward-optimized-v14-numeric-matrix.json",
+        "reverse-baseline-v13-formula-hyperlink-matrix.json",
+        "reverse-baseline-v13-mixed-inline-matrix.json",
+        "reverse-baseline-v13-numeric-matrix.json",
+        "reverse-optimized-v14-formula-hyperlink-matrix.json",
+        "reverse-optimized-v14-mixed-inline-matrix.json",
+        "reverse-optimized-v14-numeric-matrix.json",
+        "summary.json",
+        "run-context.json"
+      ]
+    },
+    {
+      "statement": "Final production and stored CTest passed 132/132; no-images runtime smoke and production/stored/no-images install consumers passed. All six optimized representative outputs opened with openpyxl 3.1.2 and formula profiles retained https://example.com/fastxlsx-benchmark. Office was not run, and no cross-machine, arbitrary-workbook, full-feature or OpenXLSX-superiority claim is made.",
+      "artifact_paths": [
+        "forward-optimized-v14-formula-hyperlink-matrix.json",
+        "forward-optimized-v14-mixed-inline-matrix.json",
+        "forward-optimized-v14-numeric-matrix.json",
+        "reverse-optimized-v14-formula-hyperlink-matrix.json",
+        "reverse-optimized-v14-mixed-inline-matrix.json",
+        "reverse-optimized-v14-numeric-matrix.json",
+        "run-context.json",
+        "summary.json"
+      ]
+    }
+  ]
+}

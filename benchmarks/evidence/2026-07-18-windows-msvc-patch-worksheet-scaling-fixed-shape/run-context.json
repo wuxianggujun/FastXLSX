@@ -1,0 +1,52 @@
+{
+  "run_context_schema_version": "1",
+  "git_revision": "e85bbd2b11b9f42ce68e762023d962fb44143164",
+  "date_local": "2026-07-18",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200.8655",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-patch-crc-minizip-profile",
+    "cmake_version": "4.2.3-msvc3",
+    "vcpkg_baseline": "81de6771512413aaf89ea77add5ad1fda126b9d0",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680,
+    "power_plan": "Balanced",
+    "python_version": "3.13.0",
+    "openpyxl_version": "3.1.2"
+  },
+  "benchmark_protocol": {
+    "runner": "tools/run_patch_worksheet_scaling_benchmark.py",
+    "executable": "build/windows-nmake-crc-minizip-profile/benchmarks/fastxlsx_bench_workbook_editor.exe",
+    "runner_schema_version": "2",
+    "benchmark_schema_version": "20",
+    "mode": "fixed-shape",
+    "worksheet_counts": [1, 2, 4],
+    "rows_per_worksheet": 100000,
+    "columns": 10,
+    "edits_per_worksheet": 1000,
+    "scenario": "patch-upsert",
+    "source_patterns": ["mixed-inline", "formula"],
+    "source_compression_level": 6,
+    "output_compression_level": 1,
+    "warmup_rounds": 6,
+    "measured_rounds": 12,
+    "schedule": "Balanced round-robin rotation with reversed cycles; each 1/2/4-sheet variant appears equally often in every position.",
+    "representative_policy": "Measured run nearest total_editor_ms median; earliest run breaks ties.",
+    "compatibility": "The representative output for every variant was opened with openpyxl 3.1.2 and checked for sheet names, edited values and dimensions.",
+    "timing_scope": "Source preparation, report serialization and OpenPyXL validation are outside benchmark timing and process CPU telemetry. OS file/page caches were not cleared."
+  },
+  "validation": {
+    "source_revision_clean_at_run": true,
+    "worksheet_scaling_runner_self_test": "passed",
+    "report_schema_and_ledger_checks": "passed for both profiles",
+    "representative_openpyxl": "passed for all six variants",
+    "same_revision_production_ctest": "133/133 passed before commit and build-resource cleanup",
+    "evidence_validator_self_test": "passed",
+    "existing_evidence_validation_before_capture": "passed: 21 bundles",
+    "office_open": "not_run",
+    "second_machine": "not_run"
+  },
+  "artifact_capture": "The runner reports retain their generic statement that a local report is not tracked evidence by itself. This directory's validated manifest, artifact hashes and claim-to-artifact mapping are the authority that promotes these unchanged reports into tracked evidence without widening their local-workload qualification.",
+  "resource_lifecycle": "Benchmark sources, per-run JSON and XLSX outputs were kept only under build/qa until the two matrix reports were captured and hashed. No background worker was introduced by this profiling run.",
+  "qualification": "Claims are limited to the recorded same-machine fixed-shape workloads. Four worksheets contain four times the source cells and edits of one worksheet. This bundle does not establish cross-machine, fixed-total, arbitrary-workbook, Office, concurrency, backend or full-feature claims."
+}

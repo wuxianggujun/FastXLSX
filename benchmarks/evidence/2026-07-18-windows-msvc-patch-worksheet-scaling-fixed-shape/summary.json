@@ -1,0 +1,109 @@
+{
+  "benchmark_summary_schema_version": "1",
+  "git_revision": "e85bbd2b11b9f42ce68e762023d962fb44143164",
+  "patch_benchmark_schema_version": "20",
+  "worksheet_scaling_matrix_schema_version": "2",
+  "workload": {
+    "mode": "fixed-shape",
+    "worksheet_counts": [1, 2, 4],
+    "rows_per_worksheet": 100000,
+    "columns": 10,
+    "source_cells_per_worksheet": 1000000,
+    "edits_per_worksheet": 1000,
+    "scenario": "patch-upsert",
+    "source_patterns": ["mixed-inline", "formula"],
+    "source_compression_level": 6,
+    "output_compression_level": 1,
+    "warmup_rounds": 6,
+    "measured_rounds": 12
+  },
+  "mixed_inline": {
+    "worksheets_1": {
+      "total_editor_median_ms": 819.5,
+      "total_editor_process_cpu_median_us": 765625.0,
+      "mutation_median_ms": 501.5,
+      "save_median_ms": 316.5,
+      "rewritten_entry_median_us": 313469.0,
+      "peak_working_set_median_mb": 9.02734,
+      "output_bytes": 5030208
+    },
+    "worksheets_2": {
+      "total_editor_median_ms": 1867.5,
+      "total_editor_process_cpu_median_us": 1593750.0,
+      "paired_total_ratio": 2.168905,
+      "paired_process_cpu_ratio": 2.1588635,
+      "paired_rewritten_entry_ratio": 2.5720585,
+      "paired_peak_working_set_ratio": 1.0177295,
+      "peak_working_set_median_mb": 9.197265,
+      "output_bytes": 10058348
+    },
+    "worksheets_4": {
+      "total_editor_median_ms": 3327.0,
+      "total_editor_process_cpu_median_us": 2867187.5,
+      "mutation_median_ms": 1919.0,
+      "save_median_ms": 1398.5,
+      "rewritten_entry_median_us": 1388929.0,
+      "paired_total_ratio": 3.9697595,
+      "paired_process_cpu_ratio": 3.898148,
+      "paired_mutation_ratio": 3.8984075,
+      "paired_save_ratio": 4.231693,
+      "paired_rewritten_entry_ratio": 4.287669,
+      "paired_peak_working_set_ratio": 1.0369005,
+      "peak_working_set_median_mb": 9.36328,
+      "output_bytes": 20114620
+    }
+  },
+  "formula": {
+    "worksheets_1": {
+      "total_editor_median_ms": 575.5,
+      "total_editor_process_cpu_median_us": 523437.5,
+      "mutation_median_ms": 357.0,
+      "save_median_ms": 202.0,
+      "rewritten_entry_median_us": 197384.5,
+      "peak_working_set_median_mb": 8.04883,
+      "output_bytes": 4453765
+    },
+    "worksheets_2": {
+      "total_editor_median_ms": 1028.5,
+      "total_editor_process_cpu_median_us": 984375.0,
+      "paired_total_ratio": 1.9466715,
+      "paired_process_cpu_ratio": 1.9125845,
+      "paired_rewritten_entry_ratio": 1.786722,
+      "paired_peak_working_set_ratio": 1.0208735,
+      "peak_working_set_median_mb": 8.21484,
+      "output_bytes": 8905462
+    },
+    "worksheets_4": {
+      "total_editor_median_ms": 2101.0,
+      "total_editor_process_cpu_median_us": 2031250.0,
+      "mutation_median_ms": 1333.5,
+      "save_median_ms": 765.5,
+      "rewritten_entry_median_us": 761803.0,
+      "paired_total_ratio": 3.803292,
+      "paired_process_cpu_ratio": 4.0744205,
+      "paired_mutation_ratio": 3.834604,
+      "paired_save_ratio": 3.7632795,
+      "paired_rewritten_entry_ratio": 3.814853,
+      "paired_peak_working_set_ratio": 1.041241,
+      "peak_working_set_median_mb": 8.384765,
+      "output_bytes": 17808848
+    }
+  },
+  "invariants": {
+    "package_backend": "minizip-ng",
+    "crc_backend": "minizip-ng",
+    "fused_crc": true,
+    "single_pass_commit_median_ms_range": [0.0, 1.5],
+    "writer_input_peak_bytes": 524288,
+    "prefetch_peak_buffer_bytes": 1048576,
+    "representative_outputs_opened_with_openpyxl": 6,
+    "office_open": "not_run",
+    "second_machine": "not_run"
+  },
+  "interpretation": {
+    "supported_claim": "On this machine and the recorded fixed-shape workloads, four worksheets carried four times the source cells and edits of one worksheet. Mixed-inline paired total wall/process CPU ratios were 3.970x/3.898x and formula ratios were 3.803x/4.074x, while paired peak working set increased only 3.69%/4.12%.",
+    "writer_observation": "The four-sheet rewritten-entry ratio was 4.288x for mixed-inline and 3.815x for formula. Position min/max remained noisy, so the bundle records the distribution without authorizing parallel compression, direct-zlib or a public backend change.",
+    "memory_observation": "Median peak working set remained bounded at 9.36 MiB for mixed-inline and 8.38 MiB for formula even as fixed-shape source cells increased from one million to four million.",
+    "scope": "Single Windows/MSVC machine, production minizip-ng package path, fixed-shape 1/2/4-sheet sequential Patch upsert, DEFLATE source level 6 and output level 1. No fixed-total, second-machine, Office, arbitrary-workbook or full-feature claim is made."
+  }
+}

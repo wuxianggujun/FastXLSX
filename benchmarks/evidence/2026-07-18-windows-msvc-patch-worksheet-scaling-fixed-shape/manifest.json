@@ -1,0 +1,69 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-18-windows-msvc-patch-worksheet-scaling-fixed-shape",
+  "created_utc": "2026-07-18T15:26:41Z",
+  "git_revision": "e85bbd2b11b9f42ce68e762023d962fb44143164",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional 10.0.26200 build 26200.8655",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-patch-crc-minizip-profile",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "formula-scaling-report.json",
+      "sha256": "7fb291365520d14c7764a8d26bf9ed28901699ddd3ad32d46a11eeac71924121",
+      "role": "matrix-report"
+    },
+    {
+      "path": "mixed-inline-scaling-report.json",
+      "sha256": "e28daeaf06df158cb96ecbceb1787c072b315e8c23165c77a0e6971fa7daf1be",
+      "role": "matrix-report"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "737f7a459ae11bdd78d8cd7f9be935a315f73ed46a286703d5fee1c08411d3b4",
+      "role": "summary"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "5a7c6179c0eb045bb0e1d3ee1116e0ef775f39cfe83a3b1dcadca6cac8a27074",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "Worksheet-scaling runner schema v2 and WorkbookEditor benchmark schema v20 recorded balanced fixed-shape 1/2/4-sheet Patch upsert profiles on clean revision e85bbd2b, with 6 warm-up and 12 measured rounds per mixed-inline and formula workload.",
+      "artifact_paths": [
+        "formula-scaling-report.json",
+        "mixed-inline-scaling-report.json",
+        "run-context.json"
+      ]
+    },
+    {
+      "statement": "On this machine, four fixed-shape mixed-inline worksheets carried four times the source cells and edits of one worksheet with paired total wall/process CPU ratios of 3.970x/3.898x and a paired peak-working-set ratio of 1.0369; the four-sheet median was 3327 ms and 9.36328 MiB.",
+      "artifact_paths": [
+        "mixed-inline-scaling-report.json",
+        "summary.json"
+      ]
+    },
+    {
+      "statement": "On this machine, four fixed-shape formula worksheets carried four times the source cells and edits of one worksheet with paired total wall/process CPU ratios of 3.803x/4.074x and a paired peak-working-set ratio of 1.0412; the four-sheet median was 2101 ms and 8.384765 MiB.",
+      "artifact_paths": [
+        "formula-scaling-report.json",
+        "summary.json"
+      ]
+    },
+    {
+      "statement": "All six representative outputs opened with openpyxl 3.1.2 and passed sheet-name, edited-value and dimension checks. Position distributions remained noisy, Office and a second machine were not run, and no fixed-total, arbitrary-workbook, concurrency, direct-zlib, public-backend or full-feature claim is made.",
+      "artifact_paths": [
+        "formula-scaling-report.json",
+        "mixed-inline-scaling-report.json",
+        "run-context.json",
+        "summary.json"
+      ]
+    }
+  ]
+}

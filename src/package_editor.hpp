@@ -327,6 +327,10 @@ using PackageEditorWorksheetAddStagedHook = void (*)();
 void testing_set_package_editor_worksheet_add_staged_hook(
     PackageEditorWorksheetAddStagedHook hook) noexcept;
 
+using PackageEditorWorksheetRemoveStagedHook = void (*)();
+void testing_set_package_editor_worksheet_remove_staged_hook(
+    PackageEditorWorksheetRemoveStagedHook hook) noexcept;
+
 using PackageEditorDocumentPropertiesStagedHook = void (*)();
 void testing_set_package_editor_document_properties_staged_hook(
     PackageEditorDocumentPropertiesStagedHook hook) noexcept;
@@ -667,6 +671,10 @@ public:
     // The workbook catalog, workbook relationships, content types, generated
     // worksheet part, and output plan are staged and committed together.
     void add_empty_worksheet(std::string name);
+    // Removes one relationship-closed worksheet from the current planned
+    // workbook. Unsupported workbook/worksheet metadata and linked references
+    // are rejected before any state is committed.
+    void remove_worksheet_catalog_entry(std::string_view name);
     // Internal small-part Patch helper. Rewrites workbook calc metadata only,
     // optionally omitting stale calcChain payload/metadata, and leaves worksheet
     // parts and linked objects copy-original.

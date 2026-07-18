@@ -233,6 +233,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// Added worksheets have an empty source_name.
     bool added = false;
 
+    /// True when remove_worksheet() removed this worksheet from the planned
+    /// catalog. planned_name is the name accepted by the removal call.
+    bool removed = false;
+
     /// True when replace_sheet_data() has queued a whole-<sheetData>
     /// replacement for this planned worksheet name.
     bool sheet_data_replaced = false;
@@ -2368,7 +2372,20 @@ private:
 /// no-op save_as() remains a copy-original package write unless another edit is
 /// explicitly queued.
 ///
-/// Non-goals (not implemented by this slice): deleting / cloning worksheets,
+/// What this facade does for worksheet removal:
+///
+/// - remove_worksheet() removes a current planned worksheet only when the
+///   workbook has a relationship-closed worksheet part and no unsupported
+///   workbook/worksheet selection, definedName, formula, materialized-session,
+///   pending-payload, or linked-part dependency would be orphaned. It stages
+///   the workbook sheet catalog, workbook relationship, content-types override,
+///   manifest, and worksheet package entry as one transaction. It rejects the
+///   last visible worksheet and does not repair active/selected-sheet metadata.
+/// - It is not a semantic formula/definedName/table/drawing/hyperlink/VBA
+///   cleanup operation. Unsupported linked semantics fail before state commit;
+///   unknown and unrelated package entries remain copy-original.
+///
+/// Non-goals (not implemented by this slice): cloning worksheets,
 /// semantic sheet rename that synchronizes defined names / formulas / tables /
 /// drawings / relationship targets, caller-supplied worksheet XML input,
 /// shared-string index writeback / rebuild / migration, style id migration or
@@ -3115,6 +3132,33 @@ public:
     /// duplicates a planned name, required workbook metadata is malformed, or
     /// bounded transactional staging fails.
     void add_worksheet(std::string name);
+
+    /// Removes one worksheet from the current planned workbook.
+    ///
+    /// API mode: Patch / existing-workbook structural metadata edit. The name
+    /// is resolved against worksheet_names(), so a prior planned rename is
+    /// honored. The operation atomically removes the worksheet catalog entry,
+    /// its workbook relationship, its worksheet part and its content-type
+    /// override. Unknown and unrelated source entries remain copy-original.
+    ///
+    /// The narrow first slice rejects the last visible worksheet, workbook
+    /// active-view metadata, selected-tab metadata, any workbook definedNames,
+    /// formula references to the target, worksheet-owned relationships, other
+    /// inbound relationships, materialized handles, and queued worksheet
+    /// payload edits. It therefore never silently repairs formulas, names,
+    /// linked objects, or orphan parts. A generated worksheet added in the same
+    /// editor can be removed before save when it has no queued payload edit.
+    ///
+    /// A successful call increments pending_change_count() and the unsaved
+    /// watermark. A failed call preserves the planned catalog, package plan,
+    /// pending/unsaved counts, diagnostics, and retry ability. A failed
+    /// save_as() retains the staged removal for retry.
+    ///
+    /// @param name Current planned worksheet name to remove.
+    /// @throws FastXlsxError if the name is absent, the worksheet violates the
+    /// strict removal guardrails, required metadata is malformed, or bounded
+    /// transactional staging fails.
+    void remove_worksheet(std::string_view name);
 
     /// Renames a worksheet's sheet-catalog name for the saved package.
     ///

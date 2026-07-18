@@ -26,6 +26,7 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 
 - 先为对象定义 preserve/audit/fail/edit；Streaming 可以创建不代表 Patch 可以编辑。
 - Public Patch 已能事务式追加 generated empty worksheet，并同步 workbook catalog、workbook relationships、content types、manifest 和 worksheet part；这不克隆或初始化 styles、tables、drawings、validations、formulas 等 linked metadata。
+- Public Patch 已能事务式删除 relationship-closed worksheet；last-visible、active/selected、definedNames、formula、materialized、queued payload、owned relationship 和 extra-inbound linked semantics 默认 fail，不做静默 orphan 或修复。
 - 跨 worksheet XML、worksheet `.rels`、content types、manifest、public diagnostics 和 pending/watermark 的 mutation，必须先在副本中完整 staging，再以 noexcept commit 发布。
 - External hyperlink 需要 relationship mutation；internal hyperlink 不应伪造 external relationship。遇到未知、重复、external、非法 target 或 unsupported linked metadata 时默认 fail 或 preserve，不能静默 repair。
 - Row/column insert/delete、copy/move 当前不自动同步 validations、hyperlinks、tables、conditional formatting、merged cells 或 drawings；新增同步能力前保持该边界。

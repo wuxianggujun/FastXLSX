@@ -131,6 +131,7 @@ auto sheet = editor.worksheet("Data", options);
 - `replace_image()` 只替换已有 PNG/JPEG media bytes；不编辑 drawing/anchor/relationship。
 - `set_document_properties()` 只重写 core/app docProps；不创建或编辑 custom properties。
 - `add_worksheet()` 只向 existing workbook 追加空白 worksheet，并事务式更新 workbook catalog、workbook relationships、content types 和新 worksheet part；同一 editor 可继续用 Patch API 填充或重命名，但要在 `save_as()` 后重新打开，才能通过 In-memory `worksheet()` materialize。它不克隆 worksheet、styles、tables、drawings 或其他 linked objects。
+- `remove_worksheet()` 只删除关系闭合的 existing-workbook worksheet；它同步 workbook catalog、workbook relationship、content type、manifest 和 worksheet entry，并在最后可见表、active/selected metadata、definedNames、formula、materialized handle、queued payload 或 linked relationship 风险存在时 fail。它不做公式/definedName/linked-object repair。
 - Preservation 证据不等于 tables、charts、comments、VBA、pivot 或 custom XML 的语义编辑。
 - In-memory 是 small-file 稀疏编辑，不是 large-file low-memory random editing。
 

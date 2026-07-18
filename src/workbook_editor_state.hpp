@@ -338,6 +338,17 @@ struct WorkbookEditor::Impl {
             summaries.push_back(std::move(summary));
         }
 
+        for (const detail::WorkbookEditorSheetCatalogEntry& removed_entry :
+             sheet_catalog.removed_entries()) {
+            WorkbookEditorWorksheetEditSummary summary;
+            summary.source_name = removed_entry.source_name;
+            summary.planned_name = removed_entry.planned_name;
+            summary.renamed = removed_entry.renamed;
+            summary.added = removed_entry.added;
+            summary.removed = true;
+            summaries.push_back(std::move(summary));
+        }
+
         return summaries;
     }
 

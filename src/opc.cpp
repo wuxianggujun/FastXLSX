@@ -745,6 +745,17 @@ const Relationship* RelationshipSet::find_by_id(std::string_view id) const noexc
     return item == relationships_.end() ? nullptr : &*item;
 }
 
+std::size_t RelationshipSet::remove_by_id(std::string_view id) noexcept
+{
+    const auto old_size = relationships_.size();
+    relationships_.erase(std::remove_if(relationships_.begin(), relationships_.end(),
+                            [id](const Relationship& relationship) {
+                                return relationship.id == id;
+                            }),
+        relationships_.end());
+    return old_size - relationships_.size();
+}
+
 std::size_t RelationshipSet::remove_by_type(std::string_view type) noexcept
 {
     const std::size_t old_size = relationships_.size();

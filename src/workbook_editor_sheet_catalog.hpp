@@ -32,8 +32,11 @@ public:
     [[nodiscard]] bool is_added_current(std::string_view sheet_name) const;
     [[nodiscard]] std::optional<std::string> source_name_for_current(
         std::string_view sheet_name) const;
+    [[nodiscard]] const std::vector<WorkbookEditorSheetCatalogEntry>& removed_entries()
+        const noexcept;
 
     void record_add(std::string name);
+    void record_remove(std::string_view current_name);
     void record_rename(std::string_view old_current_name, std::string_view new_current_name);
 
     void swap(WorkbookEditorSheetCatalogPlan& other) noexcept
@@ -41,6 +44,8 @@ public:
         source_names_.swap(other.source_names_);
         planned_names_by_source_.swap(other.planned_names_by_source_);
         added_names_.swap(other.added_names_);
+        removed_source_names_.swap(other.removed_source_names_);
+        removed_entries_.swap(other.removed_entries_);
     }
 
     friend void swap(
@@ -54,6 +59,8 @@ private:
     std::vector<std::string> source_names_;
     std::map<std::string, std::string> planned_names_by_source_;
     std::vector<std::string> added_names_;
+    std::vector<std::string> removed_source_names_;
+    std::vector<WorkbookEditorSheetCatalogEntry> removed_entries_;
 };
 
 } // namespace fastxlsx::detail

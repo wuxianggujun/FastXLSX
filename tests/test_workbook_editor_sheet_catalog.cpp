@@ -142,6 +142,33 @@ void test_catalog_plan_tracks_and_renames_added_sheets()
         "sheet catalog should retain added identity after rename");
 }
 
+void test_catalog_plan_removes_planned_entries_without_mutating_source_names()
+{
+    fastxlsx::detail::WorkbookEditorSheetCatalogPlan plan({"Data", "Other"});
+    plan.record_rename("Data", "Renamed Data");
+    plan.record_add("Added");
+
+    plan.record_remove("Renamed Data");
+    check_names(plan.source_names(), {"Data", "Other"},
+        "sheet catalog remove should preserve immutable source names");
+    check_names(plan.current_names(), {"Other", "Added"},
+        "sheet catalog remove should omit the source-backed planned entry");
+    check(!plan.has_current("Data") && !plan.has_current("Renamed Data"),
+        "sheet catalog remove should clear source and planned lookup for the target");
+    check(plan.removed_entries().size() == 1
+            && plan.removed_entries().front().source_name == "Data"
+            && plan.removed_entries().front().planned_name == "Renamed Data",
+        "sheet catalog remove should retain a public removal diagnostic");
+
+    plan.record_remove("Added");
+    check_names(plan.current_names(), {"Other"},
+        "sheet catalog remove should erase a generated planned entry");
+    check(plan.entries().size() == 1 && plan.entries().front().planned_name == "Other",
+        "sheet catalog entries should expose only surviving planned worksheets");
+    check(plan.removed_entries().size() == 2 && plan.removed_entries().back().added,
+        "sheet catalog remove should identify a generated removal diagnostic");
+}
+
 } // namespace
 
 int main()
@@ -151,6 +178,7 @@ int main()
         test_catalog_plan_records_and_reverts_renames();
         test_catalog_plan_chained_renames_follow_current_name();
         test_catalog_plan_tracks_and_renames_added_sheets();
+        test_catalog_plan_removes_planned_entries_without_mutating_source_names();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

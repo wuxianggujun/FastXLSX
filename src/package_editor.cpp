@@ -1110,6 +1110,264 @@ std::string empty_worksheet_xml()
     return R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1"/><sheetData/></worksheet>)";
 }
 
+struct WorkbookSheetRemovalScan {
+    std::size_t visible_sheet_count = 0;
+    bool target_found = false;
+    bool target_visible = false;
+    std::size_t target_begin = std::string_view::npos;
+    std::size_t target_end = std::string_view::npos;
+};
+
+WorkbookSheetRemovalScan scan_workbook_sheet_removal_catalog(
+    std::string_view workbook_xml, const WorkbookSheetReference& target)
+{
+    WorkbookSheetRemovalScan result;
+    bool inside_workbook = false;
+    bool inside_sheets = false;
+    std::size_t element_depth = 0;
+    std::size_t sheets_child_depth = 0;
+    bool target_open = false;
+    std::size_t target_depth = 0;
+    std::vector<XmlNamespaceScope> namespace_stack;
+
+    for (std::size_t offset = 0;;) {
+        const std::size_t open = workbook_xml.find('<', offset);
+        if (open == std::string_view::npos) {
+            break;
+        }
+        if (open + 1 >= workbook_xml.size()) {
+            throw FastXlsxError("small XML part tag is truncated");
+        }
+        if (workbook_xml.substr(open, 4) == "<!--") {
+            const std::size_t close = workbook_xml.find("-->", open + 4);
+            if (close == std::string_view::npos) {
+                throw FastXlsxError("small XML part comment is not closed");
+            }
+            offset = close + 3;
+            continue;
+        }
+
+        const std::size_t close = find_xml_tag_end(workbook_xml, open);
+        const char marker = workbook_xml[open + 1];
+        const XmlTagRange tag {open, close};
+
+        if (marker == '/') {
+            if (target_open) {
+                if (target_depth > 1) {
+                    --target_depth;
+                    if (namespace_stack.empty()) {
+                        throw FastXlsxError(
+                            "workbook sheet removal XML namespace stack is unbalanced");
+                    }
+                    namespace_stack.pop_back();
+                } else {
+                    result.target_end = close + 1;
+                    target_open = false;
+                    target_depth = 0;
+                    if (namespace_stack.empty()) {
+                        throw FastXlsxError(
+                            "workbook sheet removal XML namespace stack is unbalanced");
+                    }
+                    namespace_stack.pop_back();
+                }
+                offset = close + 1;
+                continue;
+            }
+
+            const std::string_view local_name =
+                local_xml_name(closing_tag_name(workbook_xml, tag));
+            if (inside_sheets) {
+                if (sheets_child_depth == 0 && local_name == "sheets") {
+                    inside_sheets = false;
+                } else if (sheets_child_depth > 0) {
+                    --sheets_child_depth;
+                }
+            }
+            if (inside_workbook) {
+                if (element_depth > 0) {
+                    --element_depth;
+                }
+                if (element_depth == 0) {
+                    inside_workbook = false;
+                }
+            }
+            if (namespace_stack.empty()) {
+                throw FastXlsxError("workbook sheet removal XML namespace stack is unbalanced");
+            }
+            namespace_stack.pop_back();
+            offset = close + 1;
+            continue;
+        }
+
+        if (marker == '?' || marker == '!') {
+            offset = close + 1;
+            continue;
+        }
+
+        XmlNamespaceScope current_scope;
+        ingest_namespace_declarations(current_scope, workbook_xml, tag);
+        std::vector<XmlNamespaceScope> current_namespaces = namespace_stack;
+        current_namespaces.push_back(current_scope);
+
+        const std::string_view local_name = local_xml_name(start_tag_name(workbook_xml, tag));
+        const bool self_closing = is_self_closing_tag(workbook_xml, tag);
+
+        if (target_open) {
+            if (!self_closing) {
+                ++target_depth;
+                namespace_stack.push_back(std::move(current_scope));
+            }
+            offset = close + 1;
+            continue;
+        }
+
+        if (!inside_workbook) {
+            if (local_name == "workbook" && !self_closing) {
+                inside_workbook = true;
+                element_depth = 1;
+                namespace_stack.push_back(std::move(current_scope));
+            }
+            offset = close + 1;
+            continue;
+        }
+
+        if (element_depth == 1 && local_name == "sheets") {
+            if (self_closing) {
+                throw FastXlsxError(
+                    "workbook sheets element cannot be empty when removing a worksheet");
+            }
+            inside_sheets = true;
+            sheets_child_depth = 0;
+        } else if (inside_sheets && sheets_child_depth == 0 && local_name == "sheet") {
+            std::size_t sheet_id_begin = 0;
+            std::size_t sheet_id_end = 0;
+            std::size_t relationship_id_begin = 0;
+            std::size_t relationship_id_end = 0;
+            if (!find_unqualified_attribute_value(
+                    workbook_xml, tag, "sheetId", sheet_id_begin, sheet_id_end)
+                || !find_relationship_id_value(workbook_xml, tag, current_namespaces,
+                    relationship_id_begin, relationship_id_end)) {
+                throw FastXlsxError("workbook sheet removal target metadata is incomplete");
+            }
+
+            std::size_t state_begin = 0;
+            std::size_t state_end = 0;
+            const bool has_state = find_unqualified_attribute_value(
+                workbook_xml, tag, "state", state_begin, state_end);
+            const std::string_view state = has_state
+                ? workbook_xml.substr(state_begin, state_end - state_begin)
+                : std::string_view("visible");
+            const bool visible = state == "visible";
+            if (!visible && state != "hidden" && state != "veryHidden") {
+                throw FastXlsxError("workbook sheet state is unsupported");
+            }
+            if (visible) {
+                ++result.visible_sheet_count;
+            }
+
+            const bool is_target = workbook_xml.substr(sheet_id_begin, sheet_id_end - sheet_id_begin)
+                    == target.sheet_id
+                && workbook_xml.substr(relationship_id_begin,
+                       relationship_id_end - relationship_id_begin)
+                    == target.relationship_id;
+            if (is_target) {
+                result.target_found = true;
+                result.target_visible = visible;
+                result.target_begin = open;
+                if (self_closing) {
+                    result.target_end = close + 1;
+                } else {
+                    target_open = true;
+                    target_depth = 1;
+                    namespace_stack.push_back(std::move(current_scope));
+                }
+                offset = close + 1;
+                continue;
+            }
+        }
+
+        if (inside_sheets && local_name != "sheets"
+            && sheets_child_depth == 0 && !self_closing) {
+            ++sheets_child_depth;
+        }
+        if (!self_closing) {
+            ++element_depth;
+            namespace_stack.push_back(std::move(current_scope));
+        }
+        offset = close + 1;
+    }
+
+    if (target_open) {
+        throw FastXlsxError("workbook sheet removal target element is not closed");
+    }
+    if (!result.target_found) {
+        throw FastXlsxError("workbook sheet removal target element is not present");
+    }
+    return result;
+}
+
+bool worksheet_has_selected_tab(std::string_view worksheet_xml)
+{
+    for (std::size_t offset = 0;;) {
+        const std::size_t open = worksheet_xml.find('<', offset);
+        if (open == std::string_view::npos) {
+            return false;
+        }
+        if (open + 1 >= worksheet_xml.size()) {
+            throw FastXlsxError("worksheet selected-tab metadata tag is truncated");
+        }
+        if (worksheet_xml.substr(open, 4) == "<!--") {
+            const std::size_t close = worksheet_xml.find("-->", open + 4);
+            if (close == std::string_view::npos) {
+                throw FastXlsxError("worksheet selected-tab metadata comment is not closed");
+            }
+            offset = close + 3;
+            continue;
+        }
+
+        const std::size_t close = find_xml_tag_end(worksheet_xml, open);
+        const char marker = worksheet_xml[open + 1];
+        if (marker == '/' || marker == '?' || marker == '!') {
+            offset = close + 1;
+            continue;
+        }
+
+        const XmlTagRange tag {open, close};
+        if (local_xml_name(start_tag_name(worksheet_xml, tag)) == "sheetView") {
+            std::size_t value_begin = 0;
+            std::size_t value_end = 0;
+            if (find_unqualified_attribute_value(
+                    worksheet_xml, tag, "tabSelected", value_begin, value_end)) {
+                const std::string_view value = worksheet_xml.substr(
+                    value_begin, value_end - value_begin);
+                if (value == "1" || value == "true") {
+                    return true;
+                }
+            }
+        }
+        offset = close + 1;
+    }
+}
+
+WorkbookSheetReference select_sheet_catalog_remove_target(
+    const std::vector<WorkbookSheetReference>& sheets, std::string_view name)
+{
+    const WorkbookSheetReference* match = nullptr;
+    for (const WorkbookSheetReference& sheet : sheets) {
+        if (sheet.name != name) {
+            continue;
+        }
+        if (match != nullptr) {
+            throw FastXlsxError("workbook sheet name is ambiguous");
+        }
+        match = &sheet;
+    }
+    if (match == nullptr) {
+        throw FastXlsxError("workbook sheet name is not present");
+    }
+    return *match;
+}
+
 void validate_sheet_catalog_rename_target(std::string_view new_name)
 {
     if (new_name.empty()) {
@@ -5853,6 +6111,12 @@ PackageEditorWorksheetAddStagedHook& package_editor_worksheet_add_staged_hook() 
     return hook;
 }
 
+PackageEditorWorksheetRemoveStagedHook& package_editor_worksheet_remove_staged_hook() noexcept
+{
+    static PackageEditorWorksheetRemoveStagedHook hook = nullptr;
+    return hook;
+}
+
 PackageEditorDocumentPropertiesStagedHook&
 package_editor_document_properties_staged_hook() noexcept
 {
@@ -5912,6 +6176,13 @@ void run_package_editor_sheet_rename_staged_hook()
 void run_package_editor_worksheet_add_staged_hook()
 {
     if (auto hook = package_editor_worksheet_add_staged_hook(); hook != nullptr) {
+        hook();
+    }
+}
+
+void run_package_editor_worksheet_remove_staged_hook()
+{
+    if (auto hook = package_editor_worksheet_remove_staged_hook(); hook != nullptr) {
         hook();
     }
 }
@@ -9011,6 +9282,167 @@ void PackageEditor::add_empty_worksheet(std::string name)
         updated_replacements, updated_entry_replacements, updated_omitted_entries);
 }
 
+void PackageEditor::remove_worksheet_catalog_entry(std::string_view name)
+{
+    const PartName workbook_part = reader_.workbook_part();
+    if (manifest_.find_part(workbook_part) == nullptr) {
+        throw FastXlsxError(
+            "worksheet removal requires the officeDocument workbook part in the planned package");
+    }
+
+    std::string workbook_xml = current_planned_materialized_workbook_xml(
+        reader_, replacements_, "workbook worksheet removal");
+    const std::vector<WorkbookSheetReference> sheets =
+        reader_.workbook_sheets_from_xml(workbook_xml, manifest_);
+    const WorkbookSheetReference target =
+        select_sheet_catalog_remove_target(sheets, name);
+    const WorkbookSheetRemovalScan scan =
+        scan_workbook_sheet_removal_catalog(workbook_xml, target);
+    if (scan.visible_sheet_count == 0
+        || (scan.target_visible && scan.visible_sheet_count == 1)) {
+        throw FastXlsxError("worksheet removal would leave no visible worksheet");
+    }
+    if (has_direct_workbook_child_tag(workbook_xml, "bookViews")) {
+        throw FastXlsxError(
+            "worksheet removal does not update workbook active-view metadata");
+    }
+    if (has_direct_workbook_child_tag(workbook_xml, "definedNames")) {
+        throw FastXlsxError(
+            "worksheet removal requires definedNames-free workbook metadata");
+    }
+    if (scan.target_begin == std::string_view::npos
+        || scan.target_end == std::string_view::npos
+        || scan.target_end <= scan.target_begin) {
+        throw FastXlsxError("workbook worksheet removal target range is invalid");
+    }
+
+    if (const PackageReaderEntry* worksheet_entry =
+            reader_.find_entry(target.part_name.zip_path())) {
+        if (worksheet_has_selected_tab(reader_.read_entry(worksheet_entry->name))) {
+            throw FastXlsxError(
+                "worksheet removal does not update selected-tab metadata");
+        }
+    }
+
+    if (const RelationshipSet* worksheet_relationships =
+            manifest_.relationships_for(target.part_name);
+        worksheet_relationships != nullptr && !worksheet_relationships->empty()) {
+        throw FastXlsxError(
+            "worksheet removal does not remove worksheet-owned linked parts");
+    }
+
+    const EditPlan removal_plan = PartRewritePlanner(manifest_).plan_part_removal(
+        target.part_name, "worksheet part removed by worksheet catalog removal");
+    const EditPlanRemovedPart* removed_part =
+        removal_plan.find_removed_part(target.part_name);
+    if (removed_part == nullptr || removed_part->inbound_relationships.size() != 1
+        || removed_part->inbound_relationships.front().owner_part != workbook_part.value()
+        || removed_part->inbound_relationships.front().relationship_id
+            != target.relationship_id) {
+        throw FastXlsxError(
+            "worksheet removal found unsupported inbound relationships");
+    }
+
+    PackageManifest updated_manifest = manifest_;
+    RelationshipSet* updated_workbook_relationships =
+        updated_manifest.relationships_for(workbook_part);
+    if (updated_workbook_relationships == nullptr
+        || updated_workbook_relationships->remove_by_id(target.relationship_id) != 1) {
+        throw FastXlsxError(
+            "worksheet removal could not remove the workbook relationship");
+    }
+    if (!updated_manifest.remove_part(target.part_name)) {
+        throw FastXlsxError("worksheet removal did not update package manifest state");
+    }
+
+    workbook_xml.erase(scan.target_begin, scan.target_end - scan.target_begin);
+    require_materialized_workbook_xml_size(
+        workbook_xml.size(), "workbook worksheet removal");
+    const std::string workbook_relationship_entry =
+        relationship_entry_name_for_source_part(workbook_part);
+    std::string workbook_relationships_xml = serialize_relationships(
+        *updated_manifest.relationships_for(workbook_part));
+    std::string content_types_xml =
+        serialize_content_types(updated_manifest.content_types());
+    require_materialized_package_entry_replacement_payload_size(reader_,
+        workbook_relationship_entry, workbook_relationships_xml.size(),
+        "worksheet removal workbook relationships replacement");
+    require_materialized_package_entry_replacement_payload_size(reader_,
+        content_types_entry_name, content_types_xml.size(),
+        "worksheet removal content types replacement");
+
+    EditPlan updated_edit_plan = edit_plan_;
+    std::vector<PackagePartReplacement> updated_replacements = replacements_;
+    std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
+    std::vector<std::string> updated_omitted_entries = omitted_entries_;
+
+    const std::string workbook_reason =
+        "workbook sheet catalog local-DOM rewrite for worksheet removal";
+    const std::string worksheet_reason =
+        "relationship-closed worksheet part removed by worksheet catalog removal";
+    merge_removed_part_audit(updated_edit_plan, removal_plan, target.part_name);
+    updated_edit_plan.add_note(
+        "worksheet removal deletes only a relationship-closed worksheet part and its "
+        "workbook catalog/relationship/content-type records; active views, "
+        "definedNames, formulas and linked worksheet objects are unsupported and "
+        "must be absent before staging");
+    updated_edit_plan.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
+        workbook_part,
+        WorkbookPayloadDependencyAuditKind::SheetCatalog,
+        WorkbookPayloadDependencyAuditScope::SheetCatalogRemove,
+        "sheets/sheet",
+        "workbook worksheet removal deletes one relationship-closed sheet catalog entry",
+    });
+    upsert_part_replacement(updated_replacements, workbook_part, std::move(workbook_xml),
+        PartWriteMode::LocalDomRewrite, workbook_reason, &workbook_part);
+    remove_entry_replacement(updated_entry_replacements, workbook_part.zip_path());
+    remove_omitted_entry(updated_omitted_entries, workbook_part.zip_path());
+    updated_manifest.set_part_write_mode(workbook_part, PartWriteMode::LocalDomRewrite);
+    updated_edit_plan.set_part(workbook_part, PartWriteMode::LocalDomRewrite, workbook_reason);
+
+    remove_part_replacement(updated_replacements, target.part_name);
+    remove_entry_replacement(updated_entry_replacements, target.part_name.zip_path());
+    remove_omitted_entry(updated_omitted_entries, target.part_name.zip_path());
+    if (reader_.find_entry(target.part_name.zip_path()) != nullptr) {
+        add_omitted_entry(updated_omitted_entries, target.part_name.zip_path());
+    }
+    const std::string worksheet_relationship_entry =
+        relationship_entry_name_for_source_part(target.part_name);
+    remove_entry_replacement(updated_entry_replacements, worksheet_relationship_entry);
+    remove_omitted_entry(updated_omitted_entries, worksheet_relationship_entry);
+    if (reader_.find_entry(worksheet_relationship_entry) != nullptr) {
+        add_omitted_entry(updated_omitted_entries, worksheet_relationship_entry);
+        updated_edit_plan.remove_package_entry(worksheet_relationship_entry,
+            "worksheet-owned relationships omitted with removed worksheet part",
+            PackageEntryAuditKind::SourceRelationships, target.part_name.value());
+    }
+    updated_edit_plan.remove_part(target.part_name, worksheet_reason,
+        removed_part->inbound_relationships);
+
+    upsert_entry_replacement(reader_, updated_entry_replacements,
+        workbook_relationship_entry, std::move(workbook_relationships_xml));
+    updated_edit_plan.set_package_entry(workbook_relationship_entry,
+        PartWriteMode::LocalDomRewrite,
+        "workbook relationships updated for worksheet removal",
+        PackageEntryAuditKind::SourceRelationships, workbook_part.value());
+    remove_omitted_entry(updated_omitted_entries, workbook_relationship_entry);
+    upsert_entry_replacement(reader_, updated_entry_replacements,
+        std::string(content_types_entry_name), std::move(content_types_xml));
+    updated_edit_plan.set_package_entry(std::string(content_types_entry_name),
+        PartWriteMode::LocalDomRewrite,
+        "content types updated for worksheet removal",
+        PackageEntryAuditKind::ContentTypes);
+    remove_omitted_entry(updated_omitted_entries, content_types_entry_name);
+
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    run_package_editor_worksheet_remove_staged_hook();
+#endif
+
+    commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
+        entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
+        updated_replacements, updated_entry_replacements, updated_omitted_entries);
+}
+
 void PackageEditor::request_full_calculation(CalcChainAction calc_chain_action)
 {
     if (calc_chain_action == CalcChainAction::Rebuild) {
@@ -9374,6 +9806,12 @@ void testing_set_package_editor_worksheet_add_staged_hook(
     PackageEditorWorksheetAddStagedHook hook) noexcept
 {
     package_editor_worksheet_add_staged_hook() = hook;
+}
+
+void testing_set_package_editor_worksheet_remove_staged_hook(
+    PackageEditorWorksheetRemoveStagedHook hook) noexcept
+{
+    package_editor_worksheet_remove_staged_hook() = hook;
 }
 
 void testing_set_package_editor_document_properties_staged_hook(

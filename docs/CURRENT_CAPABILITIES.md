@@ -25,6 +25,7 @@
 - `WorkbookEditor::open()` / `save_as()`；`WorkbookEditorSaveOptions::zip_compression_level` 可为 `-1`、`0` 或 `1..9`。
 - 支持 sheet catalog 查询、事务式空白 worksheet add、`replace_sheet_data()`、targeted cell patch、窄 sheet rename、formula audit/recalculation request、core/app document properties rewrite 和已有 PNG/JPEG media bytes replacement。
 - `add_worksheet()` 向 planned catalog 末尾追加一个 generated empty worksheet，并原子 stage workbook XML、workbook relationships、content types、manifest、worksheet part 和 public catalog。新表可在同一 editor 中继续 `replace_sheet_data()`、missing-cell Insert upsert 或 `rename_sheet()`；提交前失败不污染 pending/unsaved 状态，保存失败保留 retry，成功保存重开后才可通过 In-memory `worksheet()` materialize。它不 clone styles/sharedStrings、tables、drawings、validations、formulas 或其他 linked objects。
+- `remove_worksheet()` 按当前 planned 名称事务式删除一个关系闭合 worksheet，并同步 workbook XML、workbook relationships、content types、manifest、worksheet part、public catalog 和 `pending_worksheet_edits().removed`。首版拒绝最后可见表、`bookViews`/选中 tab、任何 `definedNames`、公式引用风险、目标 materialized handle、queued worksheet payload、worksheet-owned relationships 和非 workbook inbound relationships；不做 active/definedName/formula/linked-object repair。新增表可在无 payload 时同会话 add 后 remove。
 - 未修改和未知 package part 默认 copy-original；修改 part 才 rewrite/remove。
 - `save_as()` 不覆盖 source，也不承诺 atomic in-place save。无 options overload 为兼容保留 stored output；显式 save options 的 `0` 为 stored、`-1` 为 active backend default、`1..9` 为 minizip-ng DEFLATE。无效/不可用配置在 dirty session staging 前失败并保留 retry 状态。
 - Production minizip-ng 输出对 source/output compression method 匹配的未修改 entry 使用 raw compressed-payload copy，并保留 exact source compressed payload bytes、logical size 与 CRC；不同 DEFLATE level 仍是 method 匹配，因此请求 level 只重新编码 rewritten/generated entries。该路径不复制 source local header、central-directory record、extra fields 或整包布局，也不会仅为重新校验 unchanged payload CRC 而 inflate；损坏的未读取 source payload 会按 preservation 语义原样保留。Stored bootstrap、method-changing save 和 rewritten entry 走既有 logical/encoding 路径。
@@ -115,8 +116,8 @@
 
 ## Planned
 
-- 当前 public 功能主线继续推进 existing-workbook worksheet lifecycle；下一切片是事务式 `remove_worksheet()`，不扩展为 worksheet clone。
-- `remove_worksheet()` 和后续 worksheet metadata 编辑必须先定义 last-visible-sheet、active/selected sheet、formula/defined-name、materialized handle、relationship 与 orphan-part 策略；unsupported semantics 默认 fail。
+- worksheet lifecycle 的最小 add/remove 切片已完成；`remove_worksheet()` 的 unsupported semantics 默认 fail，不扩展为 worksheet clone。
+- 下一功能主线是 existing-workbook hyperlink/data-validation 等窄 metadata 编辑；每个对象仍须先定义 preserve/audit/fail/edit、relationship/content-type side effects 和事务失败恢复。
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。
 - `planned-xml` 中的 zlib-ng、Expat、pugixml 当前未被实现链接；manifest presence 不等于当前能力。

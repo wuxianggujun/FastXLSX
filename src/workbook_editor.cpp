@@ -707,6 +707,67 @@ void WorkbookEditor::add_worksheet(std::string name)
     }
 }
 
+void WorkbookEditor::remove_worksheet(std::string_view name)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string name_key(name);
+    try {
+        if (!impl_->sheet_catalog.has_current(name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(name_key));
+        }
+        if (!impl_->pending_replacement_worksheet_names().empty()
+            || !impl_->pending_targeted_cell_replacement_worksheet_names().empty()) {
+            throw FastXlsxError(
+                "worksheet removal requires no queued worksheet payload edits");
+        }
+        impl_->materialized_sessions.preflight_no_materialized_session(
+            name_key, "remove worksheet");
+
+        const auto references_target = [&](const auto& audit) {
+            return audit.formula_sheet_planned_name != name_key
+                && ((audit.matched_current_workbook_sheet
+                        && audit.matched_planned_sheet_name == name_key)
+                    || audit.sheet_range_qualifier);
+        };
+        for (const WorkbookEditorFormulaReferenceAudit& audit :
+             impl_->source_formula_reference_audits()) {
+            if (references_target(audit)) {
+                throw FastXlsxError(
+                    "worksheet removal found a source worksheet formula dependency");
+            }
+        }
+        for (const WorkbookEditorFormulaReferenceAudit& audit :
+             impl_->formula_reference_audits()) {
+            if (references_target(audit)) {
+                throw FastXlsxError(
+                    "worksheet removal found a materialized worksheet formula dependency");
+            }
+        }
+
+        detail::WorkbookEditorSheetCatalogPlan updated_catalog = impl_->sheet_catalog;
+        updated_catalog.record_remove(name_key);
+        impl_->editor.remove_worksheet_catalog_entry(name_key);
+
+        static_assert(
+            std::is_nothrow_swappable_v<detail::WorkbookEditorSheetCatalogPlan>);
+        using std::swap;
+        swap(impl_->sheet_catalog, updated_catalog);
+
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::remove_worksheet() failed for '" + name_key + "': "
+            + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
 void WorkbookEditor::rename_sheet(std::string_view old_name, std::string new_name)
 {
     rename_sheet(old_name, std::move(new_name), WorkbookEditorRenameOptions {});

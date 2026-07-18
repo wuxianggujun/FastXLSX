@@ -51,6 +51,7 @@ public:
 
     [[nodiscard]] Relationship* find_by_id(std::string_view id) noexcept;
     [[nodiscard]] const Relationship* find_by_id(std::string_view id) const noexcept;
+    [[nodiscard]] std::size_t remove_by_id(std::string_view id) noexcept;
     [[nodiscard]] std::size_t remove_by_type(std::string_view type) noexcept;
     [[nodiscard]] const std::vector<Relationship>& relationships() const noexcept;
     [[nodiscard]] bool empty() const noexcept;
@@ -212,6 +213,7 @@ enum class WorkbookPayloadDependencyAuditScope {
     WorksheetRewrite,
     SheetCatalogRename,
     SheetCatalogAdd,
+    SheetCatalogRemove,
     WorkbookCalcMetadataRewrite,
 };
 

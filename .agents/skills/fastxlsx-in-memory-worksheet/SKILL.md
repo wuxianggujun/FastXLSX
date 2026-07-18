@@ -17,6 +17,7 @@ description: "实现或审查 FastXLSX In-memory `WorksheetEditor`。用于 stri
 
 - 将 `WorksheetEditor` 保持为同一 `WorkbookEditor` 所有的 borrowed handle；明确 owner、move/reacquire 和 session identity。
 - `WorkbookEditor::add_worksheet()` 新增但尚未保存的 worksheet 没有 source payload，必须明确拒绝 materialization；`save_as()` 后重新打开，generated worksheet 成为新 source catalog 的一部分才可 materialize。
+- `WorkbookEditor::remove_worksheet()` 拒绝已有 target materialized session 和 queued worksheet payload；删除成功后 source catalog 仍是打开时的 immutable view，planned catalog 与 removed edit summary 才反映当前状态。
 - 只做受 `max_cells` / `memory_budget_bytes` 约束的 small-file sparse random editing。Large worksheet rewrite 必须走 Patch/C5，不扩大 guardrail 冒充低内存随机编辑。
 - `CellStore` 不承载 row/column metadata、merged cells、tables、filters、validations、conditional formatting、hyperlinks、drawings、charts、VBA、defined names、relationships 或 calcChain。
 

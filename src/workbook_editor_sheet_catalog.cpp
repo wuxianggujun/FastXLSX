@@ -34,6 +34,10 @@ std::vector<std::string> WorkbookEditorSheetCatalogPlan::current_names() const
     std::vector<std::string> names;
     names.reserve(source_names_.size() + added_names_.size());
     for (const std::string& source_name : source_names_) {
+        if (std::find(removed_source_names_.begin(), removed_source_names_.end(), source_name)
+            != removed_source_names_.end()) {
+            continue;
+        }
         const auto planned_name = planned_names_by_source_.find(source_name);
         names.push_back(planned_name == planned_names_by_source_.end()
                 ? source_name
@@ -48,6 +52,10 @@ std::vector<WorkbookEditorSheetCatalogEntry> WorkbookEditorSheetCatalogPlan::ent
     std::vector<WorkbookEditorSheetCatalogEntry> catalog;
     catalog.reserve(source_names_.size() + added_names_.size());
     for (const std::string& source_name : source_names_) {
+        if (std::find(removed_source_names_.begin(), removed_source_names_.end(), source_name)
+            != removed_source_names_.end()) {
+            continue;
+        }
         const auto planned_name = planned_names_by_source_.find(source_name);
         const std::string& current_name = planned_name == planned_names_by_source_.end()
             ? source_name
@@ -106,9 +114,48 @@ std::optional<std::string> WorkbookEditorSheetCatalogPlan::source_name_for_curre
     return std::nullopt;
 }
 
+const std::vector<WorkbookEditorSheetCatalogEntry>&
+WorkbookEditorSheetCatalogPlan::removed_entries() const noexcept
+{
+    return removed_entries_;
+}
+
 void WorkbookEditorSheetCatalogPlan::record_add(std::string name)
 {
     added_names_.push_back(std::move(name));
+}
+
+void WorkbookEditorSheetCatalogPlan::record_remove(std::string_view current_name)
+{
+    const auto added = std::find(added_names_.begin(), added_names_.end(), current_name);
+    if (added != added_names_.end()) {
+        removed_entries_.push_back(WorkbookEditorSheetCatalogEntry {
+            {},
+            *added,
+            false,
+            true,
+        });
+        added_names_.erase(added);
+        return;
+    }
+
+    for (const std::string& source_name : source_names_) {
+        const auto planned_name = planned_names_by_source_.find(source_name);
+        const std::string_view current = planned_name == planned_names_by_source_.end()
+            ? std::string_view(source_name)
+            : std::string_view(planned_name->second);
+        if (current == current_name) {
+            planned_names_by_source_.erase(source_name);
+            removed_source_names_.push_back(source_name);
+            removed_entries_.push_back(WorkbookEditorSheetCatalogEntry {
+                source_name,
+                std::string(current_name),
+                current_name != source_name,
+                false,
+            });
+            return;
+        }
+    }
 }
 
 void WorkbookEditorSheetCatalogPlan::record_rename(

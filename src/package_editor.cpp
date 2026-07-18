@@ -44,6 +44,8 @@ constexpr std::string_view content_type_extended_properties =
     "application/vnd.openxmlformats-officedocument.extended-properties+xml";
 constexpr std::string_view relationship_type_calc_chain =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain";
+constexpr std::string_view relationship_type_worksheet =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
 constexpr std::string_view relationship_type_core_properties =
     "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties";
 constexpr std::string_view relationship_type_extended_properties =
@@ -896,6 +898,216 @@ bool ascii_equals_ignoring_case(std::string_view lhs, std::string_view rhs) noex
         }
     }
     return true;
+}
+
+void validate_sheet_catalog_add_target(std::string_view name)
+{
+    if (name.empty()) {
+        throw FastXlsxError("workbook worksheet add name is empty");
+    }
+    if (name.size() > 31U) {
+        throw FastXlsxError("workbook worksheet add name exceeds 31 characters");
+    }
+    if (name.find_first_of(":\\/?*[]") != std::string_view::npos) {
+        throw FastXlsxError("workbook worksheet add name contains invalid characters");
+    }
+    if (name.front() == '\'' || name.back() == '\'') {
+        throw FastXlsxError(
+            "workbook worksheet add name cannot start or end with an apostrophe");
+    }
+}
+
+std::uint32_t parse_workbook_sheet_id(std::string_view value)
+{
+    if (value.empty()) {
+        throw FastXlsxError("workbook sheetId is empty");
+    }
+
+    std::uint32_t result = 0;
+    for (const char ch : value) {
+        if (ch < '0' || ch > '9') {
+            throw FastXlsxError("workbook sheetId must be an unsigned decimal integer");
+        }
+        const std::uint32_t digit = static_cast<std::uint32_t>(ch - '0');
+        if (result > (std::numeric_limits<std::uint32_t>::max() - digit) / 10U) {
+            throw FastXlsxError("workbook sheetId exceeds the unsigned 32-bit range");
+        }
+        result = result * 10U + digit;
+    }
+    if (result == 0) {
+        throw FastXlsxError("workbook sheetId must be positive");
+    }
+    return result;
+}
+
+std::uint32_t next_workbook_sheet_id(
+    const std::vector<WorkbookSheetReference>& sheets)
+{
+    std::vector<std::uint32_t> used_ids;
+    used_ids.reserve(sheets.size());
+    for (const WorkbookSheetReference& sheet : sheets) {
+        const std::uint32_t sheet_id = parse_workbook_sheet_id(sheet.sheet_id);
+        if (std::find(used_ids.begin(), used_ids.end(), sheet_id) != used_ids.end()) {
+            throw FastXlsxError("workbook sheetId values must be unique before adding a worksheet");
+        }
+        used_ids.push_back(sheet_id);
+    }
+
+    for (std::uint32_t candidate = 1;; ++candidate) {
+        if (std::find(used_ids.begin(), used_ids.end(), candidate) == used_ids.end()) {
+            return candidate;
+        }
+        if (candidate == std::numeric_limits<std::uint32_t>::max()) {
+            throw FastXlsxError("workbook has no available worksheet sheetId");
+        }
+    }
+}
+
+std::string next_workbook_relationship_id(const RelationshipSet& relationships)
+{
+    for (std::size_t index = 1;; ++index) {
+        std::string id = "rId" + std::to_string(index);
+        if (relationships.find_by_id(id) == nullptr) {
+            return id;
+        }
+        if (index == std::numeric_limits<std::size_t>::max()) {
+            throw FastXlsxError("workbook has no available relationship id");
+        }
+    }
+}
+
+struct GeneratedWorksheetTarget {
+    PartName part_name;
+    std::string relationship_target;
+};
+
+GeneratedWorksheetTarget next_generated_worksheet_target(
+    const PackageManifest& manifest, const PartName& workbook_part)
+{
+    const std::string workbook_path = workbook_part.value();
+    const std::size_t slash = workbook_path.find_last_of('/');
+    const std::string workbook_directory =
+        slash == std::string::npos ? std::string() : workbook_path.substr(0, slash);
+
+    for (std::size_t index = 1;; ++index) {
+        std::string relationship_target = "worksheets/sheet" + std::to_string(index) + ".xml";
+        const PartName part_name(
+            workbook_directory + "/" + relationship_target);
+        if (manifest.find_part(part_name) == nullptr) {
+            return GeneratedWorksheetTarget {part_name, std::move(relationship_target)};
+        }
+        if (index == std::numeric_limits<std::size_t>::max()) {
+            throw FastXlsxError("workbook has no available generated worksheet part name");
+        }
+    }
+}
+
+struct WorkbookSheetsInsertionPoint {
+    std::size_t offset = std::string_view::npos;
+    std::string sheet_element_name;
+};
+
+WorkbookSheetsInsertionPoint find_workbook_sheets_insertion_point(
+    std::string_view workbook_xml)
+{
+    bool inside_workbook = false;
+    bool inside_sheets = false;
+    std::size_t element_depth = 0;
+    std::string sheets_element_name;
+
+    for (std::size_t offset = 0;;) {
+        const std::size_t open = workbook_xml.find('<', offset);
+        if (open == std::string_view::npos) {
+            break;
+        }
+        if (open + 1 >= workbook_xml.size()) {
+            throw FastXlsxError("small XML part tag is truncated");
+        }
+        if (workbook_xml.substr(open, 4) == "<!--") {
+            const std::size_t close = workbook_xml.find("-->", open + 4);
+            if (close == std::string_view::npos) {
+                throw FastXlsxError("small XML part comment is not closed");
+            }
+            offset = close + 3;
+            continue;
+        }
+
+        const std::size_t close = find_xml_tag_end(workbook_xml, open);
+        const char marker = workbook_xml[open + 1];
+        const XmlTagRange tag {open, close};
+        if (marker == '/') {
+            const std::string_view local_name =
+                local_xml_name(closing_tag_name(workbook_xml, tag));
+            if (inside_sheets && element_depth == 2 && local_name == "sheets") {
+                const std::string_view prefix = xml_name_prefix(sheets_element_name);
+                std::string sheet_element_name(prefix);
+                if (!sheet_element_name.empty()) {
+                    sheet_element_name.push_back(':');
+                }
+                sheet_element_name += "sheet";
+                return WorkbookSheetsInsertionPoint {open, std::move(sheet_element_name)};
+            }
+            if (inside_workbook && element_depth > 0) {
+                --element_depth;
+                if (element_depth == 0) {
+                    inside_workbook = false;
+                }
+            }
+            offset = close + 1;
+            continue;
+        }
+        if (marker == '?' || marker == '!') {
+            offset = close + 1;
+            continue;
+        }
+
+        const std::string_view qualified_name = start_tag_name(workbook_xml, tag);
+        const std::string_view local_name = local_xml_name(qualified_name);
+        const bool self_closing = is_self_closing_tag(workbook_xml, tag);
+        if (!inside_workbook) {
+            if (local_name == "workbook" && !self_closing) {
+                inside_workbook = true;
+                element_depth = 1;
+            }
+            offset = close + 1;
+            continue;
+        }
+
+        if (element_depth == 1 && local_name == "sheets") {
+            if (self_closing) {
+                throw FastXlsxError("workbook sheets element cannot be empty when adding a worksheet");
+            }
+            inside_sheets = true;
+            sheets_element_name = std::string(qualified_name);
+        }
+        if (!self_closing) {
+            ++element_depth;
+        }
+        offset = close + 1;
+    }
+
+    throw FastXlsxError("workbook sheets closing tag is missing");
+}
+
+void append_empty_worksheet_catalog_entry(std::string& workbook_xml,
+    const WorkbookSheetsInsertionPoint& insertion, std::string_view name,
+    std::uint32_t sheet_id, std::string_view relationship_id)
+{
+    std::string sheet_xml = "<" + insertion.sheet_element_name + R"( name=")";
+    append_escaped_xml_attribute(sheet_xml, name);
+    sheet_xml += R"(" sheetId=")";
+    sheet_xml += std::to_string(sheet_id);
+    sheet_xml += R"(" xmlns:r=")";
+    sheet_xml += office_document_relationships_namespace;
+    sheet_xml += R"(" r:id=")";
+    append_escaped_xml_attribute(sheet_xml, relationship_id);
+    sheet_xml += R"("/>)";
+    workbook_xml.insert(insertion.offset, sheet_xml);
+}
+
+std::string empty_worksheet_xml()
+{
+    return R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1"/><sheetData/></worksheet>)";
 }
 
 void validate_sheet_catalog_rename_target(std::string_view new_name)
@@ -3884,7 +4096,8 @@ PartName resolve_worksheet_part_by_name_for_patch(const PackageReader& reader,
         return reader.worksheet_part_by_sheet_name_from_xml(
             sheet_name,
             current_planned_materialized_workbook_xml(reader, replacements,
-                "planned workbook sheet catalog resolution"));
+                "planned workbook sheet catalog resolution"),
+            manifest);
     }
 
     return reader.worksheet_part_by_sheet_name(sheet_name);
@@ -5634,6 +5847,12 @@ PackageEditorSheetRenameStagedHook& package_editor_sheet_rename_staged_hook() no
     return hook;
 }
 
+PackageEditorWorksheetAddStagedHook& package_editor_worksheet_add_staged_hook() noexcept
+{
+    static PackageEditorWorksheetAddStagedHook hook = nullptr;
+    return hook;
+}
+
 PackageEditorDocumentPropertiesStagedHook&
 package_editor_document_properties_staged_hook() noexcept
 {
@@ -5686,6 +5905,13 @@ void run_package_editor_calc_metadata_staged_hook()
 void run_package_editor_sheet_rename_staged_hook()
 {
     if (auto hook = package_editor_sheet_rename_staged_hook(); hook != nullptr) {
+        hook();
+    }
+}
+
+void run_package_editor_worksheet_add_staged_hook()
+{
+    if (auto hook = package_editor_worksheet_add_staged_hook(); hook != nullptr) {
         hook();
     }
 }
@@ -8553,7 +8779,7 @@ void PackageEditor::rename_sheet_catalog_entry(
     std::string workbook_xml = current_planned_materialized_workbook_xml(
         reader_, replacements_, "workbook sheet catalog rename");
     const std::vector<WorkbookSheetReference> sheets =
-        reader_.workbook_sheets_from_xml(workbook_xml);
+        reader_.workbook_sheets_from_xml(workbook_xml, manifest_);
     const WorkbookSheetReference target =
         select_sheet_catalog_rename_target(sheets, old_name, new_name);
     const bool rewrite_defined_names =
@@ -8651,6 +8877,133 @@ void PackageEditor::rename_sheet_catalog_entry(
 
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
     run_package_editor_sheet_rename_staged_hook();
+#endif
+
+    commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
+        entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
+        updated_replacements, updated_entry_replacements, updated_omitted_entries);
+}
+
+void PackageEditor::add_empty_worksheet(std::string name)
+{
+    validate_sheet_catalog_add_target(name);
+
+    const PartName workbook_part = reader_.workbook_part();
+    if (manifest_.find_part(workbook_part) == nullptr) {
+        throw FastXlsxError(
+            "worksheet add requires the officeDocument workbook part in the planned package");
+    }
+
+    std::string workbook_xml = current_planned_materialized_workbook_xml(
+        reader_, replacements_, "workbook worksheet add");
+    const std::vector<WorkbookSheetReference> sheets =
+        reader_.workbook_sheets_from_xml(workbook_xml, manifest_);
+    for (const WorkbookSheetReference& sheet : sheets) {
+        if (sheet.name == name) {
+            throw FastXlsxError("workbook worksheet add name already exists");
+        }
+        if (ascii_equals_ignoring_case(sheet.name, name)) {
+            throw FastXlsxError(
+                "workbook worksheet add name already exists case-insensitively");
+        }
+    }
+
+    const std::uint32_t sheet_id = next_workbook_sheet_id(sheets);
+    const WorkbookSheetsInsertionPoint insertion =
+        find_workbook_sheets_insertion_point(workbook_xml);
+    const GeneratedWorksheetTarget worksheet_target =
+        next_generated_worksheet_target(manifest_, workbook_part);
+
+    PackageManifest updated_manifest = manifest_;
+    RelationshipSet* workbook_relationships =
+        updated_manifest.relationships_for(workbook_part);
+    if (workbook_relationships == nullptr) {
+        throw FastXlsxError("worksheet add requires workbook relationships");
+    }
+    const std::string relationship_id =
+        next_workbook_relationship_id(*workbook_relationships);
+    updated_manifest.add_part(
+        worksheet_target.part_name, std::string(content_type_worksheet)).mark_generated();
+    updated_manifest.add_relationship(workbook_part, Relationship {
+        relationship_id,
+        std::string(relationship_type_worksheet),
+        worksheet_target.relationship_target,
+        Relationship::TargetMode::Internal,
+    });
+
+    append_empty_worksheet_catalog_entry(
+        workbook_xml, insertion, name, sheet_id, relationship_id);
+    require_materialized_workbook_xml_size(
+        workbook_xml.size(), "workbook worksheet add");
+
+    const std::string workbook_relationship_entry =
+        relationship_entry_name_for_source_part(workbook_part);
+    std::string workbook_relationships_xml = serialize_relationships(
+        *updated_manifest.relationships_for(workbook_part));
+    std::string content_types_xml =
+        serialize_content_types(updated_manifest.content_types());
+    require_materialized_package_entry_replacement_payload_size(reader_,
+        workbook_relationship_entry, workbook_relationships_xml.size(),
+        "worksheet add workbook relationships replacement");
+    require_materialized_package_entry_replacement_payload_size(reader_,
+        content_types_entry_name, content_types_xml.size(),
+        "worksheet add content types replacement");
+
+    EditPlan updated_edit_plan = edit_plan_;
+    std::vector<PackagePartReplacement> updated_replacements = replacements_;
+    std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
+    std::vector<std::string> updated_omitted_entries = omitted_entries_;
+
+    const std::string workbook_reason =
+        "workbook sheet catalog local-DOM rewrite for generated empty worksheet add";
+    const std::string worksheet_reason =
+        "generated empty worksheet small XML";
+    updated_edit_plan.set_part(
+        workbook_part, PartWriteMode::LocalDomRewrite, workbook_reason);
+    updated_edit_plan.set_part(
+        worksheet_target.part_name, PartWriteMode::GenerateSmallXml, worksheet_reason);
+    updated_edit_plan.add_note(
+        "worksheet add creates one empty worksheet part and updates only the workbook "
+        "sheet catalog, workbook relationships, and content types; it does not clone "
+        "styles, tables, drawings, validations, formulas, or other worksheet metadata");
+    updated_edit_plan.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
+        workbook_part,
+        WorkbookPayloadDependencyAuditKind::SheetCatalog,
+        WorkbookPayloadDependencyAuditScope::SheetCatalogAdd,
+        "sheets/sheet",
+        "workbook worksheet add appends one generated empty sheet catalog entry",
+    });
+
+    upsert_part_replacement(updated_replacements, workbook_part, std::move(workbook_xml),
+        PartWriteMode::LocalDomRewrite, workbook_reason, &workbook_part);
+    upsert_part_replacement_chunks(updated_replacements, worksheet_target.part_name,
+        std::vector<PackageEntryChunk> {
+            PackageEntryChunk::memory(empty_worksheet_xml())},
+        PartWriteMode::GenerateSmallXml, worksheet_reason);
+    upsert_entry_replacement(reader_, updated_entry_replacements,
+        workbook_relationship_entry, std::move(workbook_relationships_xml));
+    upsert_entry_replacement(reader_, updated_entry_replacements,
+        std::string(content_types_entry_name), std::move(content_types_xml));
+
+    remove_entry_replacement(updated_entry_replacements, workbook_part.zip_path());
+    remove_omitted_entry(updated_omitted_entries, workbook_part.zip_path());
+    remove_omitted_entry(updated_omitted_entries, worksheet_target.part_name.zip_path());
+    remove_omitted_entry(updated_omitted_entries, workbook_relationship_entry);
+    remove_omitted_entry(updated_omitted_entries, content_types_entry_name);
+    updated_manifest.set_part_write_mode(workbook_part, PartWriteMode::LocalDomRewrite);
+    updated_manifest.set_part_write_mode(
+        worksheet_target.part_name, PartWriteMode::GenerateSmallXml);
+    updated_edit_plan.set_package_entry(workbook_relationship_entry,
+        PartWriteMode::LocalDomRewrite,
+        "workbook relationships updated for generated empty worksheet add",
+        PackageEntryAuditKind::SourceRelationships, workbook_part.value());
+    updated_edit_plan.set_package_entry(std::string(content_types_entry_name),
+        PartWriteMode::LocalDomRewrite,
+        "content types updated for generated empty worksheet add",
+        PackageEntryAuditKind::ContentTypes);
+
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    run_package_editor_worksheet_add_staged_hook();
 #endif
 
     commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
@@ -9015,6 +9368,12 @@ void testing_set_package_editor_sheet_rename_staged_hook(
     PackageEditorSheetRenameStagedHook hook) noexcept
 {
     package_editor_sheet_rename_staged_hook() = hook;
+}
+
+void testing_set_package_editor_worksheet_add_staged_hook(
+    PackageEditorWorksheetAddStagedHook hook) noexcept
+{
+    package_editor_worksheet_add_staged_hook() = hook;
 }
 
 void testing_set_package_editor_document_properties_staged_hook(

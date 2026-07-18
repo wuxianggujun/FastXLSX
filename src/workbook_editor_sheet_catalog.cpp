@@ -32,20 +32,21 @@ std::vector<std::string> WorkbookEditorSheetCatalogPlan::source_names() const
 std::vector<std::string> WorkbookEditorSheetCatalogPlan::current_names() const
 {
     std::vector<std::string> names;
-    names.reserve(source_names_.size());
+    names.reserve(source_names_.size() + added_names_.size());
     for (const std::string& source_name : source_names_) {
         const auto planned_name = planned_names_by_source_.find(source_name);
         names.push_back(planned_name == planned_names_by_source_.end()
                 ? source_name
                 : planned_name->second);
     }
+    names.insert(names.end(), added_names_.begin(), added_names_.end());
     return names;
 }
 
 std::vector<WorkbookEditorSheetCatalogEntry> WorkbookEditorSheetCatalogPlan::entries() const
 {
     std::vector<WorkbookEditorSheetCatalogEntry> catalog;
-    catalog.reserve(source_names_.size());
+    catalog.reserve(source_names_.size() + added_names_.size());
     for (const std::string& source_name : source_names_) {
         const auto planned_name = planned_names_by_source_.find(source_name);
         const std::string& current_name = planned_name == planned_names_by_source_.end()
@@ -55,6 +56,15 @@ std::vector<WorkbookEditorSheetCatalogEntry> WorkbookEditorSheetCatalogPlan::ent
             source_name,
             current_name,
             current_name != source_name,
+            false,
+        });
+    }
+    for (const std::string& added_name : added_names_) {
+        catalog.push_back(WorkbookEditorSheetCatalogEntry {
+            {},
+            added_name,
+            false,
+            true,
         });
     }
     return catalog;
@@ -76,15 +86,29 @@ bool WorkbookEditorSheetCatalogPlan::has_current(std::string_view sheet_name) co
     return false;
 }
 
+bool WorkbookEditorSheetCatalogPlan::is_added_current(std::string_view sheet_name) const
+{
+    return std::find(added_names_.begin(), added_names_.end(), sheet_name)
+        != added_names_.end();
+}
+
 std::optional<std::string> WorkbookEditorSheetCatalogPlan::source_name_for_current(
     std::string_view sheet_name) const
 {
     for (const WorkbookEditorSheetCatalogEntry& entry : entries()) {
         if (entry.planned_name == sheet_name) {
+            if (entry.added) {
+                return std::nullopt;
+            }
             return entry.source_name;
         }
     }
     return std::nullopt;
+}
+
+void WorkbookEditorSheetCatalogPlan::record_add(std::string name)
+{
+    added_names_.push_back(std::move(name));
 }
 
 void WorkbookEditorSheetCatalogPlan::record_rename(
@@ -94,6 +118,14 @@ void WorkbookEditorSheetCatalogPlan::record_rename(
     for (const WorkbookEditorSheetCatalogEntry& entry : entries()) {
         if (entry.planned_name != old_current_name) {
             continue;
+        }
+
+        if (entry.added) {
+            const auto added = std::find(added_names_.begin(), added_names_.end(), old_current_name);
+            if (added != added_names_.end()) {
+                *added = std::string(new_current_name);
+            }
+            return;
         }
 
         if (new_current_name == entry.source_name) {

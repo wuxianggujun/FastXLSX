@@ -78,9 +78,14 @@ public:
     [[nodiscard]] std::vector<WorkbookSheetReference> workbook_sheets() const;
     [[nodiscard]] std::vector<WorkbookSheetReference> workbook_sheets_from_xml(
         std::string_view workbook_xml) const;
+    [[nodiscard]] std::vector<WorkbookSheetReference> workbook_sheets_from_xml(
+        std::string_view workbook_xml, const PackageManifest& manifest) const;
     [[nodiscard]] PartName worksheet_part_by_sheet_name(std::string_view sheet_name) const;
     [[nodiscard]] PartName worksheet_part_by_sheet_name_from_xml(
         std::string_view sheet_name, std::string_view workbook_xml) const;
+    [[nodiscard]] PartName worksheet_part_by_sheet_name_from_xml(
+        std::string_view sheet_name, std::string_view workbook_xml,
+        const PackageManifest& manifest) const;
 
 private:
     PackageReader() = default;

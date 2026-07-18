@@ -125,7 +125,8 @@ bool workbook_editor_catalog_entries_equal(
     for (std::size_t index = 0; index < lhs.size(); ++index) {
         if (lhs[index].source_name != rhs[index].source_name
             || lhs[index].planned_name != rhs[index].planned_name
-            || lhs[index].renamed != rhs[index].renamed) {
+            || lhs[index].renamed != rhs[index].renamed
+            || lhs[index].added != rhs[index].added) {
             return false;
         }
     }
@@ -175,6 +176,7 @@ bool workbook_editor_edit_summaries_equal(
         if (left.source_name != right.source_name
             || left.planned_name != right.planned_name
             || left.renamed != right.renamed
+            || left.added != right.added
             || left.sheet_data_replaced != right.sheet_data_replaced
             || left.replacement_cell_count != right.replacement_cell_count
             || left.estimated_replacement_memory_usage

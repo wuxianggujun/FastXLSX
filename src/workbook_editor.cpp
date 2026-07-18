@@ -20,6 +20,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -458,6 +459,10 @@ WorksheetEditor WorkbookEditor::worksheet(
     const std::optional<std::string> source_name =
         impl_->source_name_for_current_worksheet(sheet_name);
     if (!source_name.has_value()) {
+        if (impl_->is_added_worksheet(sheet_name)) {
+            throw FastXlsxError(
+                "newly added worksheet cannot be materialized before save and reopen");
+        }
         throw FastXlsxError(detail::workbook_editor_missing_planned_sheet_message(sheet_name));
     }
 
@@ -670,6 +675,33 @@ void WorkbookEditor::replace_image(
         FastXlsxError public_error("WorkbookEditor::replace_image() failed for '"
             + image_part_name_key + "' from memory bytes ("
             + std::to_string(image_byte_count) + " bytes): " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::add_worksheet(std::string name)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string name_key = name;
+    try {
+        detail::WorkbookEditorSheetCatalogPlan updated_catalog = impl_->sheet_catalog;
+        updated_catalog.record_add(name);
+        impl_->editor.add_empty_worksheet(std::move(name));
+
+        static_assert(
+            std::is_nothrow_swappable_v<detail::WorkbookEditorSheetCatalogPlan>);
+        using std::swap;
+        swap(impl_->sheet_catalog, updated_catalog);
+
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::add_worksheet() failed for '" + name_key + "': " + error.what());
         impl_->record_last_edit_error(public_error);
         throw public_error;
     }

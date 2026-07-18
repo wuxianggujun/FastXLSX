@@ -423,6 +423,9 @@ workbook_editor_source_formula_reference_audits(
     std::vector<WorkbookEditorFormulaReferenceAudit> audits;
 
     for (const WorkbookEditorSheetCatalogEntry& formula_sheet : catalog) {
+        if (formula_sheet.added) {
+            continue;
+        }
         const WorkbookSheetReference& source_sheet =
             find_source_sheet_reference(workbook_sheets, formula_sheet.source_name);
         std::vector<SourceWorksheetFormulaCell> formula_cells;

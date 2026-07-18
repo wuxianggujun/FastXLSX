@@ -1,24 +1,39 @@
 ---
 name: fastxlsx-project-navigation
-description: "导航 FastXLSX 架构、public/internal 边界和当前能力。"
+description: "导航 FastXLSX 架构、public/internal 边界、当前能力、功能缺口和专项实现入口。用于开始项目分析、选择 Streaming/Patch/In-memory 路径、判断功能是否已公开，以及把任务路由到正确模块和项目 skill。"
 ---
 # FastXLSX Project Navigation
 
-## 必读
-`docs/CURRENT_CAPABILITIES.md`、public headers、source、tests、CMake、`docs/TASK_BREAKDOWN.md`。
+## 事实顺序
 
-## 三路径
-- Streaming：`WorkbookWriter`，大型有序新建。
-- Patch：`WorkbookEditor`，已有文件 part-level rewrite。
-- In-memory：`WorksheetEditor`，small-file sparse editing。
+先读 public headers，再核对 source、tests、`docs/CURRENT_CAPABILITIES.md`、CMake 和 `docs/TASK_BREAKDOWN.md`。历史计划只查 Git；internal hook、fixture、preservation test 和 benchmark instrumentation 不形成 public 能力。
 
-## 当前关键事实
-- Production 默认 minizip stored+DEFLATE；stored-only 是显式 profile。
-- `has_pending_changes()` 与 save watermark 分离。
-- Dirty In-memory save 采用 stage → package write → state commit；失败不提交 dirty handoff。
-- In-memory 默认 `RejectKnownLosses`，通过 `WorksheetMaterializationError` 暴露稳定 loss category/context；lossy 必须显式 opt-in。
-- Images 可关闭；关闭时 public stubs 抛错。
-- Internal package/edit-plan 类型不进入 public surface。
-- Streaming worksheet body 使用 256 KiB bounded batching，成功 close 后回收临时资源；Patch strict replace 使用 direct-range，其他 cell fallback 使用 256 KiB output-batched single-pass source-order transform。Internal opt-in reader 会在 generic parser 前把 bounded window 内 exact writer-compatible numeric/simple-inline/formula complete cell 暴露为单个 callback-lifetime source span；attribute 变体、rich/unsupported metadata、malformed markup 与跨窗口 candidate 保留结构 parser。Transformer 可把连续 untouched span 合并为 pass-through batch，同时保留 metadata/replacement/window boundary、dimension 与 formula/sharedStrings/style/inline-string audit；single-pass output append 同步累计 CRC checkpoints，commit 不重读 temporary worksheet，但 PackageWriter completed-entry CRC、mutation output protection 与 retry gate 保留。Windows production minizip-ng 对至少 4 MiB staged file chunk 使用两个固定 512 KiB buffer 做 bounded overlapped read-ahead，小/raw-copy/stored/non-Windows 路径保持同步；telemetry 拆分 parser/source-callback/coalesced/action、aggregate/canonical inline-string、complete-cell/canonical complete-cell、pass-through batching、relationship/temporary IO、fused CRC、staged-file prefetch、file IO buffer 与 package writer call granularity。Internal one-pass direct-zlib raw engine 只在 `FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING=ON` 编译并用于 matched-level profiling；production 默认 OFF、不直接链接 ZLIB，public/default backend 仍为 minizip-managed DEFLATE。
+## 三条 Public 路径
 
-判断顺序：public headers → source → tests → capability docs。历史计划只查 Git。
+- Streaming：`WorkbookWriter` / `WorksheetWriter` / `CellView`，用于大型有序新建和低内存导出。
+- Patch：`WorkbookEditor`，用于已有文件的 part-level copy/rewrite/remove 和定点 worksheet rewrite。
+- In-memory：borrowed `WorksheetEditor`，用于受 guardrail 限制的小文件稀疏随机编辑。
+
+## 当前能力与缺口
+
+- Streaming 已覆盖基础 cell、styles、worksheet metadata、窄 tables/conditional formatting 和 PNG/JPEG insertion；不允许历史行随机修改。
+- Patch 已覆盖 catalog、事务式空白 worksheet add、sheetData/cell replacement、窄 rename、formula audit/recalculation、core/app properties 和 media bytes replacement；当前没有 public existing-workbook worksheet remove/clone。新增表可同会话用 Patch 填充/rename，但需保存重开后才能 In-memory materialize。
+- In-memory 已覆盖 sparse reads/writes、range/row/column mutation、structural shifts、cell/value/style transfer 和 two-phase save；它不修复 linked worksheet objects，也不是 large-file random editor。
+- 当前没有 public bounded-memory worksheet reader。公式不求值、不生成 cached result、不完整重建 calcChain。
+- Tables、drawings、charts、comments、VBA、pivot、external links 和 custom XML 默认只可 preserve/audit/fail，不能因保留测试宣称 semantic edit。
+
+## 稳定契约
+
+- Production 默认 minizip-ng stored + DEFLATE；stored-only 是显式 bootstrap profile。Direct-zlib 仅为 default-off internal profiling engine，不是 public/default backend。
+- `has_pending_changes()` 表示 retained staged state；`has_unsaved_changes()` 表示最近成功保存后的 watermark delta。
+- Dirty In-memory save 使用 stage -> package write -> state commit；失败保留 dirty diagnostics、counts 和 retry 能力。
+- In-memory 默认 `RejectKnownLosses` 并抛 typed `WorksheetMaterializationError`；`AllowLossyProjection` 必须显式选择。
+- Internal package/edit-plan/relationship 类型不进入 public surface。Images 可关闭；关闭时 public symbols 保留但调用抛错。
+
+## 专项路由
+
+- Public API、Doxygen 和状态边界：`fastxlsx-api-design-docs`。
+- Streaming 热路径和 large rewrite：`fastxlsx-streaming-worksheet`。
+- Patch、OPC、preservation 和 transaction：`fastxlsx-opc-editing`。
+- In-memory materialization、CellStore、mutation 和 retry：`fastxlsx-in-memory-worksheet`。
+- Styles、metadata、conditional formatting、images、依赖、构建和测试分别使用对应 feature skill。

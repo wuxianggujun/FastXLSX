@@ -29,6 +29,7 @@
 - 易用 API 不能让 large worksheet 隐式进入 DOM、dense matrix 或无界 cell map。
 - `Cell` / `CellValue` 可以作为 owning 边界值和 small-file 存储，不作为 million-row 热路径长期模型。
 - Patch edit 必须明确 copy/rewrite/remove/audit/fail 行为，以及 sharedStrings、styles、formulas、relationships、content types 和 calc metadata 策略。
+- Existing-workbook worksheet lifecycle API 必须明确 source catalog 与 planned catalog 的区别，并把 workbook XML、workbook relationships、content types、worksheet part、manifest、public diagnostics 和 pending/watermark 作为同一事务边界。`add_worksheet()` 只承诺 generated empty worksheet；不能描述为 clone，未保存的新表也不能伪装成可 materialize source worksheet。
 - In-memory API 必须提供 cell count、内存估算和 guardrail，并定义失败前状态不污染。
 - Existing-workbook style-only API 在 style registry/migration contract 建立前，只能复用同一 materialized workbook 中已校验的 source StyleId 或清除现有句柄；range mutation 必须定义 sparse mapping、missing-target、overlap snapshot 与 batch preflight 语义。不得接受任意 caller non-default StyleId，并必须声明 styles.xml 是 preserve 而不是 edit。
 - Style-only move 必须明确 source-clear 与 destination-overlay 的顺序：从 pre-edit snapshot 冻结 optional StyleId，在候选 CellStore 中先清除 represented sources、再覆盖全部已表示的 mapped targets，比较最终状态并通过 guardrail 后一次发布；不能先修改 active source，也不能借 move 合成 cell、移动 CellValue 或引入 style table migration。

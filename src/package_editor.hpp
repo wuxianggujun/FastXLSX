@@ -323,6 +323,10 @@ using PackageEditorSheetRenameStagedHook = void (*)();
 void testing_set_package_editor_sheet_rename_staged_hook(
     PackageEditorSheetRenameStagedHook hook) noexcept;
 
+using PackageEditorWorksheetAddStagedHook = void (*)();
+void testing_set_package_editor_worksheet_add_staged_hook(
+    PackageEditorWorksheetAddStagedHook hook) noexcept;
+
 using PackageEditorDocumentPropertiesStagedHook = void (*)();
 void testing_set_package_editor_document_properties_staged_hook(
     PackageEditorDocumentPropertiesStagedHook hook) noexcept;
@@ -659,6 +663,10 @@ public:
     // New-name duplicate checks are conservative and ASCII case-insensitive.
     void rename_sheet_catalog_entry(std::string_view old_name, std::string new_name,
         const ReferencePolicy& policy = {}, SheetCatalogRenameOptions options = {});
+    // Adds one generated, empty worksheet to the current planned workbook.
+    // The workbook catalog, workbook relationships, content types, generated
+    // worksheet part, and output plan are staged and committed together.
+    void add_empty_worksheet(std::string name);
     // Internal small-part Patch helper. Rewrites workbook calc metadata only,
     // optionally omitting stale calcChain payload/metadata, and leaves worksheet
     // parts and linked objects copy-original.

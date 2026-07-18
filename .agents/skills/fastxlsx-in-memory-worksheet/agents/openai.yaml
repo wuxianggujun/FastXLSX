@@ -1,0 +1,4 @@
+interface:
+  display_name: "FastXLSX In-memory 工作表"
+  short_description: "实现和审查小文件稀疏工作表编辑、事务状态与失败恢复"
+  default_prompt: "使用 $fastxlsx-in-memory-worksheet 实现或审查 FastXLSX 的 WorksheetEditor 稀疏编辑、状态和保存语义。"

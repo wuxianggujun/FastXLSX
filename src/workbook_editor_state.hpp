@@ -68,6 +68,7 @@ workbook_editor_public_catalog_from_detail_catalog(
             entry.source_name,
             entry.planned_name,
             entry.renamed,
+            entry.added,
         });
     }
     return public_catalog;
@@ -124,6 +125,11 @@ struct WorkbookEditor::Impl {
     [[nodiscard]] bool has_current_worksheet(std::string_view sheet_name) const
     {
         return sheet_catalog.has_current(sheet_name);
+    }
+
+    [[nodiscard]] bool is_added_worksheet(std::string_view sheet_name) const
+    {
+        return sheet_catalog.is_added_current(sheet_name);
     }
 
     [[nodiscard]] std::optional<std::string> source_name_for_current_worksheet(
@@ -297,7 +303,7 @@ struct WorkbookEditor::Impl {
                 pending_cell_replacements != pending_targeted_cell_replacements.end();
             const bool materialized_dirty =
                 materialized_session != nullptr && materialized_session->dirty();
-            if (!catalog_entry.renamed && !sheet_data_replaced
+            if (!catalog_entry.added && !catalog_entry.renamed && !sheet_data_replaced
                 && !targeted_cells_replaced && !materialized_dirty) {
                 continue;
             }
@@ -306,6 +312,7 @@ struct WorkbookEditor::Impl {
             summary.source_name = catalog_entry.source_name;
             summary.planned_name = current_name;
             summary.renamed = catalog_entry.renamed;
+            summary.added = catalog_entry.added;
             summary.sheet_data_replaced = sheet_data_replaced;
             summary.targeted_cells_replaced = targeted_cells_replaced;
             summary.materialized_dirty = materialized_dirty;

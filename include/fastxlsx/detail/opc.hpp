@@ -211,6 +211,7 @@ enum class WorkbookPayloadDependencyAuditKind {
 enum class WorkbookPayloadDependencyAuditScope {
     WorksheetRewrite,
     SheetCatalogRename,
+    SheetCatalogAdd,
     WorkbookCalcMetadataRewrite,
 };
 

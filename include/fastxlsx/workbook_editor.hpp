@@ -229,6 +229,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// source worksheet.
     bool renamed = false;
 
+    /// True when add_worksheet() created this worksheet in the planned catalog.
+    /// Added worksheets have an empty source_name.
+    bool added = false;
+
     /// True when replace_sheet_data() has queued a whole-<sheetData>
     /// replacement for this planned worksheet name.
     bool sheet_data_replaced = false;
@@ -275,9 +279,9 @@ struct WorkbookEditorWorksheetEditSummary {
 
 /// Public source-to-planned worksheet catalog entry for WorkbookEditor.
 ///
-/// API mode: Patch. This value shows how one source workbook sheet will appear
-/// in the current planned catalog used by worksheet_names(), has_worksheet(),
-/// replace_sheet_data(), and save_as(). It does not expose workbook
+/// API mode: Patch. This value shows how one source or newly added workbook
+/// sheet appears in the current planned catalog used by worksheet_names(),
+/// has_worksheet(), replace_sheet_data(), and save_as(). It does not expose workbook
 /// relationships, worksheet part names, package entries, or internal EditPlan
 /// state.
 struct WorkbookEditorWorksheetCatalogEntry {
@@ -290,6 +294,10 @@ struct WorkbookEditorWorksheetCatalogEntry {
     /// True when source_name differs from planned_name because rename_sheet()
     /// has queued a sheet-catalog rename.
     bool renamed = false;
+
+    /// True when add_worksheet() created this entry in the planned catalog.
+    /// source_name is empty for added entries.
+    bool added = false;
 };
 
 /// Public coordinate for a sparse WorksheetEditor cell snapshot.
@@ -2206,6 +2214,8 @@ private:
 /// - replace a bounded set of already-existing cells in a worksheet through the
 ///   file-backed worksheet transformer without materializing the source
 ///   worksheet into WorkbookEditor memory,
+/// - add a generated empty worksheet to the planned workbook catalog, then
+///   optionally populate it through replace_sheet_data() or point upserts,
 /// - rename a worksheet's sheet-catalog name (the `<sheets><sheet name="...">`
 ///   attribute written into the saved package),
 /// - inspect sheet-qualified formula references in already-materialized
@@ -2358,7 +2368,7 @@ private:
 /// no-op save_as() remains a copy-original package write unless another edit is
 /// explicitly queued.
 ///
-/// Non-goals (not implemented by this slice): adding / deleting worksheets,
+/// Non-goals (not implemented by this slice): deleting / cloning worksheets,
 /// semantic sheet rename that synchronizes defined names / formulas / tables /
 /// drawings / relationship targets, caller-supplied worksheet XML input,
 /// shared-string index writeback / rebuild / migration, style id migration or
@@ -3074,6 +3084,37 @@ public:
     /// the target. On failure no edit state is mutated and the editor remains
     /// usable.
     void replace_image(std::string_view image_part_name, std::span<const std::byte> image_bytes);
+
+    /// Adds one empty worksheet to the current planned workbook.
+    ///
+    /// API mode: Patch / existing-workbook structural metadata edit. The new
+    /// worksheet is appended to worksheet_names() and save_as() output order;
+    /// source_worksheet_names() remains the immutable opened-source view. The
+    /// operation atomically stages a generated worksheet part plus coordinated
+    /// updates to `xl/workbook.xml`, the workbook `.rels`, and
+    /// `[Content_Types].xml`. Unknown and unrelated source entries remain
+    /// copy-original.
+    ///
+    /// The new sheet starts empty and carries no cloned styles, tables,
+    /// drawings, validations, formulas, panes, or other worksheet metadata.
+    /// It can be populated in the same editor with replace_sheet_data() or with
+    /// replace_cells(..., CellPatchMissingCellPolicy::Insert), and it can be
+    /// renamed with rename_sheet(). In-memory worksheet() materialization still
+    /// requires a source worksheet; save and reopen before materializing a newly
+    /// added sheet.
+    ///
+    /// The name follows the same 1-31 byte and invalid-character boundary as
+    /// rename_sheet(); duplicates are rejected ASCII case-insensitively. Each
+    /// successful call increments pending_change_count() and the unsaved
+    /// watermark. A failed call preserves the prior planned catalog, package
+    /// plan, pending/unsaved counts, and retry ability, and records
+    /// last_edit_error(). A failed save_as() retains the staged worksheet.
+    ///
+    /// @param name New worksheet name copied into editor-owned staged state.
+    /// @throws FastXlsxError if the editor is not open, the name is invalid or
+    /// duplicates a planned name, required workbook metadata is malformed, or
+    /// bounded transactional staging fails.
+    void add_worksheet(std::string name);
 
     /// Renames a worksheet's sheet-catalog name for the saved package.
     ///

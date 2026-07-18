@@ -113,6 +113,35 @@ void test_catalog_plan_chained_renames_follow_current_name()
         "sheet catalog plan should keep chained rename bound to original source name");
 }
 
+void test_catalog_plan_tracks_and_renames_added_sheets()
+{
+    fastxlsx::detail::WorkbookEditorSheetCatalogPlan plan({"Data", "Other"});
+
+    plan.record_add("Added");
+    check_names(plan.source_names(), {"Data", "Other"},
+        "sheet catalog add should not mutate source names");
+    check_names(plan.current_names(), {"Data", "Other", "Added"},
+        "sheet catalog add should append the planned name");
+    check(plan.is_added_current("Added"),
+        "sheet catalog add should identify the added current name");
+    check(!plan.source_name_for_current("Added").has_value(),
+        "added worksheet should not pretend to have a source name");
+
+    const auto added_catalog = plan.entries();
+    check(added_catalog.size() == 3,
+        "sheet catalog add should append one catalog entry");
+    check(added_catalog[2].source_name.empty()
+            && added_catalog[2].planned_name == "Added"
+            && !added_catalog[2].renamed && added_catalog[2].added,
+        "sheet catalog add should expose explicit added semantics");
+
+    plan.record_rename("Added", "Renamed Added");
+    check_names(plan.current_names(), {"Data", "Other", "Renamed Added"},
+        "sheet catalog should rename an added current entry in place");
+    check(plan.is_added_current("Renamed Added") && !plan.is_added_current("Added"),
+        "sheet catalog should retain added identity after rename");
+}
+
 } // namespace
 
 int main()
@@ -121,6 +150,7 @@ int main()
         test_catalog_plan_tracks_source_and_current_names();
         test_catalog_plan_records_and_reverts_renames();
         test_catalog_plan_chained_renames_follow_current_name();
+        test_catalog_plan_tracks_and_renames_added_sheets();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

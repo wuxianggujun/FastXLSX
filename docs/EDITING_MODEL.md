@@ -21,6 +21,7 @@ source package -> part index/relationships -> staged edits -> part-level rewrite
 
 - Public facade 是 `WorkbookEditor`。
 - Unchanged/unknown part 默认 copy-original。
+- `add_worksheet()` 将 generated empty worksheet 追加到 planned catalog，并在一次事务中 stage workbook XML、workbook relationships、content types、manifest 和新 worksheet part；source catalog 不变。同一 editor 可继续 Patch 填充/rename，但新增表在保存重开前没有可供 In-memory materialization 的 source payload。
 - Production minizip-ng 且 source/output compression method 匹配时，unchanged entry 直接复制 exact compressed payload；stored bootstrap、method-changing 与 changed entries 走 logical/encoding 路径。该优化不保留完整 ZIP record 或 package layout。
 - Changed part 选择 stream rewrite、small-part rewrite 或 remove。
 - Relationship-free DEFLATE worksheet 的 strict existing-cell replace 可走 one-inflate target-only direct-range：解压后的 worksheet 放在 owned temporary file，未触碰 XML 以 file ranges replay，replacement payload 使用小型 memory chunks。
@@ -68,7 +69,7 @@ source worksheet events -> strict/lossy projection -> sparse CellStore -> edits 
 ## 状态与失败
 
 - Edit/materialization 先 preflight，成功后才注册或修改状态。
-- `request_full_calculation()`、`rename_sheet()`、internal document-properties rewrite、internal part removal、materialized small-part replacement 与 file-backed worksheet rewrite 的跨 plan/replacements/omitted entries/manifest/public diagnostics/临时文件所有权变更先在副本完成，再以 noexcept swap 提交；staging 失败不能留下部分 mutation，未发布临时文件由 RAII 清理，既有 patch 必须保持可保存、可重试。提交后的 ownership 集合只保留当前 replacement 引用的路径，被后续 rewrite 取代的旧临时文件立即删除。
+- `request_full_calculation()`、`add_worksheet()`、`rename_sheet()`、internal document-properties rewrite、internal part removal、materialized small-part replacement 与 file-backed worksheet rewrite 的跨 plan/replacements/omitted entries/manifest/public diagnostics/临时文件所有权变更先在副本完成，再以 noexcept swap 提交；staging 失败不能留下部分 mutation，未发布临时文件由 RAII 清理，既有 patch 必须保持可保存、可重试。提交后的 ownership 集合只保留当前 replacement 引用的路径，被后续 rewrite 取代的旧临时文件立即删除。
 - Malformed source、非法值和 session option mismatch 保持通用 contract/load failure；不得伪装成 strict projection loss。
 - Failed edit/save 不清除 staged state 或 dirty session diagnostics，也不改变 pending/unsaved count、`last_edit_error()` 或 save watermark。
 - Successful `save_as()` 清除 unsaved watermark，但保留可复用 staged state。

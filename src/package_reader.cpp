@@ -2460,6 +2460,23 @@ std::vector<WorkbookSheetReference> PackageReader::workbook_sheets_from_xml(
         workbook_xml, *workbook_relationships, part_index_, workbook_part);
 }
 
+std::vector<WorkbookSheetReference> PackageReader::workbook_sheets_from_xml(
+    std::string_view workbook_xml, const PackageManifest& manifest) const
+{
+    const PartName workbook_part = this->workbook_part();
+    const RelationshipSet* workbook_relationships = manifest.relationships_for(workbook_part);
+    if (workbook_relationships == nullptr) {
+        throw FastXlsxError("workbook sheet catalog requires planned workbook relationships");
+    }
+
+    PartIndex planned_parts;
+    for (const PackagePart& part : manifest.parts()) {
+        planned_parts.ensure_part(part.name, part.content_type);
+    }
+    return parse_workbook_sheets(
+        workbook_xml, *workbook_relationships, planned_parts, workbook_part);
+}
+
 PartName PackageReader::worksheet_part_by_sheet_name(std::string_view sheet_name) const
 {
     return worksheet_part_by_sheet_name_from_sheets(workbook_sheets(), sheet_name);
@@ -2470,6 +2487,14 @@ PartName PackageReader::worksheet_part_by_sheet_name_from_xml(
 {
     return worksheet_part_by_sheet_name_from_sheets(
         workbook_sheets_from_xml(workbook_xml), sheet_name);
+}
+
+PartName PackageReader::worksheet_part_by_sheet_name_from_xml(
+    std::string_view sheet_name, std::string_view workbook_xml,
+    const PackageManifest& manifest) const
+{
+    return worksheet_part_by_sheet_name_from_sheets(
+        workbook_sheets_from_xml(workbook_xml, manifest), sheet_name);
 }
 
 } // namespace fastxlsx::detail

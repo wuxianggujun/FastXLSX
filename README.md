@@ -77,6 +77,7 @@ int main()
 int main()
 {
     auto editor = fastxlsx::WorkbookEditor::open("template.xlsx");
+    editor.add_worksheet("Archive");
     fastxlsx::DocumentProperties properties;
     properties.last_modified_by = "Report Service";
     properties.title = "Updated report";
@@ -129,6 +130,7 @@ auto sheet = editor.worksheet("Data", options);
 - 公式支持文本、审计、窄重写和请求重算；不求值、不生成 cached value、不完整重建 `calcChain.xml`。
 - `replace_image()` 只替换已有 PNG/JPEG media bytes；不编辑 drawing/anchor/relationship。
 - `set_document_properties()` 只重写 core/app docProps；不创建或编辑 custom properties。
+- `add_worksheet()` 只向 existing workbook 追加空白 worksheet，并事务式更新 workbook catalog、workbook relationships、content types 和新 worksheet part；同一 editor 可继续用 Patch API 填充或重命名，但要在 `save_as()` 后重新打开，才能通过 In-memory `worksheet()` materialize。它不克隆 worksheet、styles、tables、drawings 或其他 linked objects。
 - Preservation 证据不等于 tables、charts、comments、VBA、pivot 或 custom XML 的语义编辑。
 - In-memory 是 small-file 稀疏编辑，不是 large-file low-memory random editing。
 
@@ -142,7 +144,7 @@ auto sheet = editor.worksheet("Data", options);
 - **Patch rewrite 现状**：schema-v11/v5 pass-through profile 已把 1,000,000-cell numeric/mixed-inline/formula + external hyperlink level-1 upsert 的 transform action/output append 降低 99.82%，schema-v12/v6 又为 canonical inline-string payload 增加不复制的 literal path。最新 schema-v13/v7 在 generic parser 前识别 bounded window 内 exact writer-compatible complete cell；双顺序 A/B 中 parsed events 降低 73.53%–76.92%，numeric/mixed-inline/formula + hyperlink 的 source scan/action median 分别降低 30.01%–54.85%、27.99%–47.39%、36.34%–37.18%，transform median 也在两种顺序中下降，且 paired peak working set 未增加。Package writer/temporary IO 随执行顺序波动，因此不声明通用 total-editor 提升；该结论只覆盖记录的顺序 upsert workload，不是任意随机编辑承诺。
 - **Patch package handoff**：Windows production minizip-ng 对至少 4 MiB 的 staged file chunk 使用两个固定 512 KiB buffer，在同步压缩当前 buffer 前发起下一次 overlapped read；小 chunk、raw compressed-copy、stored-only 和非 Windows 路径保持同步读取。Schema-v14/v8 的双 1 MiB buffer 证据已证明前台 staged read median 降低 78.75%–91.79%；最新 isolated writer 与 Patch schema-v15/v9 profile 进一步选择 512 KiB 调用粒度，numeric/mixed-inline/formula 的 combined target-entry median 相对 1 MiB 分别降低 4.30%/5.06%/0.85%，median maximum writer-call wall time 降低 41.65%–53.26%，process peak working set 减少约 0.99 MiB。Formula 反向顺序仍有 0.43% 回退，因此不声明任意 workload 的通用吞吐提升。
 - **Patch compression 选型**：最新同机 schema-v9 profile 中，1,000,000-cell numeric/mixed-inline upsert 的 level 1 median save 为 0.488/0.408 秒，level 6 为 1.033/1.244 秒；level 1 输出增大 9.73%/14.51%，process peak working set median 约 8.84/9.81 MB。吞吐优先先显式选择 level 1；文件大小优先再提高 level。Public 默认保持兼容，当前证据不支持直接切换 backend 或引入并行压缩。
-- **Patch 下一步**：internal one-pass direct-zlib raw engine、isolated schema-v2 matrix 与 balanced paired-v1 runner 已可在同 staged payload/compression level 下拆分 zlib API CPU、CRC、read、raw-output write 和 entry close；当前只完成 correctness smoke，默认/public backend 仍为 minizip-managed DEFLATE。下一轮生成 numeric/mixed-inline/formula 的 validated 双顺序 bundle，并用 ETW 或 sampling profiler 解释 wall/process-CPU 分歧；证据未覆盖兼容性、输出大小和内存前不采用或公开该 engine，也不引入 zlib-ng 或并行压缩。
+- **Patch compression 决策**：internal one-pass direct-zlib raw engine 保持 profiling-only 且默认关闭。当前 matched-level candidate 在 numeric/mixed-inline/formula 中没有跨 workload 一致的 wall/overall CPU 收益，小 output buffer 还会回退，因此不生成 tracked adoption bundle、不切换 public/default minizip-managed DEFLATE，也不引入 zlib-ng 或并行压缩。只有未来 clean revision 的长时样本同时证明稳定收益并具备可用 profiler 解释时才重开评估。
 - **随机编辑/处理**：`WorksheetEditor` 有意限定为 small-file sparse editing。大型 worksheet 的顺序 Patch 可以使用上述 file-backed bounded path；任意 random editing 仍需要独立设计，不能通过放宽 In-memory guardrail 冒充高性能。
 
 精确环境、重复测量协议、min/median/max 和验证结果见 [性能目标与证据](docs/PERFORMANCE_TARGETS.md)。

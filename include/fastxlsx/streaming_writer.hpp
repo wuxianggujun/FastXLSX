@@ -2,6 +2,7 @@
 
 #include <fastxlsx/document_properties.hpp>
 #include <fastxlsx/workbook.hpp>
+#include <fastxlsx/worksheet_metadata.hpp>
 
 #include <array>
 #include <chrono>
@@ -755,20 +756,6 @@ struct ImageOptions {
     /// Empty omits the tooltip attribute. This is only valid when
     /// external_hyperlink_url is non-empty.
     std::string external_hyperlink_tooltip;
-};
-
-/// Optional hyperlink display metadata.
-///
-/// API mode: Streaming worksheet metadata for new workbooks. Empty strings are
-/// omitted. Non-empty strings are copied into writer state and emitted as
-/// worksheet `<hyperlink>` attributes. These options do not write cell text,
-/// create hyperlink styles, validate targets, or edit existing XLSX files.
-struct HyperlinkOptions {
-    /// Optional display text written as the OpenXML `display` attribute.
-    std::string display;
-
-    /// Optional screen-tip text written as the OpenXML `tooltip` attribute.
-    std::string tooltip;
 };
 
 /// A cell view consumed immediately by WorksheetWriter.

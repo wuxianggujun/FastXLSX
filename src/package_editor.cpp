@@ -1,6 +1,7 @@
 ﻿#include "package_editor.hpp"
 
 #include <fastxlsx/detail/formula_reference_audit.hpp>
+#include <fastxlsx/detail/worksheet_metadata_rewriter.hpp>
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
 #include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/detail/xml.hpp>
@@ -8384,6 +8385,54 @@ void PackageEditor::replace_worksheet_part_from_chunk_source_by_name(
         resolve_worksheet_part_by_name_for_patch(
             reader_, manifest_, replacements_, sheet_name),
         read_next_chunk, policy, std::move(reason), std::move(commit_notes));
+}
+
+void PackageEditor::add_internal_hyperlink_by_name(
+    std::string_view sheet_name, std::uint32_t row, std::uint32_t column,
+    std::string location, std::string display, std::string tooltip)
+{
+    const std::string cell = cell_reference(row, column);
+    if (location.empty()) {
+        throw FastXlsxError("internal hyperlink location cannot be empty");
+    }
+
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "internal worksheet hyperlink edit");
+    const WorksheetInternalHyperlinkRewrite hyperlink {
+        cell, std::move(location), std::move(display), std::move(tooltip)};
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for internal hyperlink planning");
+    const WorksheetInternalHyperlinkRewritePlan rewrite_plan =
+        plan_worksheet_internal_hyperlink_rewrite(
+            [&](std::string& chunk) { return planning_reader(chunk); }, hyperlink);
+
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for internal hyperlink rewrite");
+    write_worksheet_internal_hyperlink_rewrite(
+        [&](std::string& chunk) { return output_reader(chunk); }, hyperlink,
+        rewrite_plan, rewritten_source_file.path());
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "internal worksheet hyperlink edit rewrites worksheet-local hyperlinks "
+        "through bounded source chunks and preserves worksheet relationships");
+    replace_worksheet_part_from_chunk_source_with_commit_notes(
+        worksheet_part, staged_source, {},
+        "existing-workbook internal worksheet hyperlink metadata edit",
+        std::move(commit_notes));
 }
 
 void PackageEditor::replace_worksheet_part_chunks_by_name(std::string_view sheet_name,

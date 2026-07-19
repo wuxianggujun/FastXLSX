@@ -610,6 +610,46 @@ void WorkbookEditor::replace_cells_impl(std::string_view sheet_name,
     }
 }
 
+void WorkbookEditor::add_internal_hyperlink(
+    std::string_view sheet_name, WorksheetCellReference cell,
+    std::string location, HyperlinkOptions options)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    const std::string location_key = location;
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        if (location.empty()) {
+            throw FastXlsxError("internal hyperlink location cannot be empty");
+        }
+
+        auto updated_counts = impl_->pending_internal_hyperlink_counts;
+        ++updated_counts[sheet_name_key];
+        impl_->editor.add_internal_hyperlink_by_name(
+            sheet_name_key, cell.row, cell.column, std::move(location),
+            std::move(options.display), std::move(options.tooltip));
+
+        using std::swap;
+        swap(impl_->pending_internal_hyperlink_counts, updated_counts);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::add_internal_hyperlink() failed for '"
+            + sheet_name_key + "' at row " + std::to_string(cell.row)
+            + ", column " + std::to_string(cell.column) + " and location '"
+            + location_key + "': " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
 void WorkbookEditor::replace_image(
     std::string_view image_part_name, std::filesystem::path image_path)
 {
@@ -720,7 +760,8 @@ void WorkbookEditor::remove_worksheet(std::string_view name)
                 detail::workbook_editor_missing_planned_sheet_message(name_key));
         }
         if (!impl_->pending_replacement_worksheet_names().empty()
-            || !impl_->pending_targeted_cell_replacement_worksheet_names().empty()) {
+            || !impl_->pending_targeted_cell_replacement_worksheet_names().empty()
+            || !impl_->pending_internal_hyperlink_counts.empty()) {
             throw FastXlsxError(
                 "worksheet removal requires no queued worksheet payload edits");
         }
@@ -790,6 +831,10 @@ void WorkbookEditor::rename_sheet(
             updated_targeted_cell_replacements =
                 impl_->stage_pending_targeted_cell_replacements_move(
                     old_name_key, new_name_key);
+        std::optional<std::map<std::string, std::size_t, std::less<>>>
+            updated_internal_hyperlink_counts =
+                impl_->stage_pending_internal_hyperlink_counts_move(
+                    old_name_key, new_name_key);
         detail::WorkbookEditorSheetRenameOptions rename_options;
         if (options.formula_policy == WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames) {
             rename_options.formula_policy =
@@ -814,6 +859,8 @@ void WorkbookEditor::rename_sheet(
         (void)result;
         impl_->commit_pending_targeted_cell_replacements_move(
             updated_targeted_cell_replacements);
+        impl_->commit_pending_internal_hyperlink_counts_move(
+            updated_internal_hyperlink_counts);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {

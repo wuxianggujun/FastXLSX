@@ -13,5 +13,6 @@ Public Doxygen 必须写清：
 - In-memory strict/lossy projection，默认 strict，lossy 显式 opt-in。
 - Structured diagnostics 只暴露稳定 category/context，不泄漏 XML、parser 或 package internal 状态；typed exception 保持 `FastXlsxError` catch compatibility。
 - preserve/audit/fail/edit 和 non-goals。
+- Hyperlink 必须区分 internal worksheet-local XML 与 external `.rels` relationship mutation；写清 duplicate/range、XML escaping、cell/style、formula/definedName 和 linked-object side effects，不能把 internal hyperlink 扩大为完整 hyperlink 编辑。
 
 禁止把 internal 类型、preservation evidence、公式文本或窄图片能力扩大为 public/full support。

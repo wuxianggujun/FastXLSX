@@ -29,6 +29,7 @@
 - 易用 API 不能让 large worksheet 隐式进入 DOM、dense matrix 或无界 cell map。
 - `Cell` / `CellValue` 可以作为 owning 边界值和 small-file 存储，不作为 million-row 热路径长期模型。
 - Patch edit 必须明确 copy/rewrite/remove/audit/fail 行为，以及 sharedStrings、styles、formulas、relationships、content types 和 calc metadata 策略。
+- Existing-workbook hyperlink API 必须先区分 worksheet-local internal target 与 external target：internal hyperlink 只改 worksheet XML，不得伪造 `.rels`；external hyperlink 必须同时定义 worksheet `.rels` relationship id、TargetMode、relationship preservation 和失败恢复。两者都要声明 duplicate/range、XML escaping、cell/style、formula/definedName 与 linked-object non-goals。
 - Existing-workbook worksheet lifecycle API 必须明确 source catalog 与 planned catalog 的区别，并把 workbook XML、workbook relationships、content types、worksheet part、manifest、public diagnostics 和 pending/watermark 作为同一事务边界。`add_worksheet()` 只承诺 generated empty worksheet；`remove_worksheet()` 只承诺 relationship-closed deletion，并在 active/definedName/formula/materialized/linked semantics 不可同步时 fail。不能把 add 描述为 clone，也不能把删除描述为语义 repair。
 - In-memory API 必须提供 cell count、内存估算和 guardrail，并定义失败前状态不污染。
 - Existing-workbook style-only API 在 style registry/migration contract 建立前，只能复用同一 materialized workbook 中已校验的 source StyleId 或清除现有句柄；range mutation 必须定义 sparse mapping、missing-target、overlap snapshot 与 batch preflight 语义。不得接受任意 caller non-default StyleId，并必须声明 styles.xml 是 preserve 而不是 edit。

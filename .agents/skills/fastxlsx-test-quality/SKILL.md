@@ -8,6 +8,7 @@ description: "添加或排查 FastXLSX CTest、OpenXML、profile 和 benchmark e
 
 关键门禁：
 - Patch preservation、side effects、failure-before-state-change、retry/reopen。
+- Existing-workbook internal hyperlink 覆盖 insert/append/self-closing container、XML escaping、duplicate/range overlap、schema ordering、existing `.rels` preservation、no new relationship/content type、rename/added worksheet、unknown part、failure hook、save retry 和 reopen；external hyperlink 另测 relationship id/TargetMode mutation。
 - Save transaction/watermark：stage → package write → state commit、post-stage failure 保持 dirty/counts/error、retry 写最新值、成功清 unsaved、move 转移状态。
 - In-memory typed strict category/context、explicit lossy、generic policy mismatch、malformed-source precedence、guardrail、no pollution、`last_edit_error()` preservation。
 - Streaming row order、无 DOM/dense matrix。

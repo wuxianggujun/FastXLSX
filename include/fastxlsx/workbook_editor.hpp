@@ -5,6 +5,7 @@
 
 #include <fastxlsx/cell_value.hpp>
 #include <fastxlsx/workbook.hpp>
+#include <fastxlsx/worksheet_metadata.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -244,6 +245,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// True when replace_cells() has queued targeted cell patches for this
     /// planned worksheet name.
     bool targeted_cells_replaced = false;
+
+    /// Number of worksheet-local internal hyperlinks appended for this planned
+    /// worksheet. Zero when no internal hyperlink edit is queued.
+    std::size_t internal_hyperlink_count = 0;
 
     /// True when the materialized WorksheetEditor session for this planned
     /// worksheet name is dirty and waiting for save_as() auto-flush.
@@ -2672,8 +2677,8 @@ public:
     /// Returns the most recent failed public edit diagnostic, if any.
     ///
     /// This optional message is a coarse public facade diagnostic for failed
-    /// replace_sheet_data(), replace_cells(), rename_sheet(), or WorksheetEditor
-    /// mutation calls.
+    /// replace_sheet_data(), replace_cells(), add_internal_hyperlink(),
+    /// rename_sheet(), or WorksheetEditor mutation calls.
     /// A later failed public edit replaces the previous message; a successful
     /// public edit clears it. Inspection / pending diagnostic methods and
     /// save_as() do not update it, and a moved-from editor returns std::nullopt.
@@ -2685,11 +2690,13 @@ public:
     ///
     /// The returned vector follows source workbook sheet-catalog order and only
     /// includes worksheets with a queued public rename_sheet(),
-    /// replace_sheet_data() effect, and/or dirty materialized WorksheetEditor
-    /// session waiting for save_as() auto-flush. Each summary reports the source
-    /// name, current planned name, whether the sheet was renamed, whether a
-    /// final whole-<sheetData> replacement is queued for that planned name, and
-    /// whether a dirty materialized session currently exists. As a
+    /// replace_sheet_data(), add_internal_hyperlink() effect, and/or dirty
+    /// materialized WorksheetEditor session waiting for save_as() auto-flush.
+    /// Each summary reports the source name, current planned name, whether the
+    /// sheet was renamed, whether a final whole-<sheetData> replacement is
+    /// queued, the number of worksheet-local internal hyperlinks queued for
+    /// that planned name, and whether a dirty materialized session currently
+    /// exists. As a
     /// current planned-state view, a rename-only chain that returns a sheet to
     /// its source name is omitted from this vector even though
     /// pending_change_count() still counts the successful public edit calls.
@@ -3047,6 +3054,35 @@ public:
         std::initializer_list<WorksheetCellUpdate> cells,
         CellPatchMissingCellPolicy missing_cell_policy);
 
+    /// Appends one worksheet-local internal hyperlink to an existing worksheet.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The
+    /// hyperlink is written as a worksheet `<hyperlink location="...">`
+    /// element and never creates a worksheet `.rels` relationship. Existing
+    /// worksheet XML, unknown package entries, and existing relationships are
+    /// preserved through a bounded chunk rewrite. The cell value and style are
+    /// not changed. The planned worksheet name is honored, including a name
+    /// changed by rename_sheet() or a worksheet added in the same editor.
+    ///
+    /// This narrow slice rejects an empty location, invalid coordinates,
+    /// duplicate/overlapping existing hyperlink refs, malformed worksheet
+    /// metadata, and suffix elements whose schema order cannot be proven. It
+    /// does not synchronize formulas, defined names, tables, drawings, cell
+    /// text, external hyperlinks, or other linked objects.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param cell 1-based worksheet coordinate receiving the hyperlink.
+    /// @param location Internal workbook location, such as `Summary!A1`.
+    /// @param options Optional display and tooltip attributes.
+    /// @throws FastXlsxError if validation, worksheet streaming, or transactional
+    /// staging fails. On failure no public edit state is changed and the editor
+    /// remains usable.
+    void add_internal_hyperlink(
+        std::string_view sheet_name,
+        WorksheetCellReference cell,
+        std::string location,
+        HyperlinkOptions options = {});
+
     /// Replaces an existing workbook image part from a file on disk.
     ///
     /// API mode: Patch / existing-workbook media-part rewrite. This queues a
@@ -3145,7 +3181,8 @@ public:
     /// active-view metadata, selected-tab metadata, any workbook definedNames,
     /// formula references to the target, worksheet-owned relationships, other
     /// inbound relationships, materialized handles, and queued worksheet
-    /// payload edits. It therefore never silently repairs formulas, names,
+    /// payload or internal-hyperlink edits. It therefore never silently repairs
+    /// formulas, names,
     /// linked objects, or orphan parts. A generated worksheet added in the same
     /// editor can be removed before save when it has no queued payload edit.
     ///
@@ -3181,7 +3218,8 @@ public:
     /// pending replacement diagnostics remain under their prior sheet name, and
     /// the editor remains usable. A successful rename back to the source sheet
     /// name clears the public renamed flag and migrates any queued replacement
-    /// diagnostics back to that source name; it is still only a catalog-name
+    /// or internal-hyperlink diagnostics back to that source name; it is still
+    /// only a catalog-name
     /// rewrite, not semantic sheet rename synchronization.
     void rename_sheet(std::string_view old_name, std::string new_name);
 

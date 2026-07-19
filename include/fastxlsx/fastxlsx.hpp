@@ -25,3 +25,4 @@
 #include <fastxlsx/streaming_writer.hpp>
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/workbook_editor.hpp>
+#include <fastxlsx/worksheet_metadata.hpp>

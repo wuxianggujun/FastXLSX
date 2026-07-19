@@ -179,6 +179,7 @@ bool workbook_editor_edit_summaries_equal(
             || left.added != right.added
             || left.removed != right.removed
             || left.sheet_data_replaced != right.sheet_data_replaced
+            || left.internal_hyperlink_count != right.internal_hyperlink_count
             || left.replacement_cell_count != right.replacement_cell_count
             || left.estimated_replacement_memory_usage
                 != right.estimated_replacement_memory_usage

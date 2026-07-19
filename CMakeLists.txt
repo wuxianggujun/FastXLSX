@@ -48,6 +48,7 @@ set(_fastxlsx_sources
     src/workbook_editor.cpp
     src/workbook_editor_formula_diagnostics.cpp
     src/worksheet_event_reader.cpp
+    src/worksheet_metadata_rewriter.cpp
     src/worksheet_transformer.cpp
     src/workbook_editor_image_edit.cpp
     src/workbook_editor_materialized_edits.cpp
@@ -157,6 +158,7 @@ install(
         include/fastxlsx/streaming_writer.hpp
         include/fastxlsx/workbook.hpp
         include/fastxlsx/workbook_editor.hpp
+        include/fastxlsx/worksheet_metadata.hpp
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fastxlsx
 )
 

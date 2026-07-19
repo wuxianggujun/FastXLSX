@@ -553,6 +553,12 @@ public:
     void replace_worksheet_part_from_chunk_source_by_name(std::string_view sheet_name,
         const WorksheetInputChunkCallback& read_next_chunk,
         const ReferencePolicy& policy = {}, std::string reason = {});
+    // Internal Patch helper for worksheet-local internal hyperlinks. The
+    // worksheet XML is inspected and rewritten through bounded chunk sources;
+    // no worksheet relationship or content-type entry is created.
+    void add_internal_hyperlink_by_name(std::string_view sheet_name,
+        std::uint32_t row, std::uint32_t column, std::string location,
+        std::string display = {}, std::string tooltip = {});
     // Internal by-name staged-output variant for worksheet replacement. Resolves
     // the sheet name through the same planned/source workbook catalog path as
     // the chunk-source by-name helper, then validates and audits the provided

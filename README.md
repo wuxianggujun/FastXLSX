@@ -132,7 +132,8 @@ auto sheet = editor.worksheet("Data", options);
 - `set_document_properties()` 只重写 core/app docProps；不创建或编辑 custom properties。
 - `add_worksheet()` 只向 existing workbook 追加空白 worksheet，并事务式更新 workbook catalog、workbook relationships、content types 和新 worksheet part；同一 editor 可继续用 Patch API 填充或重命名，但要在 `save_as()` 后重新打开，才能通过 In-memory `worksheet()` materialize。它不克隆 worksheet、styles、tables、drawings 或其他 linked objects。
 - `remove_worksheet()` 只删除关系闭合的 existing-workbook worksheet；它同步 workbook catalog、workbook relationship、content type、manifest 和 worksheet entry，并在最后可见表、active/selected metadata、definedNames、formula、materialized handle、queued payload 或 linked relationship 风险存在时 fail。它不做公式/definedName/linked-object repair。
-- `WorkbookEditor::add_internal_hyperlink()` 可向 existing workbook 的 planned worksheet 追加 worksheet-local internal hyperlink，支持 display/tooltip escaping、已有/自闭合 hyperlinks 容器和重复/重叠 ref 校验；不创建 worksheet `.rels`、content type 或 external relationship，不修改 cell value/style，也不做公式、definedName、table、drawing 或 external hyperlink 同步。External hyperlink editing 与 data-validation editing 仍在下一功能队列。
+- `WorkbookEditor::add_internal_hyperlink()` 可向 existing workbook 的 planned worksheet 追加 worksheet-local internal hyperlink，支持 display/tooltip escaping、已有/自闭合 hyperlinks 容器和重复/重叠 ref 校验；不创建 worksheet `.rels`、content type 或 external relationship，不修改 cell value/style，也不做公式、definedName、table 或 drawing 同步。
+- `WorkbookEditor::add_external_hyperlink()` 可向 existing workbook 的 planned worksheet 追加 external hyperlink，同步追加 worksheet `.rels` 的 `TargetMode="External"` relationship，分配不冲突的 relationship id，并保留既有关系、未知 package entries、XML namespace 与失败 retry 状态；不做 target reachability、relationship repair/pruning、cell value/style、公式、definedName、table 或 drawing 同步。Data-validation editing 仍在下一功能队列。
 - Preservation 证据不等于 tables、charts、comments、VBA、pivot 或 custom XML 的语义编辑。
 - In-memory 是 small-file 稀疏编辑，不是 large-file low-memory random editing。
 

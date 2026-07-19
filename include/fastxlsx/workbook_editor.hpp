@@ -250,6 +250,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// worksheet. Zero when no internal hyperlink edit is queued.
     std::size_t internal_hyperlink_count = 0;
 
+    /// Number of external hyperlinks appended for this planned worksheet.
+    /// Zero when no external hyperlink edit is queued.
+    std::size_t external_hyperlink_count = 0;
+
     /// True when the materialized WorksheetEditor session for this planned
     /// worksheet name is dirty and waiting for save_as() auto-flush.
     bool materialized_dirty = false;
@@ -3081,6 +3085,35 @@ public:
         std::string_view sheet_name,
         WorksheetCellReference cell,
         std::string location,
+        HyperlinkOptions options = {});
+
+    /// Appends one external hyperlink to an existing worksheet.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The
+    /// hyperlink is written as a worksheet `<hyperlink r:id="...">` element
+    /// and receives one worksheet-owned `.rels` relationship with
+    /// `TargetMode="External"`. Existing worksheet relationships, worksheet
+    /// XML, and unknown package entries are preserved through one transactional
+    /// staged update. The cell value and style are not changed.
+    ///
+    /// This narrow slice rejects an empty/control-character target, invalid
+    /// coordinates, duplicate/overlapping existing hyperlink refs, malformed
+    /// worksheet metadata, and suffix elements whose schema order cannot be
+    /// proven. It does not repair or prune relationships, create content types,
+    /// synchronize formulas, defined names, tables, drawings, cell text, or
+    /// validate target reachability.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param cell 1-based worksheet coordinate receiving the hyperlink.
+    /// @param target External target URI or path.
+    /// @param options Optional display and tooltip attributes.
+    /// @throws FastXlsxError if validation, worksheet/relationship streaming,
+    /// or transactional staging fails. On failure no public edit state is
+    /// changed and the editor remains usable.
+    void add_external_hyperlink(
+        std::string_view sheet_name,
+        WorksheetCellReference cell,
+        std::string target,
         HyperlinkOptions options = {});
 
     /// Replaces an existing workbook image part from a file on disk.

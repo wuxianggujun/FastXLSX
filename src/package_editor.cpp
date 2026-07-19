@@ -8061,7 +8061,8 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     std::optional<std::filesystem::path> owned_temporary_file,
     PartWriteMode target_write_mode,
     std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats,
-    std::optional<SinglePassWorksheetTransformStats> single_pass_stats)
+    std::optional<SinglePassWorksheetTransformStats> single_pass_stats,
+    std::optional<Relationship> relationship_addition)
 {
     const auto staged_commit_started = std::chrono::steady_clock::now();
     if (chunks.empty()) {
@@ -8107,6 +8108,11 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             throw FastXlsxError("worksheet replacement target was not restored for "
                 + worksheet_part_diagnostic_context(target_worksheet_part));
         }
+    }
+
+    if (relationship_addition.has_value()) {
+        updated_manifest.add_relationship(
+            target_worksheet_part, std::move(*relationship_addition));
     }
 
     const EditPlan worksheet_plan =
@@ -8212,6 +8218,24 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             workbook_relationship_entry, PartWriteMode::LocalDomRewrite,
             "workbook relationships updated for worksheet calcChain removal",
             PackageEntryAuditKind::SourceRelationships, workbook_part.value());
+    }
+
+    if (relationship_addition.has_value()) {
+        const RelationshipSet* worksheet_relationships =
+            updated_manifest.relationships_for(target_worksheet_part);
+        if (worksheet_relationships == nullptr) {
+            throw FastXlsxError(
+                "external worksheet hyperlink relationship owner is not present in the plan");
+        }
+        const std::string worksheet_relationship_entry =
+            relationship_entry_name_for_source_part(target_worksheet_part);
+        upsert_entry_replacement(reader_, updated_entry_replacements,
+            worksheet_relationship_entry, serialize_relationships(*worksheet_relationships));
+        remove_omitted_entry(updated_omitted_entries, worksheet_relationship_entry);
+        updated_edit_plan.set_package_entry(
+            worksheet_relationship_entry, PartWriteMode::LocalDomRewrite,
+            "worksheet relationships updated for external hyperlink edit",
+            PackageEntryAuditKind::SourceRelationships, target_worksheet_part.value());
     }
 
     updated_manifest.set_part_write_mode(target_worksheet_part, target_write_mode);
@@ -8433,6 +8457,85 @@ void PackageEditor::add_internal_hyperlink_by_name(
         worksheet_part, staged_source, {},
         "existing-workbook internal worksheet hyperlink metadata edit",
         std::move(commit_notes));
+}
+
+void PackageEditor::add_external_hyperlink_by_name(
+    std::string_view sheet_name, std::uint32_t row, std::uint32_t column,
+    std::string target, std::string display, std::string tooltip)
+{
+    if (target.empty()) {
+        throw FastXlsxError("external hyperlink target cannot be empty");
+    }
+    for (const unsigned char character : target) {
+        if (character < 0x20U) {
+            throw FastXlsxError(
+                "external hyperlink target cannot contain XML control characters");
+        }
+    }
+
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "external worksheet hyperlink edit");
+
+    RelationshipSet relationships;
+    if (const RelationshipSet* existing = manifest_.relationships_for(worksheet_part)) {
+        relationships = *existing;
+    }
+    const std::string relationship_id = next_relationship_id(relationships);
+    const Relationship relationship {
+        relationship_id,
+        std::string(relationship_type_hyperlink),
+        target,
+        Relationship::TargetMode::External};
+    relationships.add(relationship);
+
+    const WorksheetExternalHyperlinkRewrite hyperlink {
+        cell_reference(row, column), std::move(target), relationship_id,
+        std::move(display), std::move(tooltip)};
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for external hyperlink planning");
+    const WorksheetInternalHyperlinkRewritePlan rewrite_plan =
+        plan_worksheet_external_hyperlink_rewrite(
+            [&](std::string& chunk) { return planning_reader(chunk); }, hyperlink);
+
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for external hyperlink rewrite");
+    write_worksheet_external_hyperlink_rewrite(
+        [&](std::string& chunk) { return output_reader(chunk); }, hyperlink,
+        rewrite_plan, rewritten_source_file.path());
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    WorksheetReplacementChunkAuditResult replacement_audit =
+        worksheet_replacement_audits_from_chunk_source(
+            worksheet_part, staged_source, &relationships);
+    std::vector<PackageEntryChunk> final_chunks {PackageEntryChunk::file(
+        rewritten_source_file.path())};
+
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "external worksheet hyperlink edit rewrites worksheet metadata and adds one external "
+        "hyperlink relationship while preserving existing worksheet relationships");
+    replace_worksheet_part_prevalidated_chunks(
+        worksheet_part, std::move(final_chunks), {},
+        std::move(replacement_audit.payload_audit.notes),
+        std::move(replacement_audit.payload_audit.audits),
+        std::move(replacement_audit.relationship_reference_audit.notes),
+        std::move(replacement_audit.relationship_reference_audit.audits),
+        "existing-workbook external worksheet hyperlink metadata edit", true, true,
+        std::move(commit_notes), rewritten_source_file.path(),
+        PartWriteMode::StreamRewrite, std::nullopt, std::nullopt, relationship);
+    rewritten_source_file.release();
 }
 
 void PackageEditor::replace_worksheet_part_chunks_by_name(std::string_view sheet_name,

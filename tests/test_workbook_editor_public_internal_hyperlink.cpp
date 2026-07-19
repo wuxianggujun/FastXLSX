@@ -277,6 +277,105 @@ void test_internal_hyperlink_targets_renamed_added_worksheet()
         "added worksheet rename should compose with hyperlink staging");
 }
 
+void test_external_hyperlink_relationship_edit_and_creation()
+{
+    const std::filesystem::path source = write_source_with_external_and_internal_hyperlinks(
+        "fastxlsx-workbook-editor-external-hyperlink-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-external-hyperlink-output.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::HyperlinkOptions options;
+    options.display = "Open & \"site\"";
+    options.tooltip = "Tip 'external'";
+    editor.add_external_hyperlink(
+        "Data", fastxlsx::WorksheetCellReference {1, 3},
+        "https://example.invalid/?a=1&b=2", options);
+
+    const auto summaries = editor.pending_worksheet_edits();
+    check(summaries.size() == 1 && summaries.front().external_hyperlink_count == 1,
+        "external hyperlink edits should expose a planned worksheet count");
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<hyperlink ref="C1" r:id="rId2" display="Open &amp; &quot;site&quot;" tooltip="Tip &apos;external&apos;"/>)",
+        "external hyperlink XML should append with escaped display metadata");
+    check_contains(entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/source" TargetMode="External"/>)",
+        "existing external relationship should remain unchanged");
+    check_contains(entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/?a=1&amp;b=2" TargetMode="External"/>)",
+        "new external hyperlink should append an external relationship");
+
+    const std::filesystem::path reopened_output = artifact(
+        "fastxlsx-workbook-editor-external-hyperlink-reopened-output.xlsx");
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.add_external_hyperlink(
+        "Data", fastxlsx::WorksheetCellReference {1, 4}, "https://example.invalid/next");
+    reopened.save_as(reopened_output);
+    check_contains(fastxlsx::test::read_zip_entries(reopened_output)
+            .at("xl/worksheets/sheet1.xml"),
+        R"(<hyperlink ref="D1" r:id="rId3"/>)",
+        "reopened external hyperlink should allocate the next relationship id");
+
+    const std::filesystem::path no_relationship_source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-external-hyperlink-no-rels-source.xlsx");
+    const std::filesystem::path no_relationship_output = artifact(
+        "fastxlsx-workbook-editor-external-hyperlink-no-rels-output.xlsx");
+    fastxlsx::WorkbookEditor no_relationship_editor =
+        fastxlsx::WorkbookEditor::open(no_relationship_source);
+    no_relationship_editor.add_external_hyperlink(
+        "Data", fastxlsx::WorksheetCellReference {2, 1}, "https://example.invalid/new");
+    no_relationship_editor.save_as(no_relationship_output);
+    const auto no_relationship_entries =
+        fastxlsx::test::read_zip_entries(no_relationship_output);
+    check_contains(no_relationship_entries.at("xl/worksheets/sheet1.xml"),
+        R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships")",
+        "external hyperlink should add the relationships namespace when missing");
+    check_contains(no_relationship_entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/new" TargetMode="External"/>)",
+        "external hyperlink should create a worksheet relationships part");
+}
+
+void test_external_hyperlink_failure_state()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-external-hyperlink-failure-source.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(threw_fastxlsx_error([&] {
+        editor.add_external_hyperlink(
+            "Data", fastxlsx::WorksheetCellReference {0, 1}, "https://example.invalid/bad");
+    }), "external hyperlink should reject an invalid coordinate");
+    check(threw_fastxlsx_error([&] {
+        editor.add_external_hyperlink(
+            "Data", fastxlsx::WorksheetCellReference {1, 1}, "");
+    }), "external hyperlink should reject an empty target");
+
+    editor.add_external_hyperlink(
+        "Data", fastxlsx::WorksheetCellReference {1, 1}, "https://example.invalid/ok");
+    check(threw_fastxlsx_error([&] {
+        editor.add_external_hyperlink(
+            "Data", fastxlsx::WorksheetCellReference {1, 1}, "https://example.invalid/duplicate");
+    }), "external hyperlink should reject an overlapping existing ref");
+    check(editor.pending_worksheet_edits().size() == 1
+            && editor.pending_worksheet_edits().front().external_hyperlink_count == 1,
+        "external hyperlink rejection should preserve public diagnostics");
+
+    {
+        ScopedWorksheetReplacementStagedHook hook(fail_after_internal_hyperlink_staging);
+        check(threw_fastxlsx_error([&] {
+            editor.add_external_hyperlink(
+                "Data", fastxlsx::WorksheetCellReference {2, 2},
+                "https://example.invalid/retry");
+        }), "external hyperlink staging failure should escape as FastXlsxError");
+    }
+    check(editor.pending_worksheet_edits().front().external_hyperlink_count == 1,
+        "external hyperlink staging failure should not publish a second diagnostic");
+    check(!editor.last_edit_error().has_value() == false,
+        "external hyperlink failure should retain the last edit diagnostic");
+}
+
 } // namespace
 
 int main()
@@ -287,6 +386,8 @@ int main()
         test_internal_hyperlink_failure_state_and_retry();
         test_internal_hyperlink_range_and_suffix_guards();
         test_internal_hyperlink_targets_renamed_added_worksheet();
+        test_external_hyperlink_relationship_edit_and_creation();
+        test_external_hyperlink_failure_state();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());
         return 1;

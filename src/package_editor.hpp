@@ -559,6 +559,12 @@ public:
     void add_internal_hyperlink_by_name(std::string_view sheet_name,
         std::uint32_t row, std::uint32_t column, std::string location,
         std::string display = {}, std::string tooltip = {});
+    // Internal Patch helper for worksheet external hyperlinks. The worksheet
+    // XML and its source-owned `.rels` relationship are staged together; this
+    // does not create content types or repair other worksheet relationships.
+    void add_external_hyperlink_by_name(std::string_view sheet_name,
+        std::uint32_t row, std::uint32_t column, std::string target,
+        std::string display = {}, std::string tooltip = {});
     // Internal by-name staged-output variant for worksheet replacement. Resolves
     // the sheet name through the same planned/source workbook catalog path as
     // the chunk-source by-name helper, then validates and audits the provided
@@ -738,7 +744,8 @@ private:
         std::optional<std::filesystem::path> owned_temporary_file = std::nullopt,
         PartWriteMode target_write_mode = PartWriteMode::StreamRewrite,
         std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats = std::nullopt,
-        std::optional<SinglePassWorksheetTransformStats> single_pass_stats = std::nullopt);
+        std::optional<SinglePassWorksheetTransformStats> single_pass_stats = std::nullopt,
+        std::optional<Relationship> relationship_addition = std::nullopt);
 
     PackageReader reader_;
     PackageManifest manifest_;

@@ -25,6 +25,7 @@
 - `WorkbookEditor::open()` / `save_as()`；`WorkbookEditorSaveOptions::zip_compression_level` 可为 `-1`、`0` 或 `1..9`。
 - 支持 sheet catalog 查询、事务式空白 worksheet add、`replace_sheet_data()`、targeted cell patch、窄 sheet rename、formula audit/recalculation request、core/app document properties rewrite 和已有 PNG/JPEG media bytes replacement。
 - 支持窄切片 `add_internal_hyperlink()`：对当前 planned worksheet 以 bounded chunk rewrite 追加 worksheet-local `<hyperlink ref="..." location="..."/>`，支持 display/tooltip XML escaping、已有 hyperlinks 容器追加、自闭合容器展开、同会话 rename/added worksheet，以及重复/重叠 ref 和 schema 顺序校验。该切片不创建 worksheet `.rels`、content type 或 external relationship，不修改 cell value/style，也不同步 formulas、definedNames、tables、drawings 或其他 linked objects；失败在 public state 发布前返回并保留 retry。
+- 支持窄切片 `add_external_hyperlink()`：对当前 planned worksheet 以 bounded chunk rewrite 追加带 `r:id` 的 external `<hyperlink>`，并事务式更新 worksheet `.rels` 的 external hyperlink relationship；支持既有关系 id 分配、缺失关系 part、`xmlns:r` 注入、display/tooltip escaping、同会话 rename/added worksheet、重复/重叠 ref 和 schema 顺序校验。该切片不创建 content type，不做 target reachability、relationship repair/pruning、cell value/style、formulas、definedNames、tables、drawings 或其他 linked-object 同步；失败在 public state 发布前返回并保留 retry。
 - `add_worksheet()` 向 planned catalog 末尾追加一个 generated empty worksheet，并原子 stage workbook XML、workbook relationships、content types、manifest、worksheet part 和 public catalog。新表可在同一 editor 中继续 `replace_sheet_data()`、missing-cell Insert upsert 或 `rename_sheet()`；提交前失败不污染 pending/unsaved 状态，保存失败保留 retry，成功保存重开后才可通过 In-memory `worksheet()` materialize。它不 clone styles/sharedStrings、tables、drawings、validations、formulas 或其他 linked objects。
 - `remove_worksheet()` 按当前 planned 名称事务式删除一个关系闭合 worksheet，并同步 workbook XML、workbook relationships、content types、manifest、worksheet part、public catalog 和 `pending_worksheet_edits().removed`。首版拒绝最后可见表、`bookViews`/选中 tab、任何 `definedNames`、公式引用风险、目标 materialized handle、queued worksheet payload、worksheet-owned relationships 和非 workbook inbound relationships；不做 active/definedName/formula/linked-object repair。新增表可在无 payload 时同会话 add 后 remove。
 - 未修改和未知 package part 默认 copy-original；修改 part 才 rewrite/remove。
@@ -118,7 +119,7 @@
 ## Planned
 
 - worksheet lifecycle 的最小 add/remove 切片已完成；`remove_worksheet()` 的 unsupported semantics 默认 fail，不扩展为 worksheet clone。
-- `add_internal_hyperlink()` 已完成并进入 public Patch 能力；它只编辑 worksheet-local internal target，不伪造 `.rels` relationship。下一功能主线是 external hyperlink 编辑（worksheet `.rels` mutation）和 data-validation 编辑；每个对象仍须先定义 preserve/audit/fail/edit、relationship/content-type side effects 和事务失败恢复。
+- `add_internal_hyperlink()` 与 `add_external_hyperlink()` 已完成并进入 public Patch 能力：前者只编辑 worksheet-local internal target，后者同步编辑 worksheet XML 与 worksheet `.rels` 的 external relationship。下一功能主线是 data-validation 编辑；每个对象仍须先定义 preserve/audit/fail/edit、relationship/content-type side effects 和事务失败恢复。
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。
 - `planned-xml` 中的 zlib-ng、Expat、pugixml 当前未被实现链接；manifest presence 不等于当前能力。

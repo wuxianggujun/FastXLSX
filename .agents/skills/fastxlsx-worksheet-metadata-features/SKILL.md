@@ -28,8 +28,9 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 - Public Patch 已能事务式追加 generated empty worksheet，并同步 workbook catalog、workbook relationships、content types、manifest 和 worksheet part；这不克隆或初始化 styles、tables、drawings、validations、formulas 等 linked metadata。
 - Public Patch 已能事务式删除 relationship-closed worksheet；last-visible、active/selected、definedNames、formula、materialized、queued payload、owned relationship 和 extra-inbound linked semantics 默认 fail，不做静默 orphan 或修复。
 - Public Patch 已公开 `WorkbookEditor::add_internal_hyperlink()` 窄切片：用两次 bounded worksheet event scan 规划/写出 worksheet-local `<hyperlink>`，支持 existing/self-closing 容器、display/tooltip escaping、A1 range overlap rejection、planned rename 和同会话新增 worksheet。它不创建 worksheet `.rels` 或 content type，不修改 cell value/style，也不同步 formula、definedName、table、drawing 或 external hyperlink。
+- Public Patch 已公开 `WorkbookEditor::add_external_hyperlink()` 窄切片：用 bounded worksheet rewrite 追加带 `r:id` 的 external `<hyperlink>`，并在同一事务中更新 worksheet `.rels` 的 `TargetMode="External"` relationship；支持既有/缺失 `.rels`、关系 id 分配、`xmlns:r` 注入、display/tooltip escaping、A1 range overlap rejection、planned rename 和同会话新增 worksheet。它不创建 content type，不做 target reachability、relationship repair/pruning 或 cell/formula/definedName/table/drawing 同步。
 - 跨 worksheet XML、worksheet `.rels`、content types、manifest、public diagnostics 和 pending/watermark 的 mutation，必须先在副本中完整 staging，再以 noexcept commit 发布。
-- External hyperlink 仍需要 worksheet `.rels` relationship mutation；不得从 internal hyperlink 的 relationship-free 实现推断 external edit 已完成。遇到未知、重复、external、非法 target 或 unsupported linked metadata 时默认 fail 或 preserve，不能静默 repair。
+- External hyperlink 的 worksheet XML 与 `.rels` relationship mutation 必须一起 staging；遇到未知、重复、external、非法 target 或 unsupported linked metadata 时默认 fail 或 preserve，不能静默 repair。
 - Row/column insert/delete、copy/move 当前不自动同步 validations、hyperlinks、tables、conditional formatting、merged cells 或 drawings；新增同步能力前保持该边界。
 
 ## 验证

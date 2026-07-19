@@ -15,6 +15,14 @@ struct WorksheetInternalHyperlinkRewrite {
     std::string tooltip;
 };
 
+struct WorksheetExternalHyperlinkRewrite {
+    std::string cell_reference;
+    std::string target;
+    std::string relationship_id;
+    std::string display;
+    std::string tooltip;
+};
+
 enum class WorksheetInternalHyperlinkRewriteAction {
     InsertContainerBefore,
     AppendBeforeContainerClose,
@@ -43,6 +51,17 @@ plan_worksheet_internal_hyperlink_rewrite(
 void write_worksheet_internal_hyperlink_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetInternalHyperlinkRewrite& hyperlink,
+    const WorksheetInternalHyperlinkRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+[[nodiscard]] WorksheetInternalHyperlinkRewritePlan
+plan_worksheet_external_hyperlink_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetExternalHyperlinkRewrite& hyperlink);
+
+void write_worksheet_external_hyperlink_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetExternalHyperlinkRewrite& hyperlink,
     const WorksheetInternalHyperlinkRewritePlan& plan,
     const std::filesystem::path& output_path);
 

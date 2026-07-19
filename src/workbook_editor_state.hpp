@@ -99,6 +99,7 @@ struct WorkbookEditor::Impl {
     detail::WorkbookEditorPendingSheetDataPayloads pending_sheet_data_payloads;
     PendingTargetedCellReplacements pending_targeted_cell_replacements;
     std::map<std::string, std::size_t, std::less<>> pending_internal_hyperlink_counts;
+    std::map<std::string, std::size_t, std::less<>> pending_external_hyperlink_counts;
     std::optional<std::string> last_public_edit_error;
     detail::PackageWriterTelemetry* package_writer_telemetry = nullptr;
 
@@ -297,6 +298,34 @@ struct WorkbookEditor::Impl {
         swap(pending_internal_hyperlink_counts, *updated);
     }
 
+    [[nodiscard]] std::optional<std::map<std::string, std::size_t, std::less<>>>
+    stage_pending_external_hyperlink_counts_move(
+        std::string_view old_name, std::string_view new_name) const
+    {
+        const auto source = pending_external_hyperlink_counts.find(old_name);
+        if (source == pending_external_hyperlink_counts.end()) {
+            return std::nullopt;
+        }
+        auto updated = pending_external_hyperlink_counts;
+        const auto updated_source = updated.find(old_name);
+        const std::size_t count = updated_source->second;
+        updated.erase(updated_source);
+        updated[std::string(new_name)] += count;
+        return updated;
+    }
+
+    void commit_pending_external_hyperlink_counts_move(
+        std::optional<std::map<std::string, std::size_t, std::less<>>>& updated) noexcept
+    {
+        if (!updated.has_value()) {
+            return;
+        }
+        static_assert(std::is_nothrow_swappable_v<
+            std::map<std::string, std::size_t, std::less<>>>);
+        using std::swap;
+        swap(pending_external_hyperlink_counts, *updated);
+    }
+
     [[nodiscard]] std::vector<std::string> pending_materialized_worksheet_names() const
     {
         return detail::workbook_editor_pending_materialized_worksheet_names(
@@ -334,10 +363,15 @@ struct WorkbookEditor::Impl {
                 pending_internal_hyperlink_counts.find(current_name);
             const bool internal_hyperlinks_added =
                 pending_internal_hyperlinks != pending_internal_hyperlink_counts.end();
+            const auto pending_external_hyperlinks =
+                pending_external_hyperlink_counts.find(current_name);
+            const bool external_hyperlinks_added =
+                pending_external_hyperlinks != pending_external_hyperlink_counts.end();
             const bool materialized_dirty =
                 materialized_session != nullptr && materialized_session->dirty();
             if (!catalog_entry.added && !catalog_entry.renamed && !sheet_data_replaced
                 && !targeted_cells_replaced && !internal_hyperlinks_added
+                && !external_hyperlinks_added
                 && !materialized_dirty) {
                 continue;
             }
@@ -351,6 +385,9 @@ struct WorkbookEditor::Impl {
             summary.targeted_cells_replaced = targeted_cells_replaced;
             if (internal_hyperlinks_added) {
                 summary.internal_hyperlink_count = pending_internal_hyperlinks->second;
+            }
+            if (external_hyperlinks_added) {
+                summary.external_hyperlink_count = pending_external_hyperlinks->second;
             }
             summary.materialized_dirty = materialized_dirty;
             if (sheet_data_replaced) {

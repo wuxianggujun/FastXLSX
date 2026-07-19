@@ -232,6 +232,51 @@ std::string internal_hyperlink_xml(const WorksheetInternalHyperlinkRewrite& hype
     return xml;
 }
 
+std::string external_hyperlink_xml(const WorksheetExternalHyperlinkRewrite& hyperlink)
+{
+    std::string xml = "<hyperlink ref=\"";
+    append_escaped_xml_attribute(xml, hyperlink.cell_reference);
+    xml += "\" r:id=\"";
+    append_escaped_xml_attribute(xml, hyperlink.relationship_id);
+    xml += '"';
+    if (!hyperlink.display.empty()) {
+        xml += " display=\"";
+        append_escaped_xml_attribute(xml, hyperlink.display);
+        xml += '"';
+    }
+    if (!hyperlink.tooltip.empty()) {
+        xml += " tooltip=\"";
+        append_escaped_xml_attribute(xml, hyperlink.tooltip);
+        xml += '"';
+    }
+    xml += "/>";
+    return xml;
+}
+
+std::string worksheet_root_with_relationship_namespace(std::string_view raw_tag)
+{
+    constexpr std::string_view relationship_namespace =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    const std::optional<std::string_view> current = attribute_value(raw_tag, "xmlns:r");
+    if (current.has_value()) {
+        if (*current != relationship_namespace) {
+            throw FastXlsxError(
+                "worksheet r namespace is not the OpenXML relationships namespace");
+        }
+        return std::string(raw_tag);
+    }
+    if (raw_tag.size() < 3 || raw_tag.front() != '<' || raw_tag.back() != '>'
+        || is_closing_tag(raw_tag)) {
+        throw FastXlsxError(
+            "worksheet external hyperlink edit requires a valid worksheet root tag");
+    }
+
+    std::string root(raw_tag);
+    root.insert(root.size() - 1,
+        " xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"");
+    return root;
+}
+
 bool is_synthetic_self_closing_end(const WorksheetEvent& event) noexcept
 {
     if (!event.self_closing) {
@@ -268,16 +313,13 @@ std::string expand_self_closing_tag(std::string_view raw_tag)
 
 } // namespace
 
-WorksheetInternalHyperlinkRewritePlan plan_worksheet_internal_hyperlink_rewrite(
+WorksheetInternalHyperlinkRewritePlan plan_worksheet_hyperlink_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
-    const WorksheetInternalHyperlinkRewrite& hyperlink)
+    std::string_view cell_reference)
 {
-    if (hyperlink.location.empty()) {
-        throw FastXlsxError("internal hyperlink location cannot be empty");
-    }
-    const std::optional<A1Coordinate> target = parse_a1_coordinate(hyperlink.cell_reference);
+    const std::optional<A1Coordinate> target = parse_a1_coordinate(cell_reference);
     if (!target.has_value()) {
-        throw FastXlsxError("internal hyperlink cell reference is invalid");
+        throw FastXlsxError("hyperlink cell reference is invalid");
     }
 
     bool saw_sheet_data_end = false;
@@ -404,18 +446,43 @@ WorksheetInternalHyperlinkRewritePlan plan_worksheet_internal_hyperlink_rewrite(
     };
 }
 
-void write_worksheet_internal_hyperlink_rewrite(
+WorksheetInternalHyperlinkRewritePlan plan_worksheet_internal_hyperlink_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
-    const WorksheetInternalHyperlinkRewrite& hyperlink,
+    const WorksheetInternalHyperlinkRewrite& hyperlink)
+{
+    if (hyperlink.location.empty()) {
+        throw FastXlsxError("internal hyperlink location cannot be empty");
+    }
+    return plan_worksheet_hyperlink_rewrite(
+        read_next_chunk, hyperlink.cell_reference);
+}
+
+WorksheetInternalHyperlinkRewritePlan plan_worksheet_external_hyperlink_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetExternalHyperlinkRewrite& hyperlink)
+{
+    if (hyperlink.target.empty()) {
+        throw FastXlsxError("external hyperlink target cannot be empty");
+    }
+    if (hyperlink.relationship_id.empty()) {
+        throw FastXlsxError("external hyperlink relationship id cannot be empty");
+    }
+    return plan_worksheet_hyperlink_rewrite(
+        read_next_chunk, hyperlink.cell_reference);
+}
+
+void write_worksheet_hyperlink_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view hyperlink_xml,
     const WorksheetInternalHyperlinkRewritePlan& plan,
-    const std::filesystem::path& output_path)
+    const std::filesystem::path& output_path,
+    bool ensure_relationship_namespace)
 {
     std::ofstream output(output_path, std::ios::binary);
     if (!output) {
         throw FastXlsxError("failed to create staged worksheet hyperlink metadata file");
     }
 
-    const std::string hyperlink_xml = internal_hyperlink_xml(hyperlink);
     bool applied = false;
     scan_worksheet_events_from_chunk_source(read_next_chunk,
         [&](const WorksheetEvent& event) {
@@ -441,7 +508,13 @@ void write_worksheet_internal_hyperlink_rewrite(
                 }
                 applied = true;
             }
-            write_bytes(output, event.raw_xml);
+            if (ensure_relationship_namespace
+                && event.kind == WorksheetEventKind::WorksheetStart) {
+                write_bytes(output,
+                    worksheet_root_with_relationship_namespace(event.raw_xml));
+            } else {
+                write_bytes(output, event.raw_xml);
+            }
         });
 
     if (!applied) {
@@ -452,6 +525,26 @@ void write_worksheet_internal_hyperlink_rewrite(
     if (!output) {
         throw FastXlsxError("failed to finalize staged worksheet hyperlink metadata file");
     }
+}
+
+void write_worksheet_internal_hyperlink_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetInternalHyperlinkRewrite& hyperlink,
+    const WorksheetInternalHyperlinkRewritePlan& plan,
+    const std::filesystem::path& output_path)
+{
+    write_worksheet_hyperlink_rewrite(read_next_chunk,
+        internal_hyperlink_xml(hyperlink), plan, output_path, false);
+}
+
+void write_worksheet_external_hyperlink_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetExternalHyperlinkRewrite& hyperlink,
+    const WorksheetInternalHyperlinkRewritePlan& plan,
+    const std::filesystem::path& output_path)
+{
+    write_worksheet_hyperlink_rewrite(read_next_chunk,
+        external_hyperlink_xml(hyperlink), plan, output_path, true);
 }
 
 } // namespace fastxlsx::detail

@@ -8538,6 +8538,53 @@ void PackageEditor::add_external_hyperlink_by_name(
     rewritten_source_file.release();
 }
 
+void PackageEditor::add_data_validation_by_name(
+    std::string_view sheet_name, std::vector<CellRange> ranges,
+    DataValidationRule rule)
+{
+    if (ranges.empty()) {
+        throw FastXlsxError("data validation range list cannot be empty");
+    }
+    validate_data_validation_rule(rule);
+    const std::string data_validation_xml =
+        serialize_data_validation(ranges, rule);
+
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "data validation worksheet edit");
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for data validation planning");
+    const WorksheetDataValidationRewritePlan rewrite_plan =
+        plan_worksheet_data_validation_rewrite(
+            [&](std::string& chunk) { return planning_reader(chunk); });
+
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for data validation rewrite");
+    write_worksheet_data_validation_rewrite(
+        [&](std::string& chunk) { return output_reader(chunk); },
+        data_validation_xml, rewrite_plan, rewritten_source_file.path());
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "existing-workbook data validation edit rewrites worksheet-local metadata "
+        "without relationship or content-type mutation");
+    replace_worksheet_part_from_chunk_source_with_commit_notes(
+        worksheet_part, staged_source, {},
+        "existing-workbook data validation metadata edit", std::move(commit_notes));
+}
+
 void PackageEditor::replace_worksheet_part_chunks_by_name(std::string_view sheet_name,
     std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
     std::string reason)

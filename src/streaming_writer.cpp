@@ -1,6 +1,7 @@
 #include <fastxlsx/streaming_writer.hpp>
 
 #include <fastxlsx/detail/opc.hpp>
+#include <fastxlsx/detail/worksheet_metadata_serializer.hpp>
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/image.hpp>
 
@@ -142,66 +143,6 @@ void validate_sheet_name(std::string_view name)
             break;
         }
     }
-}
-
-std::string_view data_validation_type_name(DataValidationType type)
-{
-    switch (type) {
-    case DataValidationType::Whole:
-        return "whole";
-    case DataValidationType::Decimal:
-        return "decimal";
-    case DataValidationType::List:
-        return "list";
-    case DataValidationType::Date:
-        return "date";
-    case DataValidationType::Time:
-        return "time";
-    case DataValidationType::TextLength:
-        return "textLength";
-    case DataValidationType::Custom:
-        return "custom";
-    }
-
-    throw FastXlsxError("unknown data validation type");
-}
-
-std::string_view data_validation_operator_name(DataValidationOperator operator_type)
-{
-    switch (operator_type) {
-    case DataValidationOperator::Between:
-        return "between";
-    case DataValidationOperator::NotBetween:
-        return "notBetween";
-    case DataValidationOperator::Equal:
-        return "equal";
-    case DataValidationOperator::NotEqual:
-        return "notEqual";
-    case DataValidationOperator::GreaterThan:
-        return "greaterThan";
-    case DataValidationOperator::LessThan:
-        return "lessThan";
-    case DataValidationOperator::GreaterThanOrEqual:
-        return "greaterThanOrEqual";
-    case DataValidationOperator::LessThanOrEqual:
-        return "lessThanOrEqual";
-    }
-
-    throw FastXlsxError("unknown data validation operator");
-}
-
-std::string_view data_validation_error_style_name(DataValidationErrorStyle error_style)
-{
-    switch (error_style) {
-    case DataValidationErrorStyle::Stop:
-        return "stop";
-    case DataValidationErrorStyle::Warning:
-        return "warning";
-    case DataValidationErrorStyle::Information:
-        return "information";
-    }
-
-    throw FastXlsxError("unknown data validation error style");
 }
 
 std::string_view color_scale_value_type_name(ColorScaleValueType type)
@@ -512,45 +453,6 @@ void validate_table_options(CellRange range, const TableOptions& options)
         if (!seen_column_names.insert(ascii_lower_copy(column_name)).second) {
             throw FastXlsxError("table column names must be unique within a table");
         }
-    }
-}
-
-bool data_validation_operator_requires_formula2(DataValidationOperator operator_type) noexcept
-{
-    return operator_type == DataValidationOperator::Between
-        || operator_type == DataValidationOperator::NotBetween;
-}
-
-void validate_data_validation_rule(const DataValidationRule& rule)
-{
-    if (rule.formula1.empty()) {
-        throw FastXlsxError("data validation formula1 cannot be empty");
-    }
-
-    if (rule.hide_dropdown_arrow && rule.type != DataValidationType::List) {
-        throw FastXlsxError("hide_dropdown_arrow is only valid for list data validations");
-    }
-
-    if (rule.type == DataValidationType::List || rule.type == DataValidationType::Custom) {
-        if (rule.operator_type.has_value()) {
-            throw FastXlsxError("list and custom data validations do not accept an operator");
-        }
-        if (!rule.formula2.empty()) {
-            throw FastXlsxError("list and custom data validations do not accept formula2");
-        }
-        return;
-    }
-
-    if (!rule.operator_type.has_value()) {
-        throw FastXlsxError("data validation operator is required for this type");
-    }
-
-    if (data_validation_operator_requires_formula2(*rule.operator_type)) {
-        if (rule.formula2.empty()) {
-            throw FastXlsxError("between data validations require formula2");
-        }
-    } else if (!rule.formula2.empty()) {
-        throw FastXlsxError("single-formula data validation operator cannot use formula2");
     }
 }
 
@@ -1787,62 +1689,7 @@ std::string build_data_validations(const detail::WorksheetWriterState& worksheet
     detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(worksheet.data_validations.size()));
     xml += "\">";
     for (const DataValidation& validation : worksheet.data_validations) {
-        xml += "<dataValidation type=\"";
-        xml += data_validation_type_name(validation.rule.type);
-        xml += "\"";
-        if (validation.rule.allow_blank) {
-            xml += " allowBlank=\"1\"";
-        }
-        if (validation.rule.hide_dropdown_arrow) {
-            xml += " showDropDown=\"1\"";
-        }
-        if (validation.rule.show_input_message) {
-            xml += " showInputMessage=\"1\"";
-        }
-        if (validation.rule.show_error_message) {
-            xml += " showErrorMessage=\"1\"";
-        }
-        if (validation.rule.error_style.has_value()) {
-            xml += " errorStyle=\"";
-            xml += data_validation_error_style_name(*validation.rule.error_style);
-            xml += "\"";
-        }
-        if (!validation.rule.error_title.empty()) {
-            xml += " errorTitle=\"";
-            detail::append_escaped_xml_attribute(xml, validation.rule.error_title);
-            xml += "\"";
-        }
-        if (!validation.rule.error.empty()) {
-            xml += " error=\"";
-            detail::append_escaped_xml_attribute(xml, validation.rule.error);
-            xml += "\"";
-        }
-        if (!validation.rule.prompt_title.empty()) {
-            xml += " promptTitle=\"";
-            detail::append_escaped_xml_attribute(xml, validation.rule.prompt_title);
-            xml += "\"";
-        }
-        if (!validation.rule.prompt.empty()) {
-            xml += " prompt=\"";
-            detail::append_escaped_xml_attribute(xml, validation.rule.prompt);
-            xml += "\"";
-        }
-        if (validation.rule.operator_type.has_value()) {
-            xml += " operator=\"";
-            xml += data_validation_operator_name(*validation.rule.operator_type);
-            xml += "\"";
-        }
-        xml += " sqref=\"";
-        xml += detail::sqref(validation.ranges);
-        xml += "\"><formula1>";
-        detail::append_escaped_xml_text(xml, validation.rule.formula1);
-        xml += "</formula1>";
-        if (!validation.rule.formula2.empty()) {
-            xml += "<formula2>";
-            detail::append_escaped_xml_text(xml, validation.rule.formula2);
-            xml += "</formula2>";
-        }
-        xml += "</dataValidation>";
+        xml += detail::serialize_data_validation(validation.ranges, validation.rule);
     }
     xml += "</dataValidations>";
     return xml;
@@ -2851,7 +2698,7 @@ void WorksheetWriter::add_data_validation(
     for (const CellRange& range : ranges) {
         (void)detail::range_reference(range);
     }
-    validate_data_validation_rule(rule);
+    detail::validate_data_validation_rule(rule);
     state_->data_validations.push_back(
         {std::vector<CellRange>(ranges.begin(), ranges.end()), std::move(rule)});
 }

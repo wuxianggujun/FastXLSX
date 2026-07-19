@@ -6,6 +6,8 @@
 #include <fastxlsx/detail/formula_reference_audit.hpp>
 #include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/document_properties.hpp>
+#include <fastxlsx/workbook.hpp>
+#include <fastxlsx/worksheet_metadata.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -565,6 +567,11 @@ public:
     void add_external_hyperlink_by_name(std::string_view sheet_name,
         std::uint32_t row, std::uint32_t column, std::string target,
         std::string display = {}, std::string tooltip = {});
+    // Internal Patch helper for one worksheet-local data-validation rule. The
+    // worksheet XML replacement is staged without relationship/content-type
+    // mutation or formula/range synchronization.
+    void add_data_validation_by_name(std::string_view sheet_name,
+        std::vector<CellRange> ranges, DataValidationRule rule);
     // Internal by-name staged-output variant for worksheet replacement. Resolves
     // the sheet name through the same planned/source workbook catalog path as
     // the chunk-source by-name helper, then validates and audits the provided

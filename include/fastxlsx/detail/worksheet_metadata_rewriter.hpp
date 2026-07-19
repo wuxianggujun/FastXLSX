@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
+#include <fastxlsx/detail/worksheet_metadata_serializer.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -21,6 +22,19 @@ struct WorksheetExternalHyperlinkRewrite {
     std::string relationship_id;
     std::string display;
     std::string tooltip;
+};
+
+struct WorksheetDataValidationRewritePlan {
+    enum class Action {
+        InsertContainerBefore,
+        AppendBeforeContainerClose,
+        ExpandSelfClosingContainer,
+    };
+
+    Action action = Action::InsertContainerBefore;
+    std::uint64_t source_offset = 0;
+    std::uint64_t container_start_offset = 0;
+    std::uint64_t new_count = 1;
 };
 
 enum class WorksheetInternalHyperlinkRewriteAction {
@@ -63,6 +77,21 @@ void write_worksheet_external_hyperlink_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetExternalHyperlinkRewrite& hyperlink,
     const WorksheetInternalHyperlinkRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Selects a schema-safe append/insert boundary for one data-validation rule.
+/// Existing container count metadata must be absent or match the direct child
+/// count; mismatches fail instead of being silently repaired.
+[[nodiscard]] WorksheetDataValidationRewritePlan
+plan_worksheet_data_validation_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk);
+
+/// Streams the source worksheet to a staged file while appending one serialized
+/// rule according to plan_worksheet_data_validation_rewrite().
+void write_worksheet_data_validation_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view data_validation_xml,
+    const WorksheetDataValidationRewritePlan& plan,
     const std::filesystem::path& output_path);
 
 } // namespace fastxlsx::detail

@@ -327,50 +327,6 @@ struct WorkbookWriterOptions {
     DocumentProperties document_properties;
 };
 
-/// Worksheet data-validation value type.
-///
-/// API mode: Streaming worksheet metadata. Data validation rules are copied
-/// into WorksheetWriter state and serialized as worksheet-local
-/// `<dataValidation>` XML during WorkbookWriter::close(). This does not create
-/// relationships, content types, styles, formula parsing, or existing-workbook
-/// edits.
-enum class DataValidationType {
-    Whole,
-    Decimal,
-    List,
-    Date,
-    Time,
-    TextLength,
-    Custom,
-};
-
-/// Optional comparison operator for worksheet data validation.
-///
-/// API mode: Streaming worksheet metadata. Operators are serialized as OpenXML
-/// attributes only when supplied by DataValidationRule. List and custom rules do
-/// not accept operators in the current narrow API.
-enum class DataValidationOperator {
-    Between,
-    NotBetween,
-    Equal,
-    NotEqual,
-    GreaterThan,
-    LessThan,
-    GreaterThanOrEqual,
-    LessThanOrEqual,
-};
-
-/// Optional Excel error-alert style for worksheet data validation.
-///
-/// API mode: Streaming worksheet metadata. The style is serialized only when
-/// DataValidationRule::error_style is set. It does not create styles.xml and
-/// does not validate cell values.
-enum class DataValidationErrorStyle {
-    Stop,
-    Warning,
-    Information,
-};
-
 /// Value kind for a conditional-formatting color-scale endpoint.
 ///
 /// API mode: Streaming worksheet metadata. Minimum and Maximum are serialized
@@ -541,67 +497,6 @@ struct IconSetRule {
     /// Whether Excel should reverse icon order.
     /// The default is omitted from XML; `true` writes `reverse="1"`.
     bool reverse = false;
-};
-
-/// A streaming-only worksheet data-validation rule.
-///
-/// FastXLSX copies formula text into writer-owned storage when the rule is
-/// added. Formula text is written as XML text but is not parsed, evaluated, or
-/// checked against cell contents. Optional prompt/error strings are serialized
-/// as `<dataValidation>` attributes and are not interpreted as Excel UI state.
-/// The writer stores one small rule object per call to
-/// WorksheetWriter::add_data_validation(); memory grows with rule count and
-/// metadata string length, not with worksheet row or cell count.
-struct DataValidationRule {
-    /// Validation kind written as the OpenXML `type` attribute.
-    DataValidationType type = DataValidationType::List;
-
-    /// Optional comparison operator written as the OpenXML `operator`
-    /// attribute. Required for between/notBetween formulas and rejected for
-    /// list/custom rules in the current implementation.
-    std::optional<DataValidationOperator> operator_type;
-
-    /// First formula or list source. Required by the current implementation and
-    /// copied into WorksheetWriter state.
-    std::string formula1;
-
-    /// Second formula for between/notBetween operators. Must be empty for
-    /// single-formula operators.
-    std::string formula2;
-
-    /// Writes `allowBlank="1"` when true. Omitted when false.
-    bool allow_blank = false;
-
-    /// Writes `showDropDown="1"` for list validations when true. OpenXML uses
-    /// the inverted name: this hides Excel's in-cell dropdown arrow. Omitted
-    /// when false.
-    bool hide_dropdown_arrow = false;
-
-    /// Writes `showInputMessage="1"` when true. Omitted when false. Prompt
-    /// text can still be stored when this flag is false.
-    bool show_input_message = false;
-
-    /// Writes `showErrorMessage="1"` when true. Omitted when false. Error text
-    /// can still be stored when this flag is false.
-    bool show_error_message = false;
-
-    /// Optional error-alert style written as `errorStyle`. Omitted when empty.
-    std::optional<DataValidationErrorStyle> error_style;
-
-    /// Optional input prompt title written as `promptTitle`. Empty strings are
-    /// omitted.
-    std::string prompt_title;
-
-    /// Optional input prompt text written as `prompt`. Empty strings are
-    /// omitted.
-    std::string prompt;
-
-    /// Optional error alert title written as `errorTitle`. Empty strings are
-    /// omitted.
-    std::string error_title;
-
-    /// Optional error alert text written as `error`. Empty strings are omitted.
-    std::string error;
 };
 
 /// Built-in Excel totals-row aggregate metadata for a table column.

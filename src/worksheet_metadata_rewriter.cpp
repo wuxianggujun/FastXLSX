@@ -16,6 +16,7 @@
 namespace fastxlsx::detail {
 namespace {
 
+constexpr int data_validations_schema_rank = 12;
 constexpr int hyperlink_schema_rank = 13;
 
 bool is_xml_space(char ch) noexcept
@@ -32,7 +33,7 @@ std::optional<std::string_view> attribute_value(
     std::string_view raw_tag, std::string_view requested_name)
 {
     if (raw_tag.size() < 3 || raw_tag.front() != '<' || raw_tag.back() != '>') {
-        throw FastXlsxError("worksheet hyperlink metadata contains an invalid XML tag");
+        throw FastXlsxError("worksheet metadata contains an invalid XML tag");
     }
 
     std::size_t position = 1;
@@ -65,7 +66,7 @@ std::optional<std::string_view> attribute_value(
         }
         if (position >= raw_tag.size() || raw_tag[position] != '=') {
             throw FastXlsxError(
-                "worksheet hyperlink metadata contains an attribute without a value");
+                "worksheet metadata contains an attribute without a value");
         }
         ++position;
         while (position < raw_tag.size() && is_xml_space(raw_tag[position])) {
@@ -74,7 +75,7 @@ std::optional<std::string_view> attribute_value(
         if (position >= raw_tag.size()
             || (raw_tag[position] != '"' && raw_tag[position] != '\'')) {
             throw FastXlsxError(
-                "worksheet hyperlink metadata contains an unquoted attribute value");
+                "worksheet metadata contains an unquoted attribute value");
         }
 
         const char quote = raw_tag[position++];
@@ -84,7 +85,7 @@ std::optional<std::string_view> attribute_value(
         }
         if (position >= raw_tag.size()) {
             throw FastXlsxError(
-                "worksheet hyperlink metadata contains an unterminated attribute value");
+                "worksheet metadata contains an unterminated attribute value");
         }
         const std::string_view value =
             raw_tag.substr(value_begin, position - value_begin);
@@ -253,6 +254,121 @@ std::string external_hyperlink_xml(const WorksheetExternalHyperlinkRewrite& hype
     return xml;
 }
 
+std::string_view data_validation_type_name(DataValidationType type)
+{
+    switch (type) {
+    case DataValidationType::Whole:
+        return "whole";
+    case DataValidationType::Decimal:
+        return "decimal";
+    case DataValidationType::List:
+        return "list";
+    case DataValidationType::Date:
+        return "date";
+    case DataValidationType::Time:
+        return "time";
+    case DataValidationType::TextLength:
+        return "textLength";
+    case DataValidationType::Custom:
+        return "custom";
+    }
+    throw FastXlsxError("unknown data validation type");
+}
+
+std::string_view data_validation_operator_name(DataValidationOperator operator_type)
+{
+    switch (operator_type) {
+    case DataValidationOperator::Between:
+        return "between";
+    case DataValidationOperator::NotBetween:
+        return "notBetween";
+    case DataValidationOperator::Equal:
+        return "equal";
+    case DataValidationOperator::NotEqual:
+        return "notEqual";
+    case DataValidationOperator::GreaterThan:
+        return "greaterThan";
+    case DataValidationOperator::LessThan:
+        return "lessThan";
+    case DataValidationOperator::GreaterThanOrEqual:
+        return "greaterThanOrEqual";
+    case DataValidationOperator::LessThanOrEqual:
+        return "lessThanOrEqual";
+    }
+    throw FastXlsxError("unknown data validation operator");
+}
+
+std::string_view data_validation_error_style_name(DataValidationErrorStyle error_style)
+{
+    switch (error_style) {
+    case DataValidationErrorStyle::Stop:
+        return "stop";
+    case DataValidationErrorStyle::Warning:
+        return "warning";
+    case DataValidationErrorStyle::Information:
+        return "information";
+    }
+    throw FastXlsxError("unknown data validation error style");
+}
+
+bool data_validation_operator_requires_formula2(DataValidationOperator operator_type) noexcept
+{
+    return operator_type == DataValidationOperator::Between
+        || operator_type == DataValidationOperator::NotBetween;
+}
+
+std::optional<std::uint64_t> parse_unsigned_decimal(std::string_view value)
+{
+    if (value.empty()) {
+        return std::nullopt;
+    }
+    std::uint64_t parsed = 0;
+    for (const char character : value) {
+        if (character < '0' || character > '9') {
+            return std::nullopt;
+        }
+        const std::uint64_t digit = static_cast<std::uint64_t>(character - '0');
+        if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / 10U) {
+            return std::nullopt;
+        }
+        parsed = parsed * 10U + digit;
+    }
+    return parsed;
+}
+
+std::string data_validations_opening_with_count(
+    std::string_view raw_tag, std::uint64_t count, bool expand_self_closing)
+{
+    std::string tag(raw_tag);
+    if (expand_self_closing) {
+        std::size_t slash = tag.size() - 2;
+        while (slash > 0 && is_xml_space(tag[slash])) {
+            --slash;
+        }
+        if (tag[slash] != '/') {
+            throw FastXlsxError(
+                "worksheet data validation rewrite expected a self-closing container");
+        }
+        tag.erase(slash, 1);
+    }
+
+    const std::optional<std::string_view> current = attribute_value(tag, "count");
+    std::string count_text;
+    append_unsigned_decimal(count_text, count);
+    if (current.has_value()) {
+        const std::size_t value_offset = static_cast<std::size_t>(
+            current->data() - tag.data());
+        tag.replace(value_offset, current->size(), count_text);
+    } else {
+        if (tag.size() < 2 || tag.back() != '>') {
+            throw FastXlsxError(
+                "worksheet data validation container has an invalid opening tag");
+        }
+        tag.insert(tag.size() - 1, " count=\"" + count_text + "\"");
+    }
+    return tag;
+}
+
 std::string worksheet_root_with_relationship_namespace(std::string_view raw_tag)
 {
     constexpr std::string_view relationship_namespace =
@@ -312,6 +428,103 @@ std::string expand_self_closing_tag(std::string_view raw_tag)
 }
 
 } // namespace
+
+void validate_data_validation_rule(const DataValidationRule& rule)
+{
+    if (rule.formula1.empty()) {
+        throw FastXlsxError("data validation formula1 cannot be empty");
+    }
+
+    if (rule.hide_dropdown_arrow && rule.type != DataValidationType::List) {
+        throw FastXlsxError("hide_dropdown_arrow is only valid for list data validations");
+    }
+
+    if (rule.type == DataValidationType::List || rule.type == DataValidationType::Custom) {
+        if (rule.operator_type.has_value()) {
+            throw FastXlsxError("list and custom data validations do not accept an operator");
+        }
+        if (!rule.formula2.empty()) {
+            throw FastXlsxError("list and custom data validations do not accept formula2");
+        }
+        return;
+    }
+
+    if (!rule.operator_type.has_value()) {
+        throw FastXlsxError("data validation operator is required for this type");
+    }
+    if (data_validation_operator_requires_formula2(*rule.operator_type)) {
+        if (rule.formula2.empty()) {
+            throw FastXlsxError("between data validations require formula2");
+        }
+    } else if (!rule.formula2.empty()) {
+        throw FastXlsxError("single-formula data validation operator cannot use formula2");
+    }
+}
+
+std::string serialize_data_validation(
+    std::span<const CellRange> ranges, const DataValidationRule& rule)
+{
+    validate_data_validation_rule(rule);
+    const std::string range_text = sqref(ranges);
+
+    std::string xml = "<dataValidation type=\"";
+    xml += data_validation_type_name(rule.type);
+    xml += '"';
+    if (rule.allow_blank) {
+        xml += " allowBlank=\"1\"";
+    }
+    if (rule.hide_dropdown_arrow) {
+        xml += " showDropDown=\"1\"";
+    }
+    if (rule.show_input_message) {
+        xml += " showInputMessage=\"1\"";
+    }
+    if (rule.show_error_message) {
+        xml += " showErrorMessage=\"1\"";
+    }
+    if (rule.error_style.has_value()) {
+        xml += " errorStyle=\"";
+        xml += data_validation_error_style_name(*rule.error_style);
+        xml += '"';
+    }
+    if (!rule.error_title.empty()) {
+        xml += " errorTitle=\"";
+        append_escaped_xml_attribute(xml, rule.error_title);
+        xml += '"';
+    }
+    if (!rule.error.empty()) {
+        xml += " error=\"";
+        append_escaped_xml_attribute(xml, rule.error);
+        xml += '"';
+    }
+    if (!rule.prompt_title.empty()) {
+        xml += " promptTitle=\"";
+        append_escaped_xml_attribute(xml, rule.prompt_title);
+        xml += '"';
+    }
+    if (!rule.prompt.empty()) {
+        xml += " prompt=\"";
+        append_escaped_xml_attribute(xml, rule.prompt);
+        xml += '"';
+    }
+    if (rule.operator_type.has_value()) {
+        xml += " operator=\"";
+        xml += data_validation_operator_name(*rule.operator_type);
+        xml += '"';
+    }
+    xml += " sqref=\"";
+    append_escaped_xml_attribute(xml, range_text);
+    xml += "\"><formula1>";
+    append_escaped_xml_text(xml, rule.formula1);
+    xml += "</formula1>";
+    if (!rule.formula2.empty()) {
+        xml += "<formula2>";
+        append_escaped_xml_text(xml, rule.formula2);
+        xml += "</formula2>";
+    }
+    xml += "</dataValidation>";
+    return xml;
+}
 
 WorksheetInternalHyperlinkRewritePlan plan_worksheet_hyperlink_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
@@ -471,6 +684,150 @@ WorksheetInternalHyperlinkRewritePlan plan_worksheet_external_hyperlink_rewrite(
         read_next_chunk, hyperlink.cell_reference);
 }
 
+WorksheetDataValidationRewritePlan plan_worksheet_data_validation_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk)
+{
+    bool saw_sheet_data_end = false;
+    bool saw_worksheet_end = false;
+    bool saw_data_validations = false;
+    std::size_t child_count = 0;
+    std::optional<std::uint64_t> declared_count;
+    std::optional<std::uint64_t> first_after_data_validations_offset;
+    std::uint64_t worksheet_end_offset = 0;
+    std::uint64_t container_start_offset = 0;
+    int last_suffix_rank = 0;
+    std::vector<std::string> metadata_stack;
+    std::optional<WorksheetDataValidationRewritePlan> plan;
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::SheetDataEnd) {
+                saw_sheet_data_end = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                if (!event.self_closing) {
+                    saw_worksheet_end = true;
+                    worksheet_end_offset = event.raw_xml_offset;
+                }
+                return;
+            }
+            if (event.kind != WorksheetEventKind::Metadata) {
+                return;
+            }
+
+            const bool closing = is_closing_tag(event.raw_xml);
+            if (closing) {
+                if (metadata_stack.empty() || metadata_stack.back() != event.element_name) {
+                    throw FastXlsxError(
+                        "worksheet data validation metadata contains mismatched element nesting");
+                }
+                if (metadata_stack.size() == 1 && event.element_name == "dataValidations") {
+                    if (!saw_data_validations || plan.has_value()) {
+                        throw FastXlsxError(
+                            "worksheet contains duplicate or ambiguous data validation metadata");
+                    }
+                    if (declared_count.has_value()
+                        && *declared_count != static_cast<std::uint64_t>(child_count)) {
+                        throw FastXlsxError(
+                            "worksheet data validation count does not match its direct children");
+                    }
+                    plan = WorksheetDataValidationRewritePlan {
+                        WorksheetDataValidationRewritePlan::Action::AppendBeforeContainerClose,
+                        event.raw_xml_offset,
+                        container_start_offset,
+                        static_cast<std::uint64_t>(child_count) + 1U};
+                }
+                metadata_stack.pop_back();
+                return;
+            }
+
+            const bool top_level = metadata_stack.empty();
+            const bool direct_data_validation_child = metadata_stack.size() == 1
+                && metadata_stack.front() == "dataValidations";
+            if (top_level && saw_sheet_data_end) {
+                const std::optional<int> rank =
+                    worksheet_suffix_schema_rank(event.element_name);
+                if (!rank.has_value()) {
+                    throw FastXlsxError(
+                        "worksheet contains top-level suffix metadata whose position relative "
+                        "to data validations is unsupported");
+                }
+                if (*rank < last_suffix_rank) {
+                    throw FastXlsxError(
+                        "worksheet top-level suffix metadata is not in schema order");
+                }
+                last_suffix_rank = *rank;
+                if (*rank > data_validations_schema_rank
+                    && !first_after_data_validations_offset.has_value()) {
+                    first_after_data_validations_offset = event.raw_xml_offset;
+                }
+                if (event.element_name == "dataValidations") {
+                    if (saw_data_validations) {
+                        throw FastXlsxError(
+                            "worksheet contains duplicate data validation containers");
+                    }
+                    saw_data_validations = true;
+                    container_start_offset = event.raw_xml_offset;
+                    if (const std::optional<std::string_view> count =
+                            attribute_value(event.raw_xml, "count")) {
+                        declared_count = parse_unsigned_decimal(*count);
+                        if (!declared_count.has_value()) {
+                            throw FastXlsxError(
+                                "worksheet data validation count is not an unsigned integer");
+                        }
+                    }
+                    if (event.self_closing) {
+                        if (declared_count.has_value() && *declared_count != 0) {
+                            throw FastXlsxError(
+                                "self-closing data validation container must have count zero");
+                        }
+                        plan = WorksheetDataValidationRewritePlan {
+                            WorksheetDataValidationRewritePlan::Action::ExpandSelfClosingContainer,
+                            event.raw_xml_offset,
+                            event.raw_xml_offset,
+                            1};
+                    }
+                }
+            } else if (top_level && event.element_name == "dataValidations") {
+                throw FastXlsxError(
+                    "worksheet data validation metadata appears before sheetData");
+            }
+
+            if (direct_data_validation_child) {
+                if (event.element_name != "dataValidation") {
+                    throw FastXlsxError(
+                        "data validation container has an unsupported child element");
+                }
+                ++child_count;
+            }
+
+            if (!event.self_closing) {
+                metadata_stack.emplace_back(event.element_name);
+            }
+        });
+
+    if (!metadata_stack.empty()) {
+        throw FastXlsxError("worksheet data validation metadata ended inside an open element");
+    }
+    if (!saw_sheet_data_end || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "data validation edit requires sheetData and a closing worksheet root");
+    }
+    if (saw_data_validations) {
+        if (!plan.has_value()) {
+            throw FastXlsxError(
+                "worksheet data validation container has no closing boundary");
+        }
+        return *plan;
+    }
+    return WorksheetDataValidationRewritePlan {
+        WorksheetDataValidationRewritePlan::Action::InsertContainerBefore,
+        first_after_data_validations_offset.value_or(worksheet_end_offset),
+        0,
+        1};
+}
+
 void write_worksheet_hyperlink_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view hyperlink_xml,
@@ -524,6 +881,70 @@ void write_worksheet_hyperlink_rewrite(
     output.flush();
     if (!output) {
         throw FastXlsxError("failed to finalize staged worksheet hyperlink metadata file");
+    }
+}
+
+void write_worksheet_data_validation_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view data_validation_xml,
+    const WorksheetDataValidationRewritePlan& plan,
+    const std::filesystem::path& output_path)
+{
+    std::ofstream output(output_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError("failed to create staged worksheet data validation metadata file");
+    }
+
+    bool applied = false;
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (is_synthetic_self_closing_end(event)) {
+                return;
+            }
+
+            if (plan.action == WorksheetDataValidationRewritePlan::Action::AppendBeforeContainerClose
+                && event.raw_xml_offset == plan.container_start_offset
+                && event.kind == WorksheetEventKind::Metadata
+                && !is_closing_tag(event.raw_xml)) {
+                write_bytes(output, data_validations_opening_with_count(
+                    event.raw_xml, plan.new_count, false));
+                return;
+            }
+
+            if (applied || event.raw_xml_offset != plan.source_offset) {
+                write_bytes(output, event.raw_xml);
+                return;
+            }
+
+            switch (plan.action) {
+            case WorksheetDataValidationRewritePlan::Action::InsertContainerBefore:
+                write_bytes(output, "<dataValidations count=\"1\">");
+                write_bytes(output, data_validation_xml);
+                write_bytes(output, "</dataValidations>");
+                write_bytes(output, event.raw_xml);
+                break;
+            case WorksheetDataValidationRewritePlan::Action::AppendBeforeContainerClose:
+                write_bytes(output, data_validation_xml);
+                write_bytes(output, event.raw_xml);
+                break;
+            case WorksheetDataValidationRewritePlan::Action::ExpandSelfClosingContainer:
+                write_bytes(output, data_validations_opening_with_count(
+                    event.raw_xml, plan.new_count, true));
+                write_bytes(output, data_validation_xml);
+                write_bytes(output, "</dataValidations>");
+                break;
+            }
+            applied = true;
+        });
+
+    if (!applied) {
+        throw FastXlsxError(
+            "worksheet data validation rewrite did not reach its planned insertion boundary");
+    }
+    output.flush();
+    if (!output) {
+        throw FastXlsxError(
+            "failed to finalize staged worksheet data validation metadata file");
     }
 }
 

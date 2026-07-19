@@ -254,6 +254,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// Zero when no external hyperlink edit is queued.
     std::size_t external_hyperlink_count = 0;
 
+    /// Number of worksheet-local data-validation rules appended for this
+    /// planned worksheet. Zero when no data-validation edit is queued.
+    std::size_t data_validation_count = 0;
+
     /// True when the materialized WorksheetEditor session for this planned
     /// worksheet name is dirty and waiting for save_as() auto-flush.
     bool materialized_dirty = false;
@@ -3115,6 +3119,49 @@ public:
         WorksheetCellReference cell,
         std::string target,
         HyperlinkOptions options = {});
+
+    /// Appends one worksheet-local data-validation rule for one range.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The rule is
+    /// appended to `<dataValidations>` in schema order without creating package
+    /// relationships or content types. Formula text and prompt/error metadata
+    /// are copied and XML escaped but are not parsed, evaluated, or checked
+    /// against cell values. Existing rules and unknown package entries are
+    /// preserved through a bounded staged worksheet rewrite.
+    /// Temporary memory grows with the copied rule/ranges and bounded XML scan
+    /// buffers; the rewritten worksheet is file-backed rather than retained as
+    /// a DOM or cell matrix.
+    ///
+    /// This API does not detect overlapping validation ranges, modify cells or
+    /// styles, request recalculation, or synchronize validation ranges/formulas
+    /// with later row, column, cell, formula, table, or defined-name edits.
+    /// Failure occurs before public edit state is published and the editor
+    /// remains usable for retry.
+    ///
+    /// @throws FastXlsxError if the worksheet/range/rule is invalid, existing
+    /// validation metadata is malformed or ambiguously ordered, or staging
+    /// fails.
+    void add_data_validation(
+        std::string_view sheet_name,
+        CellRange range,
+        DataValidationRule rule);
+
+    /// Appends one worksheet-local data-validation rule for multiple ranges.
+    ///
+    /// Ranges are copied and emitted as one space-separated `sqref` attribute.
+    /// The range list must be non-empty. Ordering, ownership, failure, formula,
+    /// relationship, content-type, and structural-edit boundaries match the
+    /// single-range overload.
+    void add_data_validation(
+        std::string_view sheet_name,
+        std::span<const CellRange> ranges,
+        DataValidationRule rule);
+
+    /// Convenience overload for a copied initializer-list range set.
+    void add_data_validation(
+        std::string_view sheet_name,
+        std::initializer_list<CellRange> ranges,
+        DataValidationRule rule);
 
     /// Replaces an existing workbook image part from a file on disk.
     ///

@@ -690,6 +690,61 @@ void WorkbookEditor::add_external_hyperlink(
     }
 }
 
+void WorkbookEditor::add_data_validation(
+    std::string_view sheet_name, CellRange range, DataValidationRule rule)
+{
+    add_data_validation(
+        sheet_name, std::span<const CellRange>(&range, 1), std::move(rule));
+}
+
+void WorkbookEditor::add_data_validation(
+    std::string_view sheet_name, std::span<const CellRange> ranges,
+    DataValidationRule rule)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    const std::size_t range_count = ranges.size();
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        if (ranges.empty()) {
+            throw FastXlsxError("data validation range list cannot be empty");
+        }
+
+        auto updated_counts = impl_->pending_data_validation_counts;
+        ++updated_counts[sheet_name_key];
+        impl_->editor.add_data_validation_by_name(
+            sheet_name_key, std::vector<CellRange>(ranges.begin(), ranges.end()),
+            std::move(rule));
+
+        using std::swap;
+        swap(impl_->pending_data_validation_counts, updated_counts);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::add_data_validation() failed for '"
+            + sheet_name_key + "' with " + std::to_string(range_count)
+            + " ranges: " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::add_data_validation(
+    std::string_view sheet_name, std::initializer_list<CellRange> ranges,
+    DataValidationRule rule)
+{
+    add_data_validation(
+        sheet_name, std::span<const CellRange>(ranges.begin(), ranges.size()),
+        std::move(rule));
+}
+
 void WorkbookEditor::replace_image(
     std::string_view image_part_name, std::filesystem::path image_path)
 {
@@ -802,7 +857,8 @@ void WorkbookEditor::remove_worksheet(std::string_view name)
         if (!impl_->pending_replacement_worksheet_names().empty()
             || !impl_->pending_targeted_cell_replacement_worksheet_names().empty()
             || !impl_->pending_internal_hyperlink_counts.empty()
-            || !impl_->pending_external_hyperlink_counts.empty()) {
+            || !impl_->pending_external_hyperlink_counts.empty()
+            || !impl_->pending_data_validation_counts.empty()) {
             throw FastXlsxError(
                 "worksheet removal requires no queued worksheet payload edits");
         }
@@ -880,6 +936,10 @@ void WorkbookEditor::rename_sheet(
             updated_external_hyperlink_counts =
                 impl_->stage_pending_external_hyperlink_counts_move(
                     old_name_key, new_name_key);
+        std::optional<std::map<std::string, std::size_t, std::less<>>>
+            updated_data_validation_counts =
+                impl_->stage_pending_data_validation_counts_move(
+                    old_name_key, new_name_key);
         detail::WorkbookEditorSheetRenameOptions rename_options;
         if (options.formula_policy == WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames) {
             rename_options.formula_policy =
@@ -908,6 +968,8 @@ void WorkbookEditor::rename_sheet(
             updated_internal_hyperlink_counts);
         impl_->commit_pending_external_hyperlink_counts_move(
             updated_external_hyperlink_counts);
+        impl_->commit_pending_data_validation_counts_move(
+            updated_data_validation_counts);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {

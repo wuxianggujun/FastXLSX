@@ -85,6 +85,14 @@ constexpr std::size_t package_entry_reader_chunk_size = 1024U * 1024U;
 constexpr std::size_t worksheet_transform_output_buffer_size = 256U * 1024U;
 constexpr std::size_t worksheet_relationship_scan_buffer_size = 16U * 1024U;
 
+ReferencePolicy worksheet_metadata_reference_policy() noexcept
+{
+    ReferencePolicy policy;
+    policy.request_full_calculation_on_sheet_rewrite = false;
+    policy.calc_chain_action = CalcChainAction::Preserve;
+    return policy;
+}
+
 std::uint64_t steady_clock_elapsed_milliseconds(
     std::chrono::steady_clock::time_point start)
 {
@@ -8454,7 +8462,7 @@ void PackageEditor::add_internal_hyperlink_by_name(
         "internal worksheet hyperlink edit rewrites worksheet-local hyperlinks "
         "through bounded source chunks and preserves worksheet relationships");
     replace_worksheet_part_from_chunk_source_with_commit_notes(
-        worksheet_part, staged_source, {},
+        worksheet_part, staged_source, worksheet_metadata_reference_policy(),
         "existing-workbook internal worksheet hyperlink metadata edit",
         std::move(commit_notes));
 }
@@ -8527,7 +8535,8 @@ void PackageEditor::add_external_hyperlink_by_name(
         "external worksheet hyperlink edit rewrites worksheet metadata and adds one external "
         "hyperlink relationship while preserving existing worksheet relationships");
     replace_worksheet_part_prevalidated_chunks(
-        worksheet_part, std::move(final_chunks), {},
+        worksheet_part, std::move(final_chunks),
+        worksheet_metadata_reference_policy(),
         std::move(replacement_audit.payload_audit.notes),
         std::move(replacement_audit.payload_audit.audits),
         std::move(replacement_audit.relationship_reference_audit.notes),
@@ -8581,7 +8590,7 @@ void PackageEditor::add_data_validation_by_name(
         "existing-workbook data validation edit rewrites worksheet-local metadata "
         "without relationship or content-type mutation");
     replace_worksheet_part_from_chunk_source_with_commit_notes(
-        worksheet_part, staged_source, {},
+        worksheet_part, staged_source, worksheet_metadata_reference_policy(),
         "existing-workbook data validation metadata edit", std::move(commit_notes));
 }
 
@@ -8626,9 +8635,59 @@ bool PackageEditor::rewrite_auto_filter_by_name(
         "existing-workbook auto-filter edit replaces or clears worksheet-root metadata "
         "without table-part, relationship, content-type, or calc mutation");
     replace_worksheet_part_from_chunk_source_with_commit_notes(
-        worksheet_part, staged_source, {},
+        worksheet_part, staged_source, worksheet_metadata_reference_policy(),
         "existing-workbook worksheet-root auto-filter metadata edit",
         std::move(commit_notes));
+    return true;
+}
+
+bool PackageEditor::rewrite_merged_cell_by_name(
+    std::string_view sheet_name,
+    CellRange range,
+    WorksheetMergedCellRewriteOperation operation)
+{
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "merged-cell worksheet edit");
+
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for merged-cell planning");
+    const std::optional<WorksheetMergedCellRewritePlan> rewrite_plan =
+        plan_worksheet_merged_cell_rewrite(
+            [&](std::string& chunk) { return planning_reader(chunk); },
+            range, operation);
+    if (!rewrite_plan.has_value()) {
+        return false;
+    }
+    const std::string merge_cell_xml =
+        operation == WorksheetMergedCellRewriteOperation::Merge
+        ? serialize_worksheet_merged_cell(range, rewrite_plan->element_prefix)
+        : std::string {};
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for merged-cell rewrite");
+    write_worksheet_merged_cell_rewrite(
+        [&](std::string& chunk) { return output_reader(chunk); },
+        merge_cell_xml, *rewrite_plan, rewritten_source_file.path());
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "existing-workbook merged-cell edit rewrites worksheet-local metadata "
+        "without cell, relationship, content-type, or calc mutation");
+    replace_worksheet_part_from_chunk_source_with_commit_notes(
+        worksheet_part, staged_source, worksheet_metadata_reference_policy(),
+        "existing-workbook merged-cell metadata edit", std::move(commit_notes));
     return true;
 }
 

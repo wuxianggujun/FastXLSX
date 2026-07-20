@@ -16,5 +16,6 @@ Public Doxygen 必须写清：
 - Hyperlink 必须区分 internal worksheet-local XML 与 external `.rels` relationship mutation；写清 duplicate/range、XML escaping、cell/style、formula/definedName 和 linked-object side effects，不能把 internal hyperlink 扩大为完整 hyperlink 编辑。
 - Data validation 必须写清 shared owning rule、single-/multi-range `sqref`、formula1/formula2 shape、prompt/error escaping、container/count/schema-order guardrail，以及不创建关系、不求值/请求重算、不随 structural mutation 同步的边界；不能扩大为完整 validation 对象模型。
 - Auto-filter 必须区分 worksheet-root element 与 table-local filter part；写清 whole-element set/clear、旧 criteria/sort metadata 丢弃、clear absent no-op、single range、existing ref/duplicate/schema guardrail、optional-range diagnostic，以及不创建关系/content type/calc metadata、不随 structural mutation 同步的边界；不能扩大为完整 filter 对象模型。
+- Merged-cell 必须写清 multi-cell `CellRange`、merge duplicate/overlap fail、unmerge exact-only、partial overlap fail、absent disjoint no-op，以及 container/count/direct-child/ref/schema guardrail；同时声明 metadata-only、保留非左上角 cell record/value/style/formula、relationships、content types、tables、`calcPr`/`calcChain`，且不随 structural mutation 同步，不能扩大为完整 merged-cell 对象模型。
 
 禁止把 internal 类型、preservation evidence、公式文本或窄图片能力扩大为 public/full support。

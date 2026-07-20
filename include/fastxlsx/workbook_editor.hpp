@@ -266,6 +266,12 @@ struct WorkbookEditorWorksheetEditSummary {
     /// with auto_filter_changed=true represents a queued clear operation.
     std::optional<CellRange> auto_filter_range;
 
+    /// Number of merged-cell ranges added for this planned worksheet.
+    std::size_t merged_cell_addition_count = 0;
+
+    /// Number of exact merged-cell ranges removed for this planned worksheet.
+    std::size_t merged_cell_removal_count = 0;
+
     /// True when the materialized WorksheetEditor session for this planned
     /// worksheet name is dirty and waiting for save_as() auto-flush.
     bool materialized_dirty = false;
@@ -3206,6 +3212,52 @@ public:
     /// ambiguous, schema order cannot be proven, or transactional staging fails.
     /// On failure no public edit state changes.
     void clear_auto_filter(std::string_view sheet_name);
+
+    /// Adds one exact worksheet-root merged-cell range.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The range
+    /// is appended to an existing `<mergeCells>` container or inserted at its
+    /// schema position through a bounded, file-backed worksheet rewrite.
+    /// A self-closing existing container is expanded before the child is added.
+    /// Existing count metadata is filled or updated only after its value and
+    /// direct `<mergeCell>` children have been audited. Duplicate or overlapping
+    /// existing/requested merged ranges are rejected instead of normalized.
+    /// Each successful add increments merged_cell_addition_count in the
+    /// worksheet's pending_worksheet_edits() summary.
+    ///
+    /// The range is 1-based, inclusive, and must contain more than one cell.
+    /// This metadata operation does not remove non-top-left cell records or
+    /// modify cell values, styles, formulas, worksheet relationships, content
+    /// types, tables, calculation metadata, or other linked objects. The range
+    /// is not automatically shifted by later row, column, or cell structural
+    /// mutation. Planned rename and same-editor added worksheets are supported.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param range Multi-cell range to merge.
+    /// @throws FastXlsxError if the range is invalid, overlaps an existing
+    /// merged range, existing mergeCells metadata is malformed or ambiguous,
+    /// schema order cannot be proven, or transactional staging fails. On
+    /// failure no public edit state changes.
+    void merge_cells(std::string_view sheet_name, CellRange range);
+
+    /// Removes one exact worksheet-root merged-cell range.
+    ///
+    /// API mode and preservation boundaries are identical to merge_cells().
+    /// Only an exact `<mergeCell ref>` match is removed; a partially overlapping
+    /// request is rejected. An absent disjoint range is a clean no-op, while
+    /// removing the last child removes the complete `<mergeCells>` container.
+    /// Existing count metadata and all remaining child ranges are audited before
+    /// the staged rewrite is published. Each actual removal increments
+    /// merged_cell_removal_count; an absent clean no-op does not grow public
+    /// diagnostics or pending/unsaved counts.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param range Exact multi-cell range to unmerge.
+    /// @throws FastXlsxError if the range is invalid, partially overlaps an
+    /// existing merged range, existing mergeCells metadata is malformed or
+    /// ambiguous, schema order cannot be proven, or transactional staging fails.
+    /// On failure no public edit state changes.
+    void unmerge_cells(std::string_view sheet_name, CellRange range);
 
     /// Replaces an existing workbook image part from a file on disk.
     ///

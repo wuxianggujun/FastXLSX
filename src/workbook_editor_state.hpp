@@ -83,6 +83,12 @@ struct WorkbookEditor::Impl {
             std::less<>>;
     using PendingAutoFilterEdits =
         std::map<std::string, std::optional<CellRange>, std::less<>>;
+    struct PendingMergedCellEditCounts {
+        std::size_t addition_count = 0;
+        std::size_t removal_count = 0;
+    };
+    using PendingMergedCellEdits =
+        std::map<std::string, PendingMergedCellEditCounts, std::less<>>;
 
     Impl(detail::PackageEditor editor, WorkbookEditorOptions options)
         : editor(std::move(editor))
@@ -104,6 +110,7 @@ struct WorkbookEditor::Impl {
     std::map<std::string, std::size_t, std::less<>> pending_external_hyperlink_counts;
     std::map<std::string, std::size_t, std::less<>> pending_data_validation_counts;
     PendingAutoFilterEdits pending_auto_filter_edits;
+    PendingMergedCellEdits pending_merged_cell_edits;
     std::optional<std::string> last_public_edit_error;
     detail::PackageWriterTelemetry* package_writer_telemetry = nullptr;
 
@@ -385,6 +392,35 @@ struct WorkbookEditor::Impl {
         swap(pending_auto_filter_edits, *updated);
     }
 
+    [[nodiscard]] std::optional<PendingMergedCellEdits>
+    stage_pending_merged_cell_edits_move(
+        std::string_view old_name, std::string_view new_name) const
+    {
+        const auto source = pending_merged_cell_edits.find(old_name);
+        if (source == pending_merged_cell_edits.end()) {
+            return std::nullopt;
+        }
+        auto updated = pending_merged_cell_edits;
+        const auto updated_source = updated.find(old_name);
+        const PendingMergedCellEditCounts counts = updated_source->second;
+        updated.erase(updated_source);
+        PendingMergedCellEditCounts& target = updated[std::string(new_name)];
+        target.addition_count += counts.addition_count;
+        target.removal_count += counts.removal_count;
+        return updated;
+    }
+
+    void commit_pending_merged_cell_edits_move(
+        std::optional<PendingMergedCellEdits>& updated) noexcept
+    {
+        if (!updated.has_value()) {
+            return;
+        }
+        static_assert(std::is_nothrow_swappable_v<PendingMergedCellEdits>);
+        using std::swap;
+        swap(pending_merged_cell_edits, *updated);
+    }
+
     [[nodiscard]] std::vector<std::string> pending_materialized_worksheet_names() const
     {
         return detail::workbook_editor_pending_materialized_worksheet_names(
@@ -434,6 +470,10 @@ struct WorkbookEditor::Impl {
                 pending_auto_filter_edits.find(current_name);
             const bool auto_filter_changed =
                 pending_auto_filter != pending_auto_filter_edits.end();
+            const auto pending_merged_cells =
+                pending_merged_cell_edits.find(current_name);
+            const bool merged_cells_changed =
+                pending_merged_cells != pending_merged_cell_edits.end();
             const bool materialized_dirty =
                 materialized_session != nullptr && materialized_session->dirty();
             if (!catalog_entry.added && !catalog_entry.renamed && !sheet_data_replaced
@@ -441,6 +481,7 @@ struct WorkbookEditor::Impl {
                 && !external_hyperlinks_added
                 && !data_validations_added
                 && !auto_filter_changed
+                && !merged_cells_changed
                 && !materialized_dirty) {
                 continue;
             }
@@ -464,6 +505,12 @@ struct WorkbookEditor::Impl {
             summary.auto_filter_changed = auto_filter_changed;
             if (auto_filter_changed) {
                 summary.auto_filter_range = pending_auto_filter->second;
+            }
+            if (merged_cells_changed) {
+                summary.merged_cell_addition_count =
+                    pending_merged_cells->second.addition_count;
+                summary.merged_cell_removal_count =
+                    pending_merged_cells->second.removal_count;
             }
             summary.materialized_dirty = materialized_dirty;
             if (sheet_data_replaced) {

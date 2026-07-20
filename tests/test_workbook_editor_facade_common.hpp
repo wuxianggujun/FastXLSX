@@ -184,6 +184,8 @@ bool workbook_editor_edit_summaries_equal(
             || left.data_validation_count != right.data_validation_count
             || left.auto_filter_changed != right.auto_filter_changed
             || left.auto_filter_range.has_value() != right.auto_filter_range.has_value()
+            || left.merged_cell_addition_count != right.merged_cell_addition_count
+            || left.merged_cell_removal_count != right.merged_cell_removal_count
             || left.replacement_cell_count != right.replacement_cell_count
             || left.estimated_replacement_memory_usage
                 != right.estimated_replacement_memory_usage

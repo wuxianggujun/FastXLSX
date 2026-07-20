@@ -1520,9 +1520,7 @@ std::string build_merge_cells(const detail::WorksheetWriterState& worksheet)
     detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(worksheet.merged_ranges.size()));
     xml += "\">";
     for (const CellRange& range : worksheet.merged_ranges) {
-        xml += "<mergeCell ref=\"";
-        xml += detail::range_reference(range);
-        xml += "\"/>";
+        xml += detail::serialize_worksheet_merged_cell(range);
     }
     xml += "</mergeCells>";
     return xml;
@@ -2566,10 +2564,7 @@ void WorksheetWriter::set_auto_filter(CellRange range)
 void WorksheetWriter::merge_cells(CellRange range)
 {
     ensure_mutable_worksheet(state_);
-    (void)detail::range_reference(range);
-    if (range.first_row == range.last_row && range.first_column == range.last_column) {
-        throw FastXlsxError("merged range must include more than one cell");
-    }
+    detail::validate_merged_cell_range(range);
     state_->merged_ranges.push_back(range);
 }
 

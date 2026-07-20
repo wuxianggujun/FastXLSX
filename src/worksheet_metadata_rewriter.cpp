@@ -7,16 +7,21 @@
 #include <cctype>
 #include <cstdint>
 #include <fstream>
+#include <iterator>
 #include <limits>
+#include <map>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace fastxlsx::detail {
 namespace {
 
 constexpr int auto_filter_schema_rank = 5;
+constexpr int merged_cells_schema_rank = 9;
 constexpr int data_validations_schema_rank = 12;
 constexpr int hyperlink_schema_rank = 13;
 
@@ -38,21 +43,49 @@ std::optional<std::string_view> attribute_value(
     }
 
     std::size_t position = 1;
-    if (position < raw_tag.size() && raw_tag[position] == '/') {
+    const bool closing_tag = position < raw_tag.size() && raw_tag[position] == '/';
+    if (closing_tag) {
         ++position;
     }
+    const std::size_t element_name_begin = position;
     while (position < raw_tag.size() && !is_xml_space(raw_tag[position])
         && raw_tag[position] != '/' && raw_tag[position] != '>') {
         ++position;
     }
+    if (position == element_name_begin) {
+        throw FastXlsxError("worksheet metadata contains an empty element name");
+    }
+
+    std::optional<std::string_view> requested_value;
+    std::unordered_set<std::string_view> attribute_names;
 
     while (position < raw_tag.size()) {
         while (position < raw_tag.size() && is_xml_space(raw_tag[position])) {
             ++position;
         }
-        if (position >= raw_tag.size() || raw_tag[position] == '/'
-            || raw_tag[position] == '>') {
-            return std::nullopt;
+        if (position >= raw_tag.size()) {
+            break;
+        }
+        if (raw_tag[position] == '>') {
+            if (position + 1 != raw_tag.size()) {
+                throw FastXlsxError(
+                    "worksheet metadata contains trailing bytes after an XML tag");
+            }
+            ++position;
+            break;
+        }
+        if (raw_tag[position] == '/') {
+            if (closing_tag || position + 2 != raw_tag.size()
+                || raw_tag[position + 1] != '>') {
+                throw FastXlsxError(
+                    "worksheet metadata contains an invalid self-closing tag tail");
+            }
+            position += 2;
+            break;
+        }
+        if (closing_tag) {
+            throw FastXlsxError(
+                "worksheet metadata closing tag contains attributes");
         }
 
         const std::size_t name_begin = position;
@@ -62,6 +95,9 @@ std::optional<std::string_view> attribute_value(
             ++position;
         }
         const std::string_view name = raw_tag.substr(name_begin, position - name_begin);
+        if (name.empty()) {
+            throw FastXlsxError("worksheet metadata contains an empty attribute name");
+        }
         while (position < raw_tag.size() && is_xml_space(raw_tag[position])) {
             ++position;
         }
@@ -91,12 +127,55 @@ std::optional<std::string_view> attribute_value(
         const std::string_view value =
             raw_tag.substr(value_begin, position - value_begin);
         ++position;
+        if (position < raw_tag.size() && !is_xml_space(raw_tag[position])
+            && raw_tag[position] != '/' && raw_tag[position] != '>') {
+            throw FastXlsxError(
+                "worksheet metadata attributes are not separated by whitespace");
+        }
+        if (!attribute_names.emplace(name).second) {
+            throw FastXlsxError(
+                "worksheet metadata contains a duplicate attribute");
+        }
         if (name == requested_name) {
-            return value;
+            requested_value = value;
         }
     }
 
-    return std::nullopt;
+    if (position != raw_tag.size()) {
+        throw FastXlsxError("worksheet metadata contains an incomplete XML tag");
+    }
+    return requested_value;
+}
+
+std::string xml_element_prefix(
+    std::string_view raw_tag, std::string_view expected_local_name)
+{
+    (void)attribute_value(raw_tag, {});
+
+    std::size_t name_begin = is_closing_tag(raw_tag) ? 2U : 1U;
+    std::size_t name_end = name_begin;
+    while (name_end < raw_tag.size() && !is_xml_space(raw_tag[name_end])
+        && raw_tag[name_end] != '/' && raw_tag[name_end] != '>') {
+        ++name_end;
+    }
+    const std::string_view qualified_name =
+        raw_tag.substr(name_begin, name_end - name_begin);
+    const std::size_t separator = qualified_name.find(':');
+    if (separator == 0 || separator + 1 == qualified_name.size()
+        || (separator != std::string_view::npos
+            && qualified_name.find(':', separator + 1) != std::string_view::npos)) {
+        throw FastXlsxError("worksheet metadata contains an invalid qualified element name");
+    }
+    const std::string_view local_name = separator == std::string_view::npos
+        ? qualified_name
+        : qualified_name.substr(separator + 1);
+    if (local_name != expected_local_name) {
+        throw FastXlsxError(
+            "worksheet metadata element QName does not match its parsed local name");
+    }
+    return separator == std::string_view::npos
+        ? std::string {}
+        : std::string(qualified_name.substr(0, separator + 1));
 }
 
 struct A1Coordinate {
@@ -152,6 +231,12 @@ struct A1Range {
     A1Coordinate last;
 };
 
+struct ExistingMergedCell {
+    A1Range range;
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+};
+
 std::optional<A1Range> parse_a1_range(std::string_view reference)
 {
     const std::size_t separator = reference.find(':');
@@ -170,6 +255,94 @@ std::optional<A1Range> parse_a1_range(std::string_view reference)
         return std::nullopt;
     }
     return A1Range {*first, *last};
+}
+
+A1Range a1_range_from_cell_range(CellRange range) noexcept
+{
+    return A1Range {
+        {range.first_row, range.first_column},
+        {range.last_row, range.last_column},
+    };
+}
+
+bool a1_ranges_equal(const A1Range& left, const A1Range& right) noexcept
+{
+    return left.first.row == right.first.row
+        && left.first.column == right.first.column
+        && left.last.row == right.last.row
+        && left.last.column == right.last.column;
+}
+
+bool a1_ranges_overlap(const A1Range& left, const A1Range& right) noexcept
+{
+    return left.first.row <= right.last.row && right.first.row <= left.last.row
+        && left.first.column <= right.last.column
+        && right.first.column <= left.last.column;
+}
+
+bool a1_range_is_single_cell(const A1Range& range) noexcept
+{
+    return range.first.row == range.last.row
+        && range.first.column == range.last.column;
+}
+
+void audit_existing_merged_cell_overlaps(
+    const std::vector<ExistingMergedCell>& existing_cells)
+{
+    std::vector<std::size_t> ordered_indices(existing_cells.size());
+    std::iota(ordered_indices.begin(), ordered_indices.end(), std::size_t {0});
+    std::sort(ordered_indices.begin(), ordered_indices.end(),
+        [&existing_cells](std::size_t left_index, std::size_t right_index) {
+            const A1Range& left = existing_cells[left_index].range;
+            const A1Range& right = existing_cells[right_index].range;
+            if (left.first.row != right.first.row) {
+                return left.first.row < right.first.row;
+            }
+            if (left.first.column != right.first.column) {
+                return left.first.column < right.first.column;
+            }
+            if (left.last.row != right.last.row) {
+                return left.last.row < right.last.row;
+            }
+            return left.last.column < right.last.column;
+        });
+
+    std::multimap<std::uint32_t, std::size_t> active_by_last_row;
+    std::map<std::uint32_t, std::size_t> active_by_first_column;
+    for (const std::size_t current_index : ordered_indices) {
+        const A1Range& current = existing_cells[current_index].range;
+        while (!active_by_last_row.empty()
+            && active_by_last_row.begin()->first < current.first.row) {
+            const std::size_t expired_index = active_by_last_row.begin()->second;
+            const auto active_column = active_by_first_column.find(
+                existing_cells[expired_index].range.first.column);
+            if (active_column == active_by_first_column.end()
+                || active_column->second != expired_index) {
+                throw FastXlsxError(
+                    "worksheet merged-cell overlap audit lost its active range");
+            }
+            active_by_first_column.erase(active_column);
+            active_by_last_row.erase(active_by_last_row.begin());
+        }
+
+        const auto next = active_by_first_column.lower_bound(current.first.column);
+        if (next != active_by_first_column.end()
+            && existing_cells[next->second].range.first.column <= current.last.column) {
+            throw FastXlsxError(
+                "existing worksheet merged-cell ranges overlap or duplicate");
+        }
+        if (next != active_by_first_column.begin()) {
+            const auto previous = std::prev(next);
+            if (existing_cells[previous->second].range.last.column
+                >= current.first.column) {
+                throw FastXlsxError(
+                    "existing worksheet merged-cell ranges overlap or duplicate");
+            }
+        }
+
+        active_by_first_column.emplace(current.first.column, current_index);
+        active_by_last_row.emplace(current.last.row, current_index);
+    }
 }
 
 bool hyperlink_ref_contains_target(
@@ -361,8 +534,11 @@ std::optional<std::uint64_t> parse_unsigned_decimal(std::string_view value)
     return parsed;
 }
 
-std::string data_validations_opening_with_count(
-    std::string_view raw_tag, std::uint64_t count, bool expand_self_closing)
+std::string metadata_container_opening_with_count(
+    std::string_view raw_tag,
+    std::uint64_t count,
+    bool expand_self_closing,
+    std::string_view container_label)
 {
     std::string tag(raw_tag);
     if (expand_self_closing) {
@@ -371,8 +547,8 @@ std::string data_validations_opening_with_count(
             --slash;
         }
         if (tag[slash] != '/') {
-            throw FastXlsxError(
-                "worksheet data validation rewrite expected a self-closing container");
+            throw FastXlsxError("worksheet " + std::string(container_label)
+                + " rewrite expected a self-closing container");
         }
         tag.erase(slash, 1);
     }
@@ -386,8 +562,8 @@ std::string data_validations_opening_with_count(
         tag.replace(value_offset, current->size(), count_text);
     } else {
         if (tag.size() < 2 || tag.back() != '>') {
-            throw FastXlsxError(
-                "worksheet data validation container has an invalid opening tag");
+            throw FastXlsxError("worksheet " + std::string(container_label)
+                + " container has an invalid opening tag");
         }
         tag.insert(tag.size() - 1, " count=\"" + count_text + "\"");
     }
@@ -457,6 +633,27 @@ std::string expand_self_closing_tag(std::string_view raw_tag)
 std::string serialize_worksheet_auto_filter(CellRange range)
 {
     std::string xml = "<autoFilter ref=\"";
+    xml += range_reference(range);
+    xml += "\"/>";
+    return xml;
+}
+
+void validate_merged_cell_range(CellRange range)
+{
+    (void)range_reference(range);
+    if (range.first_row == range.last_row
+        && range.first_column == range.last_column) {
+        throw FastXlsxError("merged range must include more than one cell");
+    }
+}
+
+std::string serialize_worksheet_merged_cell(
+    CellRange range, std::string_view element_prefix)
+{
+    validate_merged_cell_range(range);
+    std::string xml = "<";
+    xml += element_prefix;
+    xml += "mergeCell ref=\"";
     xml += range_reference(range);
     xml += "\"/>";
     return xml;
@@ -982,6 +1179,317 @@ WorksheetAutoFilterRewritePlan plan_worksheet_auto_filter_rewrite(
         first_after_auto_filter_offset.value_or(worksheet_end_offset)};
 }
 
+std::optional<WorksheetMergedCellRewritePlan>
+plan_worksheet_merged_cell_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    CellRange range,
+    WorksheetMergedCellRewriteOperation operation)
+{
+    validate_merged_cell_range(range);
+    const A1Range target = a1_range_from_cell_range(range);
+
+    bool saw_sheet_data_end = false;
+    bool saw_worksheet_start = false;
+    bool saw_worksheet_end = false;
+    bool saw_merge_cells = false;
+    bool merge_cells_self_closing = false;
+    int last_suffix_rank = 0;
+    std::vector<std::string> metadata_stack;
+    std::vector<ExistingMergedCell> existing_cells;
+    std::optional<std::uint64_t> declared_count;
+    std::optional<std::uint64_t> first_after_merged_cells_offset;
+    std::optional<std::size_t> target_index;
+    std::optional<A1Range> open_merge_cell_range;
+    std::string worksheet_element_prefix;
+    std::string merge_cells_element_prefix;
+    std::string open_merge_cell_element_prefix;
+    std::uint64_t open_merge_cell_offset = 0;
+    std::uint64_t merge_cells_start_offset = 0;
+    std::uint64_t merge_cells_end_offset = 0;
+    std::uint64_t merge_cells_close_offset = 0;
+    std::uint64_t worksheet_end_offset = 0;
+    std::uint64_t child_count = 0;
+
+    const auto record_merged_cell = [&](const A1Range& existing,
+                                        std::uint64_t source_offset,
+                                        std::uint64_t source_end_offset) {
+        existing_cells.push_back(
+            ExistingMergedCell {existing, source_offset, source_end_offset});
+    };
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::WorksheetStart) {
+                if (saw_worksheet_start) {
+                    throw FastXlsxError(
+                        "worksheet merged-cell edit encountered duplicate worksheet roots");
+                }
+                saw_worksheet_start = true;
+                worksheet_element_prefix =
+                    xml_element_prefix(event.raw_xml, "worksheet");
+                return;
+            }
+            if (event.kind == WorksheetEventKind::SheetDataEnd) {
+                saw_sheet_data_end = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                if (!event.self_closing) {
+                    saw_worksheet_end = true;
+                    worksheet_end_offset = event.raw_xml_offset;
+                }
+                return;
+            }
+            if (event.kind != WorksheetEventKind::Metadata) {
+                const bool inside_merge_cells = !metadata_stack.empty()
+                    && metadata_stack.front() == "mergeCells";
+                if (!inside_merge_cells) {
+                    return;
+                }
+                if (event.kind == WorksheetEventKind::RawText) {
+                    if (!std::all_of(event.raw_xml.begin(), event.raw_xml.end(),
+                            [](char character) { return is_xml_space(character); })) {
+                        throw FastXlsxError(
+                            "worksheet merged-cell metadata contains non-whitespace text");
+                    }
+                    return;
+                }
+                if (event.kind == WorksheetEventKind::Comment
+                    || event.kind == WorksheetEventKind::ProcessingInstruction) {
+                    return;
+                }
+                throw FastXlsxError(
+                    "worksheet merged-cell metadata contains unsupported non-element content");
+            }
+
+            const bool closing = is_closing_tag(event.raw_xml);
+            if (closing) {
+                if (metadata_stack.empty() || metadata_stack.back() != event.element_name) {
+                    throw FastXlsxError(
+                        "worksheet merged-cell metadata contains mismatched element nesting");
+                }
+                if (event.element_name == "mergeCell") {
+                    if (metadata_stack.size() != 2
+                        || metadata_stack.front() != "mergeCells"
+                        || !open_merge_cell_range.has_value()) {
+                        throw FastXlsxError(
+                            "worksheet mergeCell appears outside the mergeCells container");
+                    }
+                    if (xml_element_prefix(event.raw_xml, "mergeCell")
+                        != open_merge_cell_element_prefix) {
+                        throw FastXlsxError(
+                            "worksheet mergeCell opening and closing QName prefixes differ");
+                    }
+                    record_merged_cell(*open_merge_cell_range,
+                        open_merge_cell_offset, event_end_offset(event));
+                    open_merge_cell_range.reset();
+                    open_merge_cell_element_prefix.clear();
+                } else if (event.element_name == "mergeCells") {
+                    if (metadata_stack.size() != 1 || !saw_merge_cells) {
+                        throw FastXlsxError(
+                            "worksheet contains ambiguous mergeCells metadata");
+                    }
+                    if (xml_element_prefix(event.raw_xml, "mergeCells")
+                        != merge_cells_element_prefix) {
+                        throw FastXlsxError(
+                            "worksheet mergeCells opening and closing QName prefixes differ");
+                    }
+                    if (declared_count.has_value() && *declared_count != child_count) {
+                        throw FastXlsxError(
+                            "worksheet merged-cell count does not match its direct children");
+                    }
+                    merge_cells_close_offset = event.raw_xml_offset;
+                    merge_cells_end_offset = event_end_offset(event);
+                }
+                metadata_stack.pop_back();
+                return;
+            }
+
+            const bool top_level = metadata_stack.empty();
+            const bool direct_merge_cell_child = metadata_stack.size() == 1
+                && metadata_stack.front() == "mergeCells";
+            if (top_level && saw_sheet_data_end) {
+                const std::optional<int> rank =
+                    worksheet_suffix_schema_rank(event.element_name);
+                if (!rank.has_value()) {
+                    throw FastXlsxError(
+                        "worksheet contains top-level suffix metadata whose position relative "
+                        "to merged cells is unsupported");
+                }
+                if (*rank < last_suffix_rank) {
+                    throw FastXlsxError(
+                        "worksheet top-level suffix metadata is not in schema order");
+                }
+                last_suffix_rank = *rank;
+                if (*rank > merged_cells_schema_rank
+                    && !first_after_merged_cells_offset.has_value()) {
+                    first_after_merged_cells_offset = event.raw_xml_offset;
+                }
+                if (event.element_name == "mergeCells") {
+                    if (saw_merge_cells) {
+                        throw FastXlsxError(
+                            "worksheet contains duplicate mergeCells containers");
+                    }
+                    saw_merge_cells = true;
+                    merge_cells_start_offset = event.raw_xml_offset;
+                    merge_cells_element_prefix =
+                        xml_element_prefix(event.raw_xml, "mergeCells");
+                    if (const std::optional<std::string_view> count =
+                            attribute_value(event.raw_xml, "count")) {
+                        declared_count = parse_unsigned_decimal(*count);
+                        if (!declared_count.has_value()) {
+                            throw FastXlsxError(
+                                "worksheet merged-cell count is not an unsigned integer");
+                        }
+                    }
+                    if (event.self_closing) {
+                        merge_cells_self_closing = true;
+                        merge_cells_end_offset = event_end_offset(event);
+                        if (declared_count.has_value() && *declared_count != 0) {
+                            throw FastXlsxError(
+                                "self-closing mergeCells container must have count zero");
+                        }
+                    }
+                }
+            } else if (top_level && event.element_name == "mergeCells") {
+                throw FastXlsxError(
+                    "worksheet merged-cell metadata appears before sheetData");
+            } else if (!top_level && event.element_name == "mergeCells") {
+                throw FastXlsxError(
+                    "worksheet mergeCells metadata is nested below another element");
+            }
+
+            if (direct_merge_cell_child) {
+                if (event.element_name != "mergeCell") {
+                    throw FastXlsxError(
+                        "mergeCells container has an unsupported child element");
+                }
+                const std::string child_element_prefix =
+                    xml_element_prefix(event.raw_xml, "mergeCell");
+                if (child_element_prefix != merge_cells_element_prefix) {
+                    throw FastXlsxError(
+                        "worksheet mergeCell QName prefix differs from its container");
+                }
+                const std::optional<std::string_view> reference =
+                    attribute_value(event.raw_xml, "ref");
+                if (!reference.has_value() || reference->empty()) {
+                    throw FastXlsxError("existing worksheet mergeCell is missing its ref");
+                }
+                const std::optional<A1Range> existing = parse_a1_range(*reference);
+                if (!existing.has_value() || a1_range_is_single_cell(*existing)) {
+                    throw FastXlsxError(
+                        "existing worksheet mergeCell ref is not a valid multi-cell A1 range");
+                }
+                if (child_count == std::numeric_limits<std::uint64_t>::max()) {
+                    throw FastXlsxError("worksheet merged-cell count exceeds supported range");
+                }
+                ++child_count;
+                if (event.self_closing) {
+                    record_merged_cell(
+                        *existing, event.raw_xml_offset, event_end_offset(event));
+                } else {
+                    open_merge_cell_range = existing;
+                    open_merge_cell_element_prefix = child_element_prefix;
+                    open_merge_cell_offset = event.raw_xml_offset;
+                }
+            } else if (!top_level && !metadata_stack.empty()
+                && metadata_stack.back() == "mergeCell") {
+                throw FastXlsxError(
+                    "worksheet mergeCell must not contain child elements");
+            }
+
+            if (!event.self_closing) {
+                metadata_stack.emplace_back(event.element_name);
+            }
+        });
+
+    if (!metadata_stack.empty() || open_merge_cell_range.has_value()) {
+        throw FastXlsxError("worksheet merged-cell metadata ended inside an open element");
+    }
+    if (!saw_worksheet_start || !saw_sheet_data_end || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "merged-cell edit requires a worksheet root and closed sheetData");
+    }
+
+    audit_existing_merged_cell_overlaps(existing_cells);
+    for (std::size_t index = 0; index < existing_cells.size(); ++index) {
+        const A1Range& existing = existing_cells[index].range;
+        if (!a1_ranges_overlap(existing, target)) {
+            continue;
+        }
+        if (operation == WorksheetMergedCellRewriteOperation::Merge) {
+            throw FastXlsxError(
+                "requested merged-cell range overlaps an existing merged range");
+        }
+        if (!a1_ranges_equal(existing, target)) {
+            throw FastXlsxError(
+                "requested unmerge range partially overlaps an existing merged range");
+        }
+        target_index = index;
+    }
+    if (!saw_merge_cells) {
+        if (operation == WorksheetMergedCellRewriteOperation::Unmerge) {
+            return std::nullopt;
+        }
+        const std::uint64_t insertion_offset =
+            first_after_merged_cells_offset.value_or(worksheet_end_offset);
+        return WorksheetMergedCellRewritePlan {
+            WorksheetMergedCellRewritePlan::Action::InsertContainerBefore,
+            insertion_offset,
+            insertion_offset,
+            0,
+            1,
+            worksheet_element_prefix};
+    }
+    if (merge_cells_self_closing) {
+        if (operation == WorksheetMergedCellRewriteOperation::Unmerge) {
+            return std::nullopt;
+        }
+        return WorksheetMergedCellRewritePlan {
+            WorksheetMergedCellRewritePlan::Action::ExpandSelfClosingContainer,
+            merge_cells_start_offset,
+            merge_cells_end_offset,
+            merge_cells_start_offset,
+            1,
+            merge_cells_element_prefix};
+    }
+    if (merge_cells_close_offset == 0 || merge_cells_end_offset == 0) {
+        throw FastXlsxError("worksheet mergeCells container has no closing boundary");
+    }
+    if (operation == WorksheetMergedCellRewriteOperation::Merge) {
+        if (child_count == std::numeric_limits<std::uint64_t>::max()) {
+            throw FastXlsxError("worksheet merged-cell count exceeds supported range");
+        }
+        return WorksheetMergedCellRewritePlan {
+            WorksheetMergedCellRewritePlan::Action::AppendBeforeContainerClose,
+            merge_cells_close_offset,
+            merge_cells_close_offset,
+            merge_cells_start_offset,
+            child_count + 1U,
+            merge_cells_element_prefix};
+    }
+    if (!target_index.has_value()) {
+        return std::nullopt;
+    }
+    if (child_count == 1) {
+        return WorksheetMergedCellRewritePlan {
+            WorksheetMergedCellRewritePlan::Action::RemoveContainer,
+            merge_cells_start_offset,
+            merge_cells_end_offset,
+            merge_cells_start_offset,
+            0,
+            merge_cells_element_prefix};
+    }
+    const ExistingMergedCell& target_cell = existing_cells[*target_index];
+    return WorksheetMergedCellRewritePlan {
+        WorksheetMergedCellRewritePlan::Action::RemoveChild,
+        target_cell.source_offset,
+        target_cell.source_end_offset,
+        merge_cells_start_offset,
+        child_count - 1U,
+        merge_cells_element_prefix};
+}
+
 void write_worksheet_hyperlink_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view hyperlink_xml,
@@ -1060,8 +1568,8 @@ void write_worksheet_data_validation_rewrite(
                 && event.raw_xml_offset == plan.container_start_offset
                 && event.kind == WorksheetEventKind::Metadata
                 && !is_closing_tag(event.raw_xml)) {
-                write_bytes(output, data_validations_opening_with_count(
-                    event.raw_xml, plan.new_count, false));
+                write_bytes(output, metadata_container_opening_with_count(
+                    event.raw_xml, plan.new_count, false, "data validation"));
                 return;
             }
 
@@ -1082,8 +1590,8 @@ void write_worksheet_data_validation_rewrite(
                 write_bytes(output, event.raw_xml);
                 break;
             case WorksheetDataValidationRewritePlan::Action::ExpandSelfClosingContainer:
-                write_bytes(output, data_validations_opening_with_count(
-                    event.raw_xml, plan.new_count, true));
+                write_bytes(output, metadata_container_opening_with_count(
+                    event.raw_xml, plan.new_count, true, "data validation"));
                 write_bytes(output, data_validation_xml);
                 write_bytes(output, "</dataValidations>");
                 break;
@@ -1140,6 +1648,94 @@ void write_worksheet_auto_filter_rewrite(
     if (!output) {
         throw FastXlsxError(
             "failed to finalize staged worksheet auto-filter metadata file");
+    }
+}
+
+void write_worksheet_merged_cell_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view merge_cell_xml,
+    const WorksheetMergedCellRewritePlan& plan,
+    const std::filesystem::path& output_path)
+{
+    std::ofstream output(output_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError("failed to create staged worksheet merged-cell metadata file");
+    }
+
+    bool applied = false;
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (is_synthetic_self_closing_end(event)) {
+                return;
+            }
+
+            const bool rewrites_container_count =
+                plan.action
+                    == WorksheetMergedCellRewritePlan::Action::AppendBeforeContainerClose
+                || plan.action == WorksheetMergedCellRewritePlan::Action::RemoveChild;
+            if (rewrites_container_count
+                && event.raw_xml_offset == plan.container_start_offset
+                && event.kind == WorksheetEventKind::Metadata
+                && !is_closing_tag(event.raw_xml)) {
+                write_bytes(output, metadata_container_opening_with_count(
+                    event.raw_xml, plan.new_count, false, "merged-cell"));
+                return;
+            }
+
+            const bool removes_source_range =
+                plan.action == WorksheetMergedCellRewritePlan::Action::RemoveChild
+                || plan.action == WorksheetMergedCellRewritePlan::Action::RemoveContainer;
+            if (removes_source_range
+                && event.raw_xml_offset >= plan.source_offset
+                && event.raw_xml_offset < plan.source_end_offset) {
+                applied = true;
+                return;
+            }
+
+            if (applied || event.raw_xml_offset != plan.source_offset) {
+                write_bytes(output, event.raw_xml);
+                return;
+            }
+
+            switch (plan.action) {
+            case WorksheetMergedCellRewritePlan::Action::InsertContainerBefore:
+                write_bytes(output, "<");
+                write_bytes(output, plan.element_prefix);
+                write_bytes(output, "mergeCells count=\"1\">");
+                write_bytes(output, merge_cell_xml);
+                write_bytes(output, "</");
+                write_bytes(output, plan.element_prefix);
+                write_bytes(output, "mergeCells>");
+                write_bytes(output, event.raw_xml);
+                break;
+            case WorksheetMergedCellRewritePlan::Action::AppendBeforeContainerClose:
+                write_bytes(output, merge_cell_xml);
+                write_bytes(output, event.raw_xml);
+                break;
+            case WorksheetMergedCellRewritePlan::Action::ExpandSelfClosingContainer:
+                write_bytes(output, metadata_container_opening_with_count(
+                    event.raw_xml, plan.new_count, true, "merged-cell"));
+                write_bytes(output, merge_cell_xml);
+                write_bytes(output, "</");
+                write_bytes(output, plan.element_prefix);
+                write_bytes(output, "mergeCells>");
+                break;
+            case WorksheetMergedCellRewritePlan::Action::RemoveChild:
+            case WorksheetMergedCellRewritePlan::Action::RemoveContainer:
+                throw FastXlsxError(
+                    "worksheet merged-cell removal did not reach its planned source range");
+            }
+            applied = true;
+        });
+
+    if (!applied) {
+        throw FastXlsxError(
+            "worksheet merged-cell rewrite did not reach its planned boundary");
+    }
+    output.flush();
+    if (!output) {
+        throw FastXlsxError(
+            "failed to finalize staged worksheet merged-cell metadata file");
     }
 }
 

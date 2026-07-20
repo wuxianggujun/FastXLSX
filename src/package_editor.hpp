@@ -20,6 +20,8 @@
 
 namespace fastxlsx::detail {
 
+enum class WorksheetMergedCellRewriteOperation;
+
 // Current internal sheetData patch helper uses chunk-source input and
 // file-backed staged output, but keeps the replacement payload guard until a
 // true streaming worksheet transformer exists. Source/planned worksheet input is
@@ -577,6 +579,13 @@ public:
     // false only when a clear request finds no current autoFilter to remove.
     [[nodiscard]] bool rewrite_auto_filter_by_name(
         std::string_view sheet_name, std::optional<CellRange> range);
+    // Adds or removes one exact worksheet-root mergeCell range. The bounded
+    // rewrite preserves worksheet relationships, content types, and calc
+    // metadata. Unmerge returns false only for an absent disjoint range.
+    [[nodiscard]] bool rewrite_merged_cell_by_name(
+        std::string_view sheet_name,
+        CellRange range,
+        WorksheetMergedCellRewriteOperation operation);
     // Internal by-name staged-output variant for worksheet replacement. Resolves
     // the sheet name through the same planned/source workbook catalog path as
     // the chunk-source by-name helper, then validates and audits the provided

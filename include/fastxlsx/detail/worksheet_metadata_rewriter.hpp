@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace fastxlsx::detail {
@@ -41,6 +42,28 @@ struct WorksheetAutoFilterRewritePlan {
     bool has_existing_auto_filter = false;
     std::uint64_t source_offset = 0;
     std::uint64_t source_end_offset = 0;
+};
+
+enum class WorksheetMergedCellRewriteOperation {
+    Merge,
+    Unmerge,
+};
+
+struct WorksheetMergedCellRewritePlan {
+    enum class Action {
+        InsertContainerBefore,
+        AppendBeforeContainerClose,
+        ExpandSelfClosingContainer,
+        RemoveChild,
+        RemoveContainer,
+    };
+
+    Action action = Action::InsertContainerBefore;
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+    std::uint64_t container_start_offset = 0;
+    std::uint64_t new_count = 1;
+    std::string element_prefix;
 };
 
 enum class WorksheetInternalHyperlinkRewriteAction {
@@ -112,6 +135,21 @@ void write_worksheet_auto_filter_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view auto_filter_xml,
     const WorksheetAutoFilterRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Audits mergeCells metadata and plans one strict merge/unmerge mutation.
+/// Unmerge returns no plan when the exact range is absent and disjoint.
+[[nodiscard]] std::optional<WorksheetMergedCellRewritePlan>
+plan_worksheet_merged_cell_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    CellRange range,
+    WorksheetMergedCellRewriteOperation operation);
+
+/// Streams one planned mergeCells mutation to a file-backed worksheet part.
+void write_worksheet_merged_cell_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view merge_cell_xml,
+    const WorksheetMergedCellRewritePlan& plan,
     const std::filesystem::path& output_path);
 
 } // namespace fastxlsx::detail

@@ -83,6 +83,9 @@ struct WorkbookEditor::Impl {
             std::less<>>;
     using PendingAutoFilterEdits =
         std::map<std::string, std::optional<CellRange>, std::less<>>;
+    using FreezePaneSplit = std::pair<std::uint32_t, std::uint32_t>;
+    using PendingFreezePaneEdits =
+        std::map<std::string, std::optional<FreezePaneSplit>, std::less<>>;
     struct PendingMergedCellEditCounts {
         std::size_t addition_count = 0;
         std::size_t removal_count = 0;
@@ -110,6 +113,7 @@ struct WorkbookEditor::Impl {
     std::map<std::string, std::size_t, std::less<>> pending_external_hyperlink_counts;
     std::map<std::string, std::size_t, std::less<>> pending_data_validation_counts;
     PendingAutoFilterEdits pending_auto_filter_edits;
+    PendingFreezePaneEdits pending_freeze_pane_edits;
     PendingMergedCellEdits pending_merged_cell_edits;
     std::optional<std::string> last_public_edit_error;
     detail::PackageWriterTelemetry* package_writer_telemetry = nullptr;
@@ -392,6 +396,33 @@ struct WorkbookEditor::Impl {
         swap(pending_auto_filter_edits, *updated);
     }
 
+    [[nodiscard]] std::optional<PendingFreezePaneEdits>
+    stage_pending_freeze_pane_edits_move(
+        std::string_view old_name, std::string_view new_name) const
+    {
+        const auto source = pending_freeze_pane_edits.find(old_name);
+        if (source == pending_freeze_pane_edits.end()) {
+            return std::nullopt;
+        }
+        auto updated = pending_freeze_pane_edits;
+        const auto updated_source = updated.find(old_name);
+        const std::optional<FreezePaneSplit> split = updated_source->second;
+        updated.erase(updated_source);
+        updated[std::string(new_name)] = split;
+        return updated;
+    }
+
+    void commit_pending_freeze_pane_edits_move(
+        std::optional<PendingFreezePaneEdits>& updated) noexcept
+    {
+        if (!updated.has_value()) {
+            return;
+        }
+        static_assert(std::is_nothrow_swappable_v<PendingFreezePaneEdits>);
+        using std::swap;
+        swap(pending_freeze_pane_edits, *updated);
+    }
+
     [[nodiscard]] std::optional<PendingMergedCellEdits>
     stage_pending_merged_cell_edits_move(
         std::string_view old_name, std::string_view new_name) const
@@ -470,6 +501,10 @@ struct WorkbookEditor::Impl {
                 pending_auto_filter_edits.find(current_name);
             const bool auto_filter_changed =
                 pending_auto_filter != pending_auto_filter_edits.end();
+            const auto pending_freeze_panes =
+                pending_freeze_pane_edits.find(current_name);
+            const bool freeze_panes_changed =
+                pending_freeze_panes != pending_freeze_pane_edits.end();
             const auto pending_merged_cells =
                 pending_merged_cell_edits.find(current_name);
             const bool merged_cells_changed =
@@ -481,6 +516,7 @@ struct WorkbookEditor::Impl {
                 && !external_hyperlinks_added
                 && !data_validations_added
                 && !auto_filter_changed
+                && !freeze_panes_changed
                 && !merged_cells_changed
                 && !materialized_dirty) {
                 continue;
@@ -505,6 +541,11 @@ struct WorkbookEditor::Impl {
             summary.auto_filter_changed = auto_filter_changed;
             if (auto_filter_changed) {
                 summary.auto_filter_range = pending_auto_filter->second;
+            }
+            summary.freeze_panes_changed = freeze_panes_changed;
+            if (freeze_panes_changed && pending_freeze_panes->second.has_value()) {
+                summary.frozen_row_count = pending_freeze_panes->second->first;
+                summary.frozen_column_count = pending_freeze_panes->second->second;
             }
             if (merged_cells_changed) {
                 summary.merged_cell_addition_count =

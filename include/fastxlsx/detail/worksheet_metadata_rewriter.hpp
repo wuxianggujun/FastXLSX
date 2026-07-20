@@ -44,6 +44,28 @@ struct WorksheetAutoFilterRewritePlan {
     std::uint64_t source_end_offset = 0;
 };
 
+enum class WorksheetFreezePaneRewriteOperation {
+    Set,
+    Clear,
+};
+
+struct WorksheetFreezePaneRewritePlan {
+    enum class Action {
+        InsertSheetViewsBefore,
+        ExpandSheetViewsContainer,
+        AppendPrimarySheetView,
+        ExpandPrimarySheetView,
+        InsertPaneBefore,
+        ReplacePane,
+        RemovePane,
+    };
+
+    Action action = Action::InsertSheetViewsBefore;
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+    std::string element_prefix;
+};
+
 enum class WorksheetMergedCellRewriteOperation {
     Merge,
     Unmerge,
@@ -135,6 +157,22 @@ void write_worksheet_auto_filter_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view auto_filter_xml,
     const WorksheetAutoFilterRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Audits primary sheet-view metadata and plans one frozen-pane set/clear.
+/// Clear returns no plan when workbookViewId=0 has no direct frozen pane.
+[[nodiscard]] std::optional<WorksheetFreezePaneRewritePlan>
+plan_worksheet_freeze_pane_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::uint32_t row_split,
+    std::uint32_t column_split,
+    WorksheetFreezePaneRewriteOperation operation);
+
+/// Streams one planned primary sheet-view frozen-pane mutation.
+void write_worksheet_freeze_pane_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view pane_xml,
+    const WorksheetFreezePaneRewritePlan& plan,
     const std::filesystem::path& output_path);
 
 /// Audits mergeCells metadata and plans one strict merge/unmerge mutation.

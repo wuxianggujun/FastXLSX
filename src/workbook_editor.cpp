@@ -816,6 +816,87 @@ void WorkbookEditor::clear_auto_filter(std::string_view sheet_name)
     }
 }
 
+void WorkbookEditor::set_freeze_panes(
+    std::string_view sheet_name,
+    std::uint32_t row_split,
+    std::uint32_t column_split)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+
+        auto updated_edits = impl_->pending_freeze_pane_edits;
+        const bool clearing = row_split == 0 && column_split == 0;
+        if (clearing) {
+            updated_edits[sheet_name_key] = std::nullopt;
+        } else {
+            updated_edits[sheet_name_key] =
+                WorkbookEditor::Impl::FreezePaneSplit {row_split, column_split};
+        }
+        const bool changed = impl_->editor.rewrite_freeze_panes_by_name(
+            sheet_name_key, row_split, column_split,
+            clearing ? detail::WorksheetFreezePaneRewriteOperation::Clear
+                     : detail::WorksheetFreezePaneRewriteOperation::Set);
+        if (changed) {
+            static_assert(std::is_nothrow_swappable_v<
+                WorkbookEditor::Impl::PendingFreezePaneEdits>);
+            using std::swap;
+            swap(impl_->pending_freeze_pane_edits, updated_edits);
+            ++impl_->pending_public_edit_count;
+        }
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::set_freeze_panes() failed for '" + sheet_name_key
+            + "' with split (" + std::to_string(row_split) + ", "
+            + std::to_string(column_split) + "): " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::clear_freeze_panes(std::string_view sheet_name)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+
+        auto updated_edits = impl_->pending_freeze_pane_edits;
+        updated_edits[sheet_name_key] = std::nullopt;
+        const bool changed = impl_->editor.rewrite_freeze_panes_by_name(
+            sheet_name_key, 0, 0,
+            detail::WorksheetFreezePaneRewriteOperation::Clear);
+        if (changed) {
+            static_assert(std::is_nothrow_swappable_v<
+                WorkbookEditor::Impl::PendingFreezePaneEdits>);
+            using std::swap;
+            swap(impl_->pending_freeze_pane_edits, updated_edits);
+            ++impl_->pending_public_edit_count;
+        }
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::clear_freeze_panes() failed for '" + sheet_name_key
+            + "': " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
 void WorkbookEditor::merge_cells(
     std::string_view sheet_name, CellRange range)
 {
@@ -1011,6 +1092,7 @@ void WorkbookEditor::remove_worksheet(std::string_view name)
             || !impl_->pending_external_hyperlink_counts.empty()
             || !impl_->pending_data_validation_counts.empty()
             || !impl_->pending_auto_filter_edits.empty()
+            || !impl_->pending_freeze_pane_edits.empty()
             || !impl_->pending_merged_cell_edits.empty()) {
             throw FastXlsxError(
                 "worksheet removal requires no queued worksheet payload edits");
@@ -1097,6 +1179,10 @@ void WorkbookEditor::rename_sheet(
             updated_auto_filter_edits =
                 impl_->stage_pending_auto_filter_edits_move(
                     old_name_key, new_name_key);
+        std::optional<WorkbookEditor::Impl::PendingFreezePaneEdits>
+            updated_freeze_pane_edits =
+                impl_->stage_pending_freeze_pane_edits_move(
+                    old_name_key, new_name_key);
         std::optional<WorkbookEditor::Impl::PendingMergedCellEdits>
             updated_merged_cell_edits =
                 impl_->stage_pending_merged_cell_edits_move(
@@ -1132,6 +1218,7 @@ void WorkbookEditor::rename_sheet(
         impl_->commit_pending_data_validation_counts_move(
             updated_data_validation_counts);
         impl_->commit_pending_auto_filter_edits_move(updated_auto_filter_edits);
+        impl_->commit_pending_freeze_pane_edits_move(updated_freeze_pane_edits);
         impl_->commit_pending_merged_cell_edits_move(updated_merged_cell_edits);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();

@@ -17,5 +17,6 @@ Public Doxygen 必须写清：
 - Data validation 必须写清 shared owning rule、single-/multi-range `sqref`、formula1/formula2 shape、prompt/error escaping、container/count/schema-order guardrail，以及不创建关系、不求值/请求重算、不随 structural mutation 同步的边界；不能扩大为完整 validation 对象模型。
 - Auto-filter 必须区分 worksheet-root element 与 table-local filter part；写清 whole-element set/clear、旧 criteria/sort metadata 丢弃、clear absent no-op、single range、existing ref/duplicate/schema guardrail、optional-range diagnostic，以及不创建关系/content type/calc metadata、不随 structural mutation 同步的边界；不能扩大为完整 filter 对象模型。
 - Merged-cell 必须写清 multi-cell `CellRange`、merge duplicate/overlap fail、unmerge exact-only、partial overlap fail、absent disjoint no-op，以及 container/count/direct-child/ref/schema guardrail；同时声明 metadata-only、保留非左上角 cell record/value/style/formula、relationships、content types、tables、`calcPr`/`calcChain`，且不随 structural mutation 同步，不能扩大为完整 merged-cell 对象模型。
+- Freeze-pane 必须写清 primary `workbookViewId="0"` direct pane ownership、row/column frozen count、`(0,0)` clear、单轴 active pane、topLeftCell 上界、missing/self-closing view expansion，以及 split/frozenSplit/pivotSelection/失效 selection fail；同时声明保留其他 view、合法 selection、cells、relationships、content types、tables 与 calc metadata，不能扩大为完整 worksheet view 对象模型。
 
 禁止把 internal 类型、preservation evidence、公式文本或窄图片能力扩大为 public/full support。

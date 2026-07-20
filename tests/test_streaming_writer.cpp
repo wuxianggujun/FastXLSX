@@ -834,6 +834,51 @@ void test_streaming_writer_phase3_metadata_structure()
         "phase3 metadata suffix ordering mismatch");
 }
 
+void test_streaming_writer_freeze_pane_axes_clear_and_boundaries()
+{
+    const auto output_path = fastxlsx::test::artifact_dir()
+        / "fastxlsx-streaming-freeze-pane-axes.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto row_only = workbook.add_worksheet("Rows");
+    row_only.freeze_panes(3, 0);
+    row_only.append_row({fastxlsx::CellView::text("row")});
+
+    auto column_only = workbook.add_worksheet("Columns");
+    column_only.freeze_panes(0, 2);
+    column_only.append_row({fastxlsx::CellView::text("column")});
+
+    auto cleared = workbook.add_worksheet("Cleared");
+    cleared.freeze_panes(1, 1);
+    cleared.freeze_panes(0, 0);
+    cleared.append_row({fastxlsx::CellView::text("cleared")});
+
+    auto maximum = workbook.add_worksheet("Maximum");
+    maximum.freeze_panes(1048575U, 16383U);
+    maximum.append_row({fastxlsx::CellView::text("maximum")});
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check_contains(entries.at("xl/worksheets/sheet1.xml"),
+        R"(<pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/>)",
+        "row-only freeze pane should use bottomLeft without xSplit");
+    check(entries.at("xl/worksheets/sheet1.xml").find("xSplit=")
+            == std::string::npos,
+        "row-only freeze pane should omit xSplit");
+    check_contains(entries.at("xl/worksheets/sheet2.xml"),
+        R"(<pane xSplit="2" topLeftCell="C1" activePane="topRight" state="frozen"/>)",
+        "column-only freeze pane should use topRight without ySplit");
+    check(entries.at("xl/worksheets/sheet2.xml").find("ySplit=")
+            == std::string::npos,
+        "column-only freeze pane should omit ySplit");
+    check(entries.at("xl/worksheets/sheet3.xml").find("<sheetViews>")
+            == std::string::npos,
+        "zero/zero freeze_panes should clear the pending pane");
+    check_contains(entries.at("xl/worksheets/sheet4.xml"),
+        R"(<pane xSplit="16383" ySplit="1048575" topLeftCell="XFD1048576" activePane="bottomRight" state="frozen"/>)",
+        "maximum legal split should retain one scrollable cell");
+}
+
 void test_streaming_writer_file_backed_body_round_trip()
 {
     const auto output_path =
@@ -1158,11 +1203,11 @@ void test_streaming_writer_invalid_metadata_and_rows()
         "set_column_width should reject a negative infinite width");
 
     check_fastxlsx_error(
-        [&sheet] { sheet.freeze_panes(1048577, 0); },
-        "freeze_panes should reject a row split beyond Excel's limit");
+        [&sheet] { sheet.freeze_panes(1048576, 0); },
+        "freeze_panes should reject a split that freezes every worksheet row");
     check_fastxlsx_error(
-        [&sheet] { sheet.freeze_panes(0, 16385); },
-        "freeze_panes should reject a column split beyond Excel's limit");
+        [&sheet] { sheet.freeze_panes(0, 16384); },
+        "freeze_panes should reject a split that freezes every worksheet column");
 
     check_fastxlsx_error(
         [&sheet] {
@@ -1290,6 +1335,7 @@ int main()
         test_streaming_writer_max_row_boundary_with_test_hook();
         test_streaming_writer_failed_append_preserves_state();
         test_streaming_writer_phase3_metadata_structure();
+        test_streaming_writer_freeze_pane_axes_clear_and_boundaries();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_invalid_ranges();
         test_streaming_writer_sheet_name_uniqueness();

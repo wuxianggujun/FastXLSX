@@ -837,11 +837,13 @@ public:
     ///
     /// The last call wins because the current worksheet model stores a single
     /// frozen pane setting. Split counts are zero-based counts of frozen rows and
-    /// columns; for example (1, 1) freezes the first row and first column.
+    /// columns; for example (1, 1) freezes the first row and first column. A
+    /// zero/zero split clears the current setting.
     /// This records worksheet metadata only and does not inspect or rewrite
     /// previously written row XML.
     ///
-    /// @throws FastXlsxError if either split exceeds Excel worksheet limits.
+    /// @throws FastXlsxError if either split leaves no valid scrollable pane
+    /// inside Excel worksheet limits.
     void freeze_panes(std::uint32_t row_split, std::uint32_t column_split);
 
     /// Records an auto-filter range.

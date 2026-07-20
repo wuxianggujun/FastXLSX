@@ -24,6 +24,8 @@ constexpr int auto_filter_schema_rank = 5;
 constexpr int merged_cells_schema_rank = 9;
 constexpr int data_validations_schema_rank = 12;
 constexpr int hyperlink_schema_rank = 13;
+constexpr std::uint32_t max_freeze_pane_row_split = 1048575U;
+constexpr std::uint32_t max_freeze_pane_column_split = 16383U;
 
 bool is_xml_space(char ch) noexcept
 {
@@ -410,6 +412,39 @@ std::optional<int> worksheet_suffix_schema_rank(std::string_view element_name)
     return found->second;
 }
 
+std::optional<int> worksheet_prefix_schema_rank(std::string_view element_name)
+{
+    static constexpr std::pair<std::string_view, int> ranks[] = {
+        {"sheetPr", 1},
+        {"dimension", 2},
+        {"sheetViews", 3},
+        {"sheetFormatPr", 4},
+        {"cols", 5},
+    };
+    const auto found = std::find_if(std::begin(ranks), std::end(ranks),
+        [element_name](const auto& entry) { return entry.first == element_name; });
+    if (found == std::end(ranks)) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
+std::optional<int> sheet_view_child_schema_rank(std::string_view element_name)
+{
+    static constexpr std::pair<std::string_view, int> ranks[] = {
+        {"pane", 1},
+        {"selection", 2},
+        {"pivotSelection", 3},
+        {"extLst", 4},
+    };
+    const auto found = std::find_if(std::begin(ranks), std::end(ranks),
+        [element_name](const auto& entry) { return entry.first == element_name; });
+    if (found == std::end(ranks)) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
 std::string internal_hyperlink_xml(const WorksheetInternalHyperlinkRewrite& hyperlink)
 {
     std::string xml = "<hyperlink ref=\"";
@@ -534,6 +569,71 @@ std::optional<std::uint64_t> parse_unsigned_decimal(std::string_view value)
     return parsed;
 }
 
+void audit_existing_frozen_pane(std::string_view raw_tag)
+{
+    const std::optional<std::string_view> state = attribute_value(raw_tag, "state");
+    if (!state.has_value() || *state != "frozen") {
+        throw FastXlsxError(
+            "existing worksheet pane is not a supported frozen pane");
+    }
+
+    std::uint32_t row_split = 0;
+    std::uint32_t column_split = 0;
+    if (const std::optional<std::string_view> x_split =
+            attribute_value(raw_tag, "xSplit")) {
+        const std::optional<std::uint64_t> parsed = parse_unsigned_decimal(*x_split);
+        if (!parsed.has_value() || *parsed > max_freeze_pane_column_split) {
+            throw FastXlsxError(
+                "existing worksheet frozen pane has an invalid xSplit");
+        }
+        column_split = static_cast<std::uint32_t>(*parsed);
+    }
+    if (const std::optional<std::string_view> y_split =
+            attribute_value(raw_tag, "ySplit")) {
+        const std::optional<std::uint64_t> parsed = parse_unsigned_decimal(*y_split);
+        if (!parsed.has_value() || *parsed > max_freeze_pane_row_split) {
+            throw FastXlsxError(
+                "existing worksheet frozen pane has an invalid ySplit");
+        }
+        row_split = static_cast<std::uint32_t>(*parsed);
+    }
+    if (row_split == 0 && column_split == 0) {
+        throw FastXlsxError(
+            "existing worksheet frozen pane has no non-zero split");
+    }
+    if (const std::optional<std::string_view> top_left =
+            attribute_value(raw_tag, "topLeftCell")) {
+        if (!parse_a1_coordinate(*top_left).has_value()) {
+            throw FastXlsxError(
+                "existing worksheet frozen pane has an invalid topLeftCell");
+        }
+    }
+}
+
+bool selection_pane_is_preservable(
+    std::string_view pane,
+    std::uint32_t row_split,
+    std::uint32_t column_split,
+    WorksheetFreezePaneRewriteOperation operation)
+{
+    if (operation == WorksheetFreezePaneRewriteOperation::Clear) {
+        return false;
+    }
+    if (pane == "topLeft") {
+        return true;
+    }
+    if (pane == "topRight") {
+        return column_split != 0;
+    }
+    if (pane == "bottomLeft") {
+        return row_split != 0;
+    }
+    if (pane == "bottomRight") {
+        return row_split != 0 && column_split != 0;
+    }
+    return false;
+}
+
 std::string metadata_container_opening_with_count(
     std::string_view raw_tag,
     std::uint64_t count,
@@ -613,7 +713,8 @@ void write_bytes(std::ofstream& output, std::string_view bytes)
     }
 }
 
-std::string expand_self_closing_tag(std::string_view raw_tag)
+std::string expand_self_closing_metadata_tag(
+    std::string_view raw_tag, std::string_view metadata_label)
 {
     std::string opening(raw_tag);
     std::size_t slash = opening.size() - 2;
@@ -621,11 +722,16 @@ std::string expand_self_closing_tag(std::string_view raw_tag)
         --slash;
     }
     if (opening[slash] != '/') {
-        throw FastXlsxError(
-            "worksheet hyperlink rewrite expected a self-closing hyperlinks tag");
+        throw FastXlsxError("worksheet " + std::string(metadata_label)
+            + " rewrite expected a self-closing tag");
     }
     opening.erase(slash, 1);
     return opening;
+}
+
+std::string expand_self_closing_tag(std::string_view raw_tag)
+{
+    return expand_self_closing_metadata_tag(raw_tag, "hyperlink");
 }
 
 } // namespace
@@ -635,6 +741,52 @@ std::string serialize_worksheet_auto_filter(CellRange range)
     std::string xml = "<autoFilter ref=\"";
     xml += range_reference(range);
     xml += "\"/>";
+    return xml;
+}
+
+void validate_freeze_pane_split(
+    std::uint32_t row_split, std::uint32_t column_split)
+{
+    if (row_split > max_freeze_pane_row_split
+        || column_split > max_freeze_pane_column_split) {
+        throw FastXlsxError("invalid freeze pane split");
+    }
+}
+
+std::string serialize_worksheet_frozen_pane(
+    std::uint32_t row_split,
+    std::uint32_t column_split,
+    std::string_view element_prefix)
+{
+    validate_freeze_pane_split(row_split, column_split);
+    if (row_split == 0 && column_split == 0) {
+        return {};
+    }
+
+    std::string xml = "<";
+    xml += element_prefix;
+    xml += "pane";
+    if (column_split != 0) {
+        xml += " xSplit=\"";
+        append_unsigned_decimal(xml, column_split);
+        xml += "\"";
+    }
+    if (row_split != 0) {
+        xml += " ySplit=\"";
+        append_unsigned_decimal(xml, row_split);
+        xml += "\"";
+    }
+    xml += " topLeftCell=\"";
+    append_cell_reference(xml, row_split + 1U, column_split + 1U);
+    xml += "\" activePane=\"";
+    if (row_split != 0 && column_split != 0) {
+        xml += "bottomRight";
+    } else if (row_split != 0) {
+        xml += "bottomLeft";
+    } else {
+        xml += "topRight";
+    }
+    xml += "\" state=\"frozen\"/>";
     return xml;
 }
 
@@ -1179,6 +1331,380 @@ WorksheetAutoFilterRewritePlan plan_worksheet_auto_filter_rewrite(
         first_after_auto_filter_offset.value_or(worksheet_end_offset)};
 }
 
+std::optional<WorksheetFreezePaneRewritePlan>
+plan_worksheet_freeze_pane_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::uint32_t row_split,
+    std::uint32_t column_split,
+    WorksheetFreezePaneRewriteOperation operation)
+{
+    validate_freeze_pane_split(row_split, column_split);
+    if (operation == WorksheetFreezePaneRewriteOperation::Set
+        && row_split == 0 && column_split == 0) {
+        throw FastXlsxError("freeze-pane set requires a non-zero split");
+    }
+
+    bool saw_worksheet_start = false;
+    bool saw_sheet_data_start = false;
+    bool saw_worksheet_end = false;
+    bool saw_sheet_views = false;
+    bool sheet_views_self_closing = false;
+    bool saw_primary_sheet_view = false;
+    bool primary_sheet_view_self_closing = false;
+    bool inside_primary_sheet_view = false;
+    bool open_primary_pane = false;
+    int last_prefix_rank = 0;
+    int last_primary_child_rank = 0;
+    std::size_t primary_sheet_view_depth = 0;
+    std::vector<std::string> metadata_stack;
+    std::unordered_set<std::uint64_t> workbook_view_ids;
+    std::string worksheet_element_prefix;
+    std::string sheet_views_element_prefix;
+    std::string primary_sheet_view_element_prefix;
+    std::string primary_pane_element_prefix;
+    std::optional<std::uint64_t> first_after_sheet_views_offset;
+    std::optional<std::uint64_t> sheet_views_start_offset;
+    std::optional<std::uint64_t> sheet_views_end_offset;
+    std::optional<std::uint64_t> sheet_views_close_offset;
+    std::optional<std::uint64_t> primary_sheet_view_start_offset;
+    std::optional<std::uint64_t> primary_sheet_view_end_offset;
+    std::optional<std::uint64_t> primary_sheet_view_close_offset;
+    std::optional<std::uint64_t> first_primary_child_offset;
+    std::optional<std::uint64_t> primary_pane_start_offset;
+    std::optional<std::uint64_t> primary_pane_end_offset;
+    std::uint64_t worksheet_end_offset = 0;
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::WorksheetStart) {
+                if (saw_worksheet_start) {
+                    throw FastXlsxError(
+                        "freeze-pane edit encountered duplicate worksheet roots");
+                }
+                saw_worksheet_start = true;
+                worksheet_element_prefix =
+                    xml_element_prefix(event.raw_xml, "worksheet");
+                return;
+            }
+            if (event.kind == WorksheetEventKind::SheetDataStart) {
+                if (saw_sheet_data_start || !metadata_stack.empty()) {
+                    throw FastXlsxError(
+                        "freeze-pane edit encountered ambiguous sheetData metadata");
+                }
+                saw_sheet_data_start = true;
+                if (!first_after_sheet_views_offset.has_value()) {
+                    first_after_sheet_views_offset = event.raw_xml_offset;
+                }
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                if (!event.self_closing) {
+                    saw_worksheet_end = true;
+                    worksheet_end_offset = event.raw_xml_offset;
+                }
+                return;
+            }
+            if (event.kind != WorksheetEventKind::Metadata) {
+                const bool inside_sheet_views = !metadata_stack.empty()
+                    && metadata_stack.front() == "sheetViews";
+                if (!inside_sheet_views) {
+                    return;
+                }
+                if (event.kind == WorksheetEventKind::RawText) {
+                    if (!std::all_of(event.raw_xml.begin(), event.raw_xml.end(),
+                            [](char character) { return is_xml_space(character); })) {
+                        throw FastXlsxError(
+                            "worksheet sheetViews metadata contains non-whitespace text");
+                    }
+                    return;
+                }
+                if (event.kind == WorksheetEventKind::Comment
+                    || event.kind == WorksheetEventKind::ProcessingInstruction) {
+                    return;
+                }
+                throw FastXlsxError(
+                    "worksheet sheetViews metadata contains unsupported non-element content");
+            }
+
+            const bool closing = is_closing_tag(event.raw_xml);
+            if (closing) {
+                if (metadata_stack.empty() || metadata_stack.back() != event.element_name) {
+                    throw FastXlsxError(
+                        "worksheet sheetViews metadata contains mismatched element nesting");
+                }
+                if (event.element_name == "pane" && open_primary_pane) {
+                    if (!inside_primary_sheet_view
+                        || metadata_stack.size() != primary_sheet_view_depth + 1U
+                        || xml_element_prefix(event.raw_xml, "pane")
+                            != primary_pane_element_prefix) {
+                        throw FastXlsxError(
+                            "worksheet primary frozen pane has mismatched QName nesting");
+                    }
+                    primary_pane_end_offset = event_end_offset(event);
+                    open_primary_pane = false;
+                } else if (event.element_name == "sheetView"
+                    && inside_primary_sheet_view
+                    && metadata_stack.size() == primary_sheet_view_depth) {
+                    if (open_primary_pane
+                        || xml_element_prefix(event.raw_xml, "sheetView")
+                            != primary_sheet_view_element_prefix) {
+                        throw FastXlsxError(
+                            "worksheet primary sheetView has mismatched QName nesting");
+                    }
+                    primary_sheet_view_close_offset = event.raw_xml_offset;
+                    primary_sheet_view_end_offset = event_end_offset(event);
+                    inside_primary_sheet_view = false;
+                    primary_sheet_view_depth = 0;
+                } else if (event.element_name == "sheetViews") {
+                    if (metadata_stack.size() != 1U
+                        || xml_element_prefix(event.raw_xml, "sheetViews")
+                            != sheet_views_element_prefix) {
+                        throw FastXlsxError(
+                            "worksheet sheetViews container has mismatched QName nesting");
+                    }
+                    sheet_views_close_offset = event.raw_xml_offset;
+                    sheet_views_end_offset = event_end_offset(event);
+                }
+                metadata_stack.pop_back();
+                return;
+            }
+
+            const bool top_level = metadata_stack.empty();
+            const bool direct_sheet_view = metadata_stack.size() == 1U
+                && metadata_stack.front() == "sheetViews";
+            const bool direct_primary_child = inside_primary_sheet_view
+                && metadata_stack.size() == primary_sheet_view_depth;
+
+            if (top_level && !saw_sheet_data_start) {
+                const std::optional<int> rank =
+                    worksheet_prefix_schema_rank(event.element_name);
+                if (!rank.has_value()) {
+                    throw FastXlsxError(
+                        "worksheet contains unsupported top-level metadata before sheetData");
+                }
+                if (*rank < last_prefix_rank) {
+                    throw FastXlsxError(
+                        "worksheet top-level prefix metadata is not in schema order");
+                }
+                last_prefix_rank = *rank;
+                if (*rank > 3 && !first_after_sheet_views_offset.has_value()) {
+                    first_after_sheet_views_offset = event.raw_xml_offset;
+                }
+                if (event.element_name == "sheetViews") {
+                    if (saw_sheet_views) {
+                        throw FastXlsxError(
+                            "worksheet contains duplicate sheetViews containers");
+                    }
+                    saw_sheet_views = true;
+                    sheet_views_start_offset = event.raw_xml_offset;
+                    sheet_views_element_prefix =
+                        xml_element_prefix(event.raw_xml, "sheetViews");
+                    if (sheet_views_element_prefix != worksheet_element_prefix) {
+                        throw FastXlsxError(
+                            "worksheet sheetViews QName prefix differs from its root");
+                    }
+                    if (event.self_closing) {
+                        sheet_views_self_closing = true;
+                        sheet_views_end_offset = event_end_offset(event);
+                    }
+                }
+            } else if (top_level && event.element_name == "sheetViews") {
+                throw FastXlsxError(
+                    "worksheet sheetViews metadata appears after sheetData");
+            } else if (!top_level && event.element_name == "sheetViews") {
+                throw FastXlsxError(
+                    "worksheet sheetViews metadata is nested below another element");
+            }
+
+            if (direct_sheet_view) {
+                if (event.element_name != "sheetView") {
+                    throw FastXlsxError(
+                        "worksheet sheetViews container has an unsupported child element");
+                }
+                const std::string sheet_view_prefix =
+                    xml_element_prefix(event.raw_xml, "sheetView");
+                if (sheet_view_prefix != sheet_views_element_prefix) {
+                    throw FastXlsxError(
+                        "worksheet sheetView QName prefix differs from its container");
+                }
+                const std::optional<std::string_view> workbook_view_id_text =
+                    attribute_value(event.raw_xml, "workbookViewId");
+                const std::optional<std::uint64_t> workbook_view_id =
+                    workbook_view_id_text.has_value()
+                    ? parse_unsigned_decimal(*workbook_view_id_text)
+                    : std::nullopt;
+                if (!workbook_view_id.has_value()) {
+                    throw FastXlsxError(
+                        "worksheet sheetView has no valid workbookViewId");
+                }
+                if (!workbook_view_ids.emplace(*workbook_view_id).second) {
+                    throw FastXlsxError(
+                        "worksheet contains duplicate sheetView workbookViewId values");
+                }
+                if (*workbook_view_id == 0) {
+                    saw_primary_sheet_view = true;
+                    primary_sheet_view_start_offset = event.raw_xml_offset;
+                    primary_sheet_view_element_prefix = sheet_view_prefix;
+                    if (event.self_closing) {
+                        primary_sheet_view_self_closing = true;
+                        primary_sheet_view_end_offset = event_end_offset(event);
+                    } else {
+                        inside_primary_sheet_view = true;
+                        primary_sheet_view_depth = metadata_stack.size() + 1U;
+                    }
+                }
+            } else if (direct_primary_child) {
+                const std::optional<int> rank =
+                    sheet_view_child_schema_rank(event.element_name);
+                if (!rank.has_value()) {
+                    throw FastXlsxError(
+                        "worksheet primary sheetView has an unsupported child element");
+                }
+                if (*rank < last_primary_child_rank) {
+                    throw FastXlsxError(
+                        "worksheet primary sheetView children are not in schema order");
+                }
+                last_primary_child_rank = *rank;
+                if (!first_primary_child_offset.has_value()) {
+                    first_primary_child_offset = event.raw_xml_offset;
+                }
+
+                if (event.element_name == "pane") {
+                    if (primary_pane_start_offset.has_value()) {
+                        throw FastXlsxError(
+                            "worksheet primary sheetView contains duplicate panes");
+                    }
+                    primary_pane_element_prefix =
+                        xml_element_prefix(event.raw_xml, "pane");
+                    if (primary_pane_element_prefix
+                        != primary_sheet_view_element_prefix) {
+                        throw FastXlsxError(
+                            "worksheet pane QName prefix differs from its sheetView");
+                    }
+                    audit_existing_frozen_pane(event.raw_xml);
+                    primary_pane_start_offset = event.raw_xml_offset;
+                    if (event.self_closing) {
+                        primary_pane_end_offset = event_end_offset(event);
+                    } else {
+                        open_primary_pane = true;
+                    }
+                } else if (event.element_name == "selection") {
+                    if (xml_element_prefix(event.raw_xml, "selection")
+                        != primary_sheet_view_element_prefix) {
+                        throw FastXlsxError(
+                            "worksheet selection QName prefix differs from its sheetView");
+                    }
+                    if (const std::optional<std::string_view> pane =
+                            attribute_value(event.raw_xml, "pane")) {
+                        if (!selection_pane_is_preservable(
+                                *pane, row_split, column_split, operation)) {
+                            throw FastXlsxError(
+                                "worksheet selection references a pane that the requested "
+                                "freeze-pane edit cannot preserve");
+                        }
+                    }
+                } else if (event.element_name == "pivotSelection") {
+                    throw FastXlsxError(
+                        "worksheet primary sheetView contains unsupported pivotSelection metadata");
+                } else if (xml_element_prefix(event.raw_xml, "extLst")
+                    != primary_sheet_view_element_prefix) {
+                    throw FastXlsxError(
+                        "worksheet sheetView extLst QName prefix differs from its sheetView");
+                }
+            } else if (inside_primary_sheet_view && !metadata_stack.empty()
+                && (metadata_stack.back() == "pane"
+                    || metadata_stack.back() == "selection")) {
+                throw FastXlsxError(
+                    "worksheet primary sheetView contains a non-empty pane or selection");
+            }
+
+            if (!event.self_closing) {
+                metadata_stack.emplace_back(event.element_name);
+            }
+        });
+
+    if (!metadata_stack.empty() || inside_primary_sheet_view || open_primary_pane) {
+        throw FastXlsxError(
+            "worksheet sheetViews metadata ended inside an open element");
+    }
+    if (!saw_worksheet_start || !saw_sheet_data_start || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "freeze-pane edit requires a worksheet root and sheetData");
+    }
+
+    if (!saw_sheet_views) {
+        if (operation == WorksheetFreezePaneRewriteOperation::Clear) {
+            return std::nullopt;
+        }
+        const std::uint64_t insertion_offset =
+            first_after_sheet_views_offset.value_or(worksheet_end_offset);
+        return WorksheetFreezePaneRewritePlan {
+            WorksheetFreezePaneRewritePlan::Action::InsertSheetViewsBefore,
+            insertion_offset,
+            insertion_offset,
+            worksheet_element_prefix};
+    }
+    if (sheet_views_self_closing) {
+        if (operation == WorksheetFreezePaneRewriteOperation::Clear) {
+            return std::nullopt;
+        }
+        return WorksheetFreezePaneRewritePlan {
+            WorksheetFreezePaneRewritePlan::Action::ExpandSheetViewsContainer,
+            *sheet_views_start_offset,
+            *sheet_views_end_offset,
+            sheet_views_element_prefix};
+    }
+    if (!sheet_views_close_offset.has_value() || !sheet_views_end_offset.has_value()) {
+        throw FastXlsxError("worksheet sheetViews container has no closing boundary");
+    }
+    if (!saw_primary_sheet_view) {
+        if (operation == WorksheetFreezePaneRewriteOperation::Clear) {
+            return std::nullopt;
+        }
+        return WorksheetFreezePaneRewritePlan {
+            WorksheetFreezePaneRewritePlan::Action::AppendPrimarySheetView,
+            *sheet_views_close_offset,
+            *sheet_views_close_offset,
+            sheet_views_element_prefix};
+    }
+    if (primary_sheet_view_self_closing) {
+        if (operation == WorksheetFreezePaneRewriteOperation::Clear) {
+            return std::nullopt;
+        }
+        return WorksheetFreezePaneRewritePlan {
+            WorksheetFreezePaneRewritePlan::Action::ExpandPrimarySheetView,
+            *primary_sheet_view_start_offset,
+            *primary_sheet_view_end_offset,
+            primary_sheet_view_element_prefix};
+    }
+    if (!primary_sheet_view_close_offset.has_value()
+        || !primary_sheet_view_end_offset.has_value()) {
+        throw FastXlsxError("worksheet primary sheetView has no closing boundary");
+    }
+    if (!primary_pane_start_offset.has_value()) {
+        if (operation == WorksheetFreezePaneRewriteOperation::Clear) {
+            return std::nullopt;
+        }
+        const std::uint64_t insertion_offset = first_primary_child_offset.value_or(
+            *primary_sheet_view_close_offset);
+        return WorksheetFreezePaneRewritePlan {
+            WorksheetFreezePaneRewritePlan::Action::InsertPaneBefore,
+            insertion_offset,
+            insertion_offset,
+            primary_sheet_view_element_prefix};
+    }
+    if (!primary_pane_end_offset.has_value()) {
+        throw FastXlsxError("worksheet primary frozen pane has no closing boundary");
+    }
+    return WorksheetFreezePaneRewritePlan {
+        operation == WorksheetFreezePaneRewriteOperation::Set
+            ? WorksheetFreezePaneRewritePlan::Action::ReplacePane
+            : WorksheetFreezePaneRewritePlan::Action::RemovePane,
+        *primary_pane_start_offset,
+        *primary_pane_end_offset,
+        primary_sheet_view_element_prefix};
+}
+
 std::optional<WorksheetMergedCellRewritePlan>
 plan_worksheet_merged_cell_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
@@ -1648,6 +2174,107 @@ void write_worksheet_auto_filter_rewrite(
     if (!output) {
         throw FastXlsxError(
             "failed to finalize staged worksheet auto-filter metadata file");
+    }
+}
+
+void write_worksheet_freeze_pane_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view pane_xml,
+    const WorksheetFreezePaneRewritePlan& plan,
+    const std::filesystem::path& output_path)
+{
+    std::ofstream output(output_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError("failed to create staged worksheet freeze-pane metadata file");
+    }
+
+    const auto write_primary_sheet_view = [&] {
+        write_bytes(output, "<");
+        write_bytes(output, plan.element_prefix);
+        write_bytes(output, "sheetView workbookViewId=\"0\">");
+        write_bytes(output, pane_xml);
+        write_bytes(output, "</");
+        write_bytes(output, plan.element_prefix);
+        write_bytes(output, "sheetView>");
+    };
+
+    bool applied = false;
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (is_synthetic_self_closing_end(event)) {
+                return;
+            }
+
+            const bool rewrites_source_range =
+                plan.action == WorksheetFreezePaneRewritePlan::Action::ReplacePane
+                || plan.action == WorksheetFreezePaneRewritePlan::Action::RemovePane;
+            if (rewrites_source_range
+                && event.raw_xml_offset >= plan.source_offset
+                && event.raw_xml_offset < plan.source_end_offset) {
+                if (!applied
+                    && plan.action == WorksheetFreezePaneRewritePlan::Action::ReplacePane) {
+                    write_bytes(output, pane_xml);
+                }
+                applied = true;
+                return;
+            }
+
+            if (applied || event.raw_xml_offset != plan.source_offset) {
+                write_bytes(output, event.raw_xml);
+                return;
+            }
+
+            switch (plan.action) {
+            case WorksheetFreezePaneRewritePlan::Action::InsertSheetViewsBefore:
+                write_bytes(output, "<");
+                write_bytes(output, plan.element_prefix);
+                write_bytes(output, "sheetViews>");
+                write_primary_sheet_view();
+                write_bytes(output, "</");
+                write_bytes(output, plan.element_prefix);
+                write_bytes(output, "sheetViews>");
+                write_bytes(output, event.raw_xml);
+                break;
+            case WorksheetFreezePaneRewritePlan::Action::ExpandSheetViewsContainer:
+                write_bytes(output, expand_self_closing_metadata_tag(
+                    event.raw_xml, "sheetViews"));
+                write_primary_sheet_view();
+                write_bytes(output, "</");
+                write_bytes(output, plan.element_prefix);
+                write_bytes(output, "sheetViews>");
+                break;
+            case WorksheetFreezePaneRewritePlan::Action::AppendPrimarySheetView:
+                write_primary_sheet_view();
+                write_bytes(output, event.raw_xml);
+                break;
+            case WorksheetFreezePaneRewritePlan::Action::ExpandPrimarySheetView:
+                write_bytes(output, expand_self_closing_metadata_tag(
+                    event.raw_xml, "sheetView"));
+                write_bytes(output, pane_xml);
+                write_bytes(output, "</");
+                write_bytes(output, plan.element_prefix);
+                write_bytes(output, "sheetView>");
+                break;
+            case WorksheetFreezePaneRewritePlan::Action::InsertPaneBefore:
+                write_bytes(output, pane_xml);
+                write_bytes(output, event.raw_xml);
+                break;
+            case WorksheetFreezePaneRewritePlan::Action::ReplacePane:
+            case WorksheetFreezePaneRewritePlan::Action::RemovePane:
+                throw FastXlsxError(
+                    "worksheet freeze-pane rewrite did not reach its planned source range");
+            }
+            applied = true;
+        });
+
+    if (!applied) {
+        throw FastXlsxError(
+            "worksheet freeze-pane rewrite did not reach its planned boundary");
+    }
+    output.flush();
+    if (!output) {
+        throw FastXlsxError(
+            "failed to finalize staged worksheet freeze-pane metadata file");
     }
 }
 

@@ -187,6 +187,9 @@ bool workbook_editor_edit_summaries_equal(
             || left.replacement_cell_count != right.replacement_cell_count
             || left.estimated_replacement_memory_usage
                 != right.estimated_replacement_memory_usage
+            || left.freeze_panes_changed != right.freeze_panes_changed
+            || left.frozen_row_count != right.frozen_row_count
+            || left.frozen_column_count != right.frozen_column_count
             || left.materialized_dirty != right.materialized_dirty
             || left.materialized_cell_count != right.materialized_cell_count
             || left.estimated_materialized_memory_usage

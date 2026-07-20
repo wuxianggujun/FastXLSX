@@ -8641,6 +8641,59 @@ bool PackageEditor::rewrite_auto_filter_by_name(
     return true;
 }
 
+bool PackageEditor::rewrite_freeze_panes_by_name(
+    std::string_view sheet_name,
+    std::uint32_t row_split,
+    std::uint32_t column_split,
+    WorksheetFreezePaneRewriteOperation operation)
+{
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "freeze-pane worksheet edit");
+
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for freeze-pane planning");
+    const std::optional<WorksheetFreezePaneRewritePlan> rewrite_plan =
+        plan_worksheet_freeze_pane_rewrite(
+            [&](std::string& chunk) { return planning_reader(chunk); },
+            row_split, column_split, operation);
+    if (!rewrite_plan.has_value()) {
+        return false;
+    }
+    const std::string pane_xml =
+        operation == WorksheetFreezePaneRewriteOperation::Set
+        ? serialize_worksheet_frozen_pane(
+              row_split, column_split, rewrite_plan->element_prefix)
+        : std::string {};
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for freeze-pane rewrite");
+    write_worksheet_freeze_pane_rewrite(
+        [&](std::string& chunk) { return output_reader(chunk); },
+        pane_xml, *rewrite_plan, rewritten_source_file.path());
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "existing-workbook freeze-pane edit rewrites primary sheet-view metadata "
+        "without cell, relationship, content-type, or calc mutation");
+    replace_worksheet_part_from_chunk_source_with_commit_notes(
+        worksheet_part, staged_source, worksheet_metadata_reference_policy(),
+        "existing-workbook primary sheet-view freeze-pane metadata edit",
+        std::move(commit_notes));
+    return true;
+}
+
 bool PackageEditor::rewrite_merged_cell_by_name(
     std::string_view sheet_name,
     CellRange range,

@@ -1472,22 +1472,9 @@ std::string build_sheet_views(const detail::WorksheetWriterState& worksheet)
     }
 
     const auto [row_split, column_split] = *worksheet.frozen_panes;
-    std::string xml;
-    xml += "<sheetViews><sheetView workbookViewId=\"0\"><pane";
-    if (column_split > 0) {
-        xml += " xSplit=\"";
-        detail::append_unsigned_decimal(xml, column_split);
-        xml += "\"";
-    }
-    if (row_split > 0) {
-        xml += " ySplit=\"";
-        detail::append_unsigned_decimal(xml, row_split);
-        xml += "\"";
-    }
-    xml += " topLeftCell=\"";
-    detail::append_cell_reference(xml, row_split + 1, column_split + 1);
-    xml += "\" activePane=\"bottomRight\" state=\"frozen\"/></sheetView></sheetViews>";
-    return xml;
+    return "<sheetViews><sheetView workbookViewId=\"0\">"
+        + detail::serialize_worksheet_frozen_pane(row_split, column_split)
+        + "</sheetView></sheetViews>";
 }
 
 std::string build_columns(const detail::WorksheetWriterState& worksheet)
@@ -2548,8 +2535,10 @@ void WorksheetWriter::set_column_width(std::uint32_t first_column, std::uint32_t
 void WorksheetWriter::freeze_panes(std::uint32_t row_split, std::uint32_t column_split)
 {
     ensure_mutable_worksheet(state_);
-    if (row_split > max_excel_rows || column_split > max_excel_columns) {
-        throw FastXlsxError("invalid freeze pane split");
+    detail::validate_freeze_pane_split(row_split, column_split);
+    if (row_split == 0 && column_split == 0) {
+        state_->frozen_panes.reset();
+        return;
     }
     state_->frozen_panes = std::make_pair(row_split, column_split);
 }

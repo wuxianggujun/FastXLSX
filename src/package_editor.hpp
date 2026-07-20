@@ -20,6 +20,7 @@
 
 namespace fastxlsx::detail {
 
+enum class WorksheetFreezePaneRewriteOperation;
 enum class WorksheetMergedCellRewriteOperation;
 
 // Current internal sheetData patch helper uses chunk-source input and
@@ -579,6 +580,13 @@ public:
     // false only when a clear request finds no current autoFilter to remove.
     [[nodiscard]] bool rewrite_auto_filter_by_name(
         std::string_view sheet_name, std::optional<CellRange> range);
+    // Sets or clears the direct frozen pane for primary workbookViewId=0.
+    // Clear returns false only when the current primary sheet view has no pane.
+    [[nodiscard]] bool rewrite_freeze_panes_by_name(
+        std::string_view sheet_name,
+        std::uint32_t row_split,
+        std::uint32_t column_split,
+        WorksheetFreezePaneRewriteOperation operation);
     // Adds or removes one exact worksheet-root mergeCell range. The bounded
     // rewrite preserves worksheet relationships, content types, and calc
     // metadata. Unmerge returns false only for an absent disjoint range.

@@ -266,6 +266,18 @@ struct WorkbookEditorWorksheetEditSummary {
     /// with auto_filter_changed=true represents a queued clear operation.
     std::optional<CellRange> auto_filter_range;
 
+    /// True when set_freeze_panes() or clear_freeze_panes() changed the direct
+    /// frozen pane for the primary workbook view on this planned worksheet.
+    bool freeze_panes_changed = false;
+
+    /// Final queued frozen-row count. Zero together with
+    /// freeze_panes_changed=true and frozen_column_count=0 represents clear.
+    std::uint32_t frozen_row_count = 0;
+
+    /// Final queued frozen-column count. Zero together with
+    /// freeze_panes_changed=true and frozen_row_count=0 represents clear.
+    std::uint32_t frozen_column_count = 0;
+
     /// Number of merged-cell ranges added for this planned worksheet.
     std::size_t merged_cell_addition_count = 0;
 
@@ -3213,6 +3225,53 @@ public:
     /// On failure no public edit state changes.
     void clear_auto_filter(std::string_view sheet_name);
 
+    /// Sets the direct frozen pane for the primary worksheet view.
+    ///
+    /// API mode: Patch / existing-workbook worksheet-view metadata edit. The
+    /// row and column splits are frozen row/column counts for the direct
+    /// `<pane>` below `<sheetView workbookViewId="0">`. A missing sheetViews
+    /// container or primary sheetView is created in schema order; self-closing
+    /// forms are expanded. Existing sheetView attributes, other workbook views,
+    /// and selections that still reference a pane present after the requested
+    /// split are preserved. A `(0, 0)` split is equivalent to
+    /// clear_freeze_panes().
+    ///
+    /// The narrow supported existing state is `state="frozen"`. Split panes,
+    /// frozenSplit panes, pivot selections, duplicate/ambiguous view metadata,
+    /// and selections bound to a pane removed by the requested split are
+    /// rejected instead of normalized. Row split must be at most 1,048,575 and
+    /// column split at most 16,383 so topLeftCell remains inside the worksheet.
+    ///
+    /// The bounded, file-backed rewrite does not modify cells, formulas,
+    /// worksheet relationships, content types, tables, calculation metadata,
+    /// calcChain, or unknown package parts. Planned rename and same-editor added
+    /// worksheets are supported. Each actual edit updates freeze-pane fields in
+    /// pending_worksheet_edits(); an absent clean clear is a no-op.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param row_split Number of leading worksheet rows to freeze.
+    /// @param column_split Number of leading worksheet columns to freeze.
+    /// @throws FastXlsxError if the split is out of range, existing view
+    /// metadata is malformed or unsupported, schema order cannot be proven, or
+    /// transactional staging fails. On failure no public edit state changes.
+    void set_freeze_panes(std::string_view sheet_name,
+        std::uint32_t row_split, std::uint32_t column_split);
+
+    /// Removes the direct frozen pane from the primary worksheet view.
+    ///
+    /// API mode and preservation boundaries are identical to
+    /// set_freeze_panes(). The surrounding sheetViews/sheetView containers,
+    /// attributes, other workbook views, and unbound selections are preserved.
+    /// A selection with a pane attribute is rejected because removing its pane
+    /// would leave an invalid reference. When no primary direct pane exists,
+    /// this is a clean no-op and public pending/unsaved diagnostics do not grow.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @throws FastXlsxError if existing view metadata is malformed or
+    /// unsupported, or transactional staging fails. On failure no public edit
+    /// state changes.
+    void clear_freeze_panes(std::string_view sheet_name);
+
     /// Adds one exact worksheet-root merged-cell range.
     ///
     /// API mode: Patch / existing-workbook worksheet metadata edit. The range
@@ -3357,7 +3416,7 @@ public:
     /// active-view metadata, selected-tab metadata, any workbook definedNames,
     /// formula references to the target, worksheet-owned relationships, other
     /// inbound relationships, materialized handles, and queued worksheet
-    /// payload or internal-hyperlink edits. It therefore never silently repairs
+    /// payload or metadata edits. It therefore never silently repairs
     /// formulas, names,
     /// linked objects, or orphan parts. A generated worksheet added in the same
     /// editor can be removed before save when it has no queued payload edit.
@@ -3393,8 +3452,8 @@ public:
     /// `xl/workbook.xml` is unavailable. On failure no edit state is mutated,
     /// pending replacement diagnostics remain under their prior sheet name, and
     /// the editor remains usable. A successful rename back to the source sheet
-    /// name clears the public renamed flag and migrates any queued replacement
-    /// or internal-hyperlink diagnostics back to that source name; it is still
+    /// name clears the public renamed flag and migrates queued replacement and
+    /// worksheet-metadata diagnostics back to that source name; it is still
     /// only a catalog-name
     /// rewrite, not semantic sheet rename synchronization.
     void rename_sheet(std::string_view old_name, std::string new_name);

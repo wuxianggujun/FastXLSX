@@ -8585,6 +8585,53 @@ void PackageEditor::add_data_validation_by_name(
         "existing-workbook data validation metadata edit", std::move(commit_notes));
 }
 
+bool PackageEditor::rewrite_auto_filter_by_name(
+    std::string_view sheet_name, std::optional<CellRange> range)
+{
+    const std::string auto_filter_xml = range.has_value()
+        ? serialize_worksheet_auto_filter(*range)
+        : std::string {};
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "auto-filter worksheet edit");
+
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for auto-filter planning");
+    const WorksheetAutoFilterRewritePlan rewrite_plan =
+        plan_worksheet_auto_filter_rewrite(
+            [&](std::string& chunk) { return planning_reader(chunk); });
+    if (!range.has_value() && !rewrite_plan.has_existing_auto_filter) {
+        return false;
+    }
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for auto-filter rewrite");
+    write_worksheet_auto_filter_rewrite(
+        [&](std::string& chunk) { return output_reader(chunk); },
+        auto_filter_xml, rewrite_plan, rewritten_source_file.path());
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "existing-workbook auto-filter edit replaces or clears worksheet-root metadata "
+        "without table-part, relationship, content-type, or calc mutation");
+    replace_worksheet_part_from_chunk_source_with_commit_notes(
+        worksheet_part, staged_source, {},
+        "existing-workbook worksheet-root auto-filter metadata edit",
+        std::move(commit_notes));
+    return true;
+}
+
 void PackageEditor::replace_worksheet_part_chunks_by_name(std::string_view sheet_name,
     std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
     std::string reason)

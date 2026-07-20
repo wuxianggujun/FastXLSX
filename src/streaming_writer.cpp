@@ -1808,9 +1808,7 @@ std::string build_worksheet_suffix(const detail::WorksheetWriterState& worksheet
     std::string xml;
     xml += "</sheetData>";
     if (worksheet.auto_filter.has_value()) {
-        xml += "<autoFilter ref=\"";
-        xml += detail::range_reference(*worksheet.auto_filter);
-        xml += "\"/>";
+        xml += detail::serialize_worksheet_auto_filter(*worksheet.auto_filter);
     }
     xml += build_merge_cells(worksheet);
     xml += build_conditional_formattings(worksheet);

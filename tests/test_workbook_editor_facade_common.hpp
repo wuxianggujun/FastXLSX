@@ -182,6 +182,8 @@ bool workbook_editor_edit_summaries_equal(
             || left.internal_hyperlink_count != right.internal_hyperlink_count
             || left.external_hyperlink_count != right.external_hyperlink_count
             || left.data_validation_count != right.data_validation_count
+            || left.auto_filter_changed != right.auto_filter_changed
+            || left.auto_filter_range.has_value() != right.auto_filter_range.has_value()
             || left.replacement_cell_count != right.replacement_cell_count
             || left.estimated_replacement_memory_usage
                 != right.estimated_replacement_memory_usage
@@ -189,6 +191,15 @@ bool workbook_editor_edit_summaries_equal(
             || left.materialized_cell_count != right.materialized_cell_count
             || left.estimated_materialized_memory_usage
                 != right.estimated_materialized_memory_usage) {
+            return false;
+        }
+        if (left.auto_filter_range.has_value()
+            && (left.auto_filter_range->first_row != right.auto_filter_range->first_row
+                || left.auto_filter_range->first_column
+                    != right.auto_filter_range->first_column
+                || left.auto_filter_range->last_row != right.auto_filter_range->last_row
+                || left.auto_filter_range->last_column
+                    != right.auto_filter_range->last_column)) {
             return false;
         }
     }

@@ -572,6 +572,11 @@ public:
     // mutation or formula/range synchronization.
     void add_data_validation_by_name(std::string_view sheet_name,
         std::vector<CellRange> ranges, DataValidationRule rule);
+    // Replaces or clears the worksheet-root autoFilter without touching table
+    // parts, worksheet relationships, content types, or calc metadata. Returns
+    // false only when a clear request finds no current autoFilter to remove.
+    [[nodiscard]] bool rewrite_auto_filter_by_name(
+        std::string_view sheet_name, std::optional<CellRange> range);
     // Internal by-name staged-output variant for worksheet replacement. Resolves
     // the sheet name through the same planned/source workbook catalog path as
     // the chunk-source by-name helper, then validates and audits the provided

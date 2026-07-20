@@ -745,6 +745,76 @@ void WorkbookEditor::add_data_validation(
         std::move(rule));
 }
 
+void WorkbookEditor::set_auto_filter(
+    std::string_view sheet_name, CellRange range)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+
+        auto updated_edits = impl_->pending_auto_filter_edits;
+        updated_edits[sheet_name_key] = range;
+        (void)impl_->editor.rewrite_auto_filter_by_name(sheet_name_key, range);
+
+        static_assert(std::is_nothrow_swappable_v<
+            WorkbookEditor::Impl::PendingAutoFilterEdits>);
+        using std::swap;
+        swap(impl_->pending_auto_filter_edits, updated_edits);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::set_auto_filter() failed for '" + sheet_name_key
+            + "' with range (" + std::to_string(range.first_row) + ", "
+            + std::to_string(range.first_column) + ")-("
+            + std::to_string(range.last_row) + ", "
+            + std::to_string(range.last_column) + "): " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::clear_auto_filter(std::string_view sheet_name)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+
+        auto updated_edits = impl_->pending_auto_filter_edits;
+        updated_edits[sheet_name_key] = std::nullopt;
+        const bool changed =
+            impl_->editor.rewrite_auto_filter_by_name(sheet_name_key, std::nullopt);
+        if (changed) {
+            static_assert(std::is_nothrow_swappable_v<
+                WorkbookEditor::Impl::PendingAutoFilterEdits>);
+            using std::swap;
+            swap(impl_->pending_auto_filter_edits, updated_edits);
+            ++impl_->pending_public_edit_count;
+        }
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::clear_auto_filter() failed for '" + sheet_name_key
+            + "': " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
 void WorkbookEditor::replace_image(
     std::string_view image_part_name, std::filesystem::path image_path)
 {
@@ -858,7 +928,8 @@ void WorkbookEditor::remove_worksheet(std::string_view name)
             || !impl_->pending_targeted_cell_replacement_worksheet_names().empty()
             || !impl_->pending_internal_hyperlink_counts.empty()
             || !impl_->pending_external_hyperlink_counts.empty()
-            || !impl_->pending_data_validation_counts.empty()) {
+            || !impl_->pending_data_validation_counts.empty()
+            || !impl_->pending_auto_filter_edits.empty()) {
             throw FastXlsxError(
                 "worksheet removal requires no queued worksheet payload edits");
         }
@@ -940,6 +1011,10 @@ void WorkbookEditor::rename_sheet(
             updated_data_validation_counts =
                 impl_->stage_pending_data_validation_counts_move(
                     old_name_key, new_name_key);
+        std::optional<WorkbookEditor::Impl::PendingAutoFilterEdits>
+            updated_auto_filter_edits =
+                impl_->stage_pending_auto_filter_edits_move(
+                    old_name_key, new_name_key);
         detail::WorkbookEditorSheetRenameOptions rename_options;
         if (options.formula_policy == WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames) {
             rename_options.formula_policy =
@@ -970,6 +1045,7 @@ void WorkbookEditor::rename_sheet(
             updated_external_hyperlink_counts);
         impl_->commit_pending_data_validation_counts_move(
             updated_data_validation_counts);
+        impl_->commit_pending_auto_filter_edits_move(updated_auto_filter_edits);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {

@@ -135,6 +135,7 @@ auto sheet = editor.worksheet("Data", options);
 - `WorkbookEditor::add_internal_hyperlink()` 可向 existing workbook 的 planned worksheet 追加 worksheet-local internal hyperlink，支持 display/tooltip escaping、已有/自闭合 hyperlinks 容器和重复/重叠 ref 校验；不创建 worksheet `.rels`、content type 或 external relationship，不修改 cell value/style，也不做公式、definedName、table 或 drawing 同步。
 - `WorkbookEditor::add_external_hyperlink()` 可向 existing workbook 的 planned worksheet 追加 external hyperlink，同步追加 worksheet `.rels` 的 `TargetMode="External"` relationship，分配不冲突的 relationship id，并保留既有关系、未知 package entries、XML namespace 与失败 retry 状态；不做 target reachability、relationship repair/pruning、cell value/style、公式、definedName、table 或 drawing 同步。
 - `WorkbookEditor::add_data_validation()` 可复用 Streaming 的 `DataValidationRule`，向一个或多个 range 追加 worksheet-local data validation；支持 `sqref`、formula1/formula2、prompt/error metadata、已有/自闭合容器和 `count` 一致性校验。它不创建 relationship/content type，不求值、不请求重算，也不随后续 row/column/cell structural mutation 自动同步 range 或公式。
+- `WorkbookEditor::set_auto_filter()` / `clear_auto_filter()` 可整体替换或删除 worksheet-root `<autoFilter>`；set 会丢弃旧 filter criteria/sort metadata，clear absent 是 clean no-op。`xl/tables/table*.xml` 中的 table-local filter、worksheet relationships、content types、calc metadata 和未知 package entries 保留；range 不随后续 structural mutation 自动平移。
 - Preservation 证据不等于 tables、charts、comments、VBA、pivot 或 custom XML 的语义编辑。
 - In-memory 是 small-file 稀疏编辑，不是 large-file low-memory random editing。
 

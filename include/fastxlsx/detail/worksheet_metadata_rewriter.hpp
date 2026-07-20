@@ -37,6 +37,12 @@ struct WorksheetDataValidationRewritePlan {
     std::uint64_t new_count = 1;
 };
 
+struct WorksheetAutoFilterRewritePlan {
+    bool has_existing_auto_filter = false;
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+};
+
 enum class WorksheetInternalHyperlinkRewriteAction {
     InsertContainerBefore,
     AppendBeforeContainerClose,
@@ -92,6 +98,20 @@ void write_worksheet_data_validation_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view data_validation_xml,
     const WorksheetDataValidationRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Locates an existing worksheet-root autoFilter or a schema-safe insertion
+/// boundary. Table-part autoFilter elements are outside this worksheet stream.
+[[nodiscard]] WorksheetAutoFilterRewritePlan
+plan_worksheet_auto_filter_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk);
+
+/// Replaces, inserts, or removes the worksheet-root autoFilter selected by the
+/// plan. An empty auto_filter_xml removes an existing element.
+void write_worksheet_auto_filter_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view auto_filter_xml,
+    const WorksheetAutoFilterRewritePlan& plan,
     const std::filesystem::path& output_path);
 
 } // namespace fastxlsx::detail

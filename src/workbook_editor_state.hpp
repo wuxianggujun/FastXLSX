@@ -81,6 +81,8 @@ struct WorkbookEditor::Impl {
         std::map<std::string,
             std::map<std::string, std::size_t, std::less<>>,
             std::less<>>;
+    using PendingAutoFilterEdits =
+        std::map<std::string, std::optional<CellRange>, std::less<>>;
 
     Impl(detail::PackageEditor editor, WorkbookEditorOptions options)
         : editor(std::move(editor))
@@ -101,6 +103,7 @@ struct WorkbookEditor::Impl {
     std::map<std::string, std::size_t, std::less<>> pending_internal_hyperlink_counts;
     std::map<std::string, std::size_t, std::less<>> pending_external_hyperlink_counts;
     std::map<std::string, std::size_t, std::less<>> pending_data_validation_counts;
+    PendingAutoFilterEdits pending_auto_filter_edits;
     std::optional<std::string> last_public_edit_error;
     detail::PackageWriterTelemetry* package_writer_telemetry = nullptr;
 
@@ -355,6 +358,33 @@ struct WorkbookEditor::Impl {
         swap(pending_data_validation_counts, *updated);
     }
 
+    [[nodiscard]] std::optional<PendingAutoFilterEdits>
+    stage_pending_auto_filter_edits_move(
+        std::string_view old_name, std::string_view new_name) const
+    {
+        const auto source = pending_auto_filter_edits.find(old_name);
+        if (source == pending_auto_filter_edits.end()) {
+            return std::nullopt;
+        }
+        auto updated = pending_auto_filter_edits;
+        const auto updated_source = updated.find(old_name);
+        const std::optional<CellRange> range = updated_source->second;
+        updated.erase(updated_source);
+        updated[std::string(new_name)] = range;
+        return updated;
+    }
+
+    void commit_pending_auto_filter_edits_move(
+        std::optional<PendingAutoFilterEdits>& updated) noexcept
+    {
+        if (!updated.has_value()) {
+            return;
+        }
+        static_assert(std::is_nothrow_swappable_v<PendingAutoFilterEdits>);
+        using std::swap;
+        swap(pending_auto_filter_edits, *updated);
+    }
+
     [[nodiscard]] std::vector<std::string> pending_materialized_worksheet_names() const
     {
         return detail::workbook_editor_pending_materialized_worksheet_names(
@@ -400,12 +430,17 @@ struct WorkbookEditor::Impl {
                 pending_data_validation_counts.find(current_name);
             const bool data_validations_added =
                 pending_data_validations != pending_data_validation_counts.end();
+            const auto pending_auto_filter =
+                pending_auto_filter_edits.find(current_name);
+            const bool auto_filter_changed =
+                pending_auto_filter != pending_auto_filter_edits.end();
             const bool materialized_dirty =
                 materialized_session != nullptr && materialized_session->dirty();
             if (!catalog_entry.added && !catalog_entry.renamed && !sheet_data_replaced
                 && !targeted_cells_replaced && !internal_hyperlinks_added
                 && !external_hyperlinks_added
                 && !data_validations_added
+                && !auto_filter_changed
                 && !materialized_dirty) {
                 continue;
             }
@@ -425,6 +460,10 @@ struct WorkbookEditor::Impl {
             }
             if (data_validations_added) {
                 summary.data_validation_count = pending_data_validations->second;
+            }
+            summary.auto_filter_changed = auto_filter_changed;
+            if (auto_filter_changed) {
+                summary.auto_filter_range = pending_auto_filter->second;
             }
             summary.materialized_dirty = materialized_dirty;
             if (sheet_data_replaced) {

@@ -30,12 +30,14 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 - Public Patch 已公开 `WorkbookEditor::add_internal_hyperlink()` 窄切片：用两次 bounded worksheet event scan 规划/写出 worksheet-local `<hyperlink>`，支持 existing/self-closing 容器、display/tooltip escaping、A1 range overlap rejection、planned rename 和同会话新增 worksheet。它不创建 worksheet `.rels` 或 content type，不修改 cell value/style，也不同步 formula、definedName、table、drawing 或 external hyperlink。
 - Public Patch 已公开 `WorkbookEditor::add_external_hyperlink()` 窄切片：用 bounded worksheet rewrite 追加带 `r:id` 的 external `<hyperlink>`，并在同一事务中更新 worksheet `.rels` 的 `TargetMode="External"` relationship；支持既有/缺失 `.rels`、关系 id 分配、`xmlns:r` 注入、display/tooltip escaping、A1 range overlap rejection、planned rename 和同会话新增 worksheet。它不创建 content type，不做 target reachability、relationship repair/pruning 或 cell/formula/definedName/table/drawing 同步。
 - Public Patch 已公开 `WorkbookEditor::add_data_validation()` 窄切片：复用 Streaming/Patch shared `DataValidationRule` validator/serializer，用 bounded worksheet rewrite 追加 single-/multi-range `sqref`、formula1/formula2 与 prompt/error metadata；支持 existing/self-closing container、缺失 count 补齐、count mismatch fail、planned rename 和同会话新增 worksheet。它不创建 `.rels`/content type、不求值/请求重算，也不与 structural mutation 或 linked objects 同步。
+- Public Patch 已公开 `WorkbookEditor::set_auto_filter()` / `clear_auto_filter()` 窄切片：用两次 bounded worksheet event scan 整体 replace/insert/remove worksheet-root `<autoFilter>`，校验 existing ref、duplicate/nesting 与 suffix ordering，支持 planned rename 和同会话新增 worksheet。Set 丢弃旧 criteria/sort metadata；clear absent clean no-op。Table-local filter part、`.rels`、content type、calc metadata 与 unknown entries 保留，range 不随 structural mutation 同步。
 - 跨 worksheet XML、worksheet `.rels`、content types、manifest、public diagnostics 和 pending/watermark 的 mutation，必须先在副本中完整 staging，再以 noexcept commit 发布。
 - External hyperlink 的 worksheet XML 与 `.rels` relationship mutation 必须一起 staging；遇到未知、重复、external、非法 target 或 unsupported linked metadata 时默认 fail 或 preserve，不能静默 repair。
-- Row/column insert/delete、copy/move 当前不自动同步 validations、hyperlinks、tables、conditional formatting、merged cells 或 drawings；新增同步能力前保持该边界。
+- Row/column insert/delete、copy/move 当前不自动同步 validations、hyperlinks、auto filters、tables、conditional formatting、merged cells 或 drawings；新增同步能力前保持该边界。
 
 ## 验证
 
 - 覆盖 feature XML、schema ordering、relationship/content-type side effects、invalid input 和 feature-specific duplicate/range/count conflicts。
 - Patch 覆盖 failure-before-state-change、pending/unsaved/diagnostic 不污染、save failure retry、reopen 和 unknown-part preservation。
+- Auto-filter 另测 complete nested-criteria replacement、clear absent no-op、table-local filter preservation、rename/added worksheet 与 optional-range diagnostic。
 - 使用 OpenPyXL/XlsxWriter 做结构对照；Office 未运行时明确记录 `not_run`。

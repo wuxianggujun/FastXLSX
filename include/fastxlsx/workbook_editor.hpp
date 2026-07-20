@@ -258,6 +258,14 @@ struct WorkbookEditorWorksheetEditSummary {
     /// planned worksheet. Zero when no data-validation edit is queued.
     std::size_t data_validation_count = 0;
 
+    /// True when set_auto_filter() or clear_auto_filter() changed the
+    /// worksheet-root autoFilter for this planned worksheet.
+    bool auto_filter_changed = false;
+
+    /// Final queued worksheet-root auto-filter range. An empty value together
+    /// with auto_filter_changed=true represents a queued clear operation.
+    std::optional<CellRange> auto_filter_range;
+
     /// True when the materialized WorksheetEditor session for this planned
     /// worksheet name is dirty and waiting for save_as() auto-flush.
     bool materialized_dirty = false;
@@ -3162,6 +3170,42 @@ public:
         std::string_view sheet_name,
         std::initializer_list<CellRange> ranges,
         DataValidationRule rule);
+
+    /// Replaces the worksheet-root autoFilter with one range.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. This is a
+    /// whole-element replacement: any existing filterColumn, custom-filter, or
+    /// sort metadata below the worksheet-root `<autoFilter>` is removed. A
+    /// table-local `<autoFilter>` stored in `xl/tables/table*.xml` is preserved.
+    /// The edit uses a bounded worksheet rewrite and does not create or modify
+    /// worksheet relationships, content types, cell values/styles, formulas,
+    /// defined names, table definitions, or calculation metadata.
+    ///
+    /// The range is 1-based and inclusive. It is not automatically shifted by
+    /// later row, column, or cell structural mutation. The planned worksheet
+    /// name is honored, including rename_sheet() and a worksheet added in the
+    /// same editor.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param range Final worksheet-root auto-filter range.
+    /// @throws FastXlsxError if the range is invalid, existing auto-filter or
+    /// suffix metadata is malformed/ambiguous, schema order cannot be proven,
+    /// or transactional staging fails. On failure no public edit state changes.
+    void set_auto_filter(std::string_view sheet_name, CellRange range);
+
+    /// Removes the worksheet-root autoFilter when present.
+    ///
+    /// API mode and preservation boundaries are identical to set_auto_filter().
+    /// The complete worksheet-root element, including nested filter/sort
+    /// criteria, is removed. Table-local filters remain untouched. If the
+    /// current planned worksheet has no root autoFilter, this is a clean no-op:
+    /// pending/unsaved counts and worksheet diagnostics do not grow.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @throws FastXlsxError if existing worksheet metadata is malformed or
+    /// ambiguous, schema order cannot be proven, or transactional staging fails.
+    /// On failure no public edit state changes.
+    void clear_auto_filter(std::string_view sheet_name);
 
     /// Replaces an existing workbook image part from a file on disk.
     ///

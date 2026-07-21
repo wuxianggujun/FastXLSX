@@ -61,6 +61,7 @@ set(_fastxlsx_sources
     src/workbook_editor_worksheet_facade.cpp
     src/workbook_editor_worksheet_access.cpp
     src/worksheet_cell_index.cpp
+    src/worksheet_reader.cpp
     src/xml.cpp
     src/zip_store_writer.cpp
 )
@@ -159,6 +160,7 @@ install(
         include/fastxlsx/workbook.hpp
         include/fastxlsx/workbook_editor.hpp
         include/fastxlsx/worksheet_metadata.hpp
+        include/fastxlsx/worksheet_reader.hpp
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fastxlsx
 )
 

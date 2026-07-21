@@ -23,6 +23,7 @@ ctest --preset windows-nmake-release
 - Save transaction/watermark：验证 stage → package write → state commit；post-stage/write failure 保留 dirty session、pending/unsaved count 和 `last_edit_error()`，retry 写入最新值；successful save 清零 unsaved，retained staged state 仍可 pending，move 转移 watermark；invalid/unavailable compression 必须在 dirty-session staging 前失败，production DEFLATE 与 stored-only retry 分 profile 验证。
 - In-memory：guardrail、strict rejection category/context、`worksheet()`/`try_worksheet()` typed propagation、explicit lossy opt-in、generic policy mismatch、malformed-source precedence、no-state-pollution、`last_edit_error()` preservation、dirty flush/recovery。
 - Streaming：row order、无 DOM/dense matrix、strings/styles/media/metadata package side effects、body buffer 上限、成功 close 后 temporary resource count 为零。
+- Streaming read：stored + production DEFLATE、row/cell callback order、typed number/boolean/text/error/shared index、formula/cached split、style index、borrowed view 复制、callback exception 原样传播和 entry retry；覆盖 XML window/active-cell text guardrail、missing/duplicate/out-of-order coordinate、shared/style relationship、rich/formula metadata rejection 与 malformed XML diagnostics。
 - Patch large worksheet：direct-range 与 single-pass fallback 分别验证 scanned/matched/inserted counts、精确 dimension、relationship audit、retry；重复 rewrite 必须证明被替代的临时文件立即删除且当前 staged output 仍可保存。
 - Test artifacts：每个测试进程使用 system temp 下独立的 PID 子目录，正常退出时清理自己的 XLSX/PNG/ZIP 工件；不得恢复跨进程共享的 flat artifact directory 或让全量 CTest 持续累积历史文件。
 - No-images：编译 `image_disabled.cpp`，consumer 宏为 0，runtime smoke 确认 public call 抛错。

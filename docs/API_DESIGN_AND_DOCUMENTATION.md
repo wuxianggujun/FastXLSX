@@ -11,7 +11,8 @@
 
 设计 API 前必须声明所属模式：
 
-- **Streaming**：新建 XLSX、大数据导出、row-order append。
+- **Streaming write**：新建 XLSX、大数据导出、row-order append。
+- **Streaming read**：已有 XLSX、forward-only row/cell callback、bounded active state。
 - **Patch**：existing-file part-level rewrite、preservation 和 audit。
 - **In-memory**：small-file sparse random editing。
 
@@ -28,6 +29,7 @@
 
 - 易用 API 不能让 large worksheet 隐式进入 DOM、dense matrix 或无界 cell map。
 - `Cell` / `CellValue` 可以作为 owning 边界值和 small-file 存储，不作为 million-row 热路径长期模型。
+- Public bounded reader 必须把 formula text 与 cached scalar 分离，逐字段声明 callback lifetime；sharedStrings/style 必须写清返回 index 还是 resolved value、是否校验 table count。XML window、active-cell text、entry source 的上限/释放/异常重试必须是契约，不能暴露 internal event/OPC 类型，也不能用 worksheet DOM、dense matrix 或 `CellStore` 冒充 Streaming read。
 - Patch edit 必须明确 copy/rewrite/remove/audit/fail 行为，以及 sharedStrings、styles、formulas、relationships、content types 和 calc metadata 策略。
 - Existing-workbook hyperlink API 已区分 worksheet-local internal target 与 external target：internal hyperlink 只改 worksheet XML，不伪造 `.rels`；external hyperlink 同时 staging worksheet XML 与 worksheet `.rels` relationship id/`TargetMode="External"`，保留既有关系并在失败时恢复调用前状态。两者都声明 duplicate/range、XML escaping、cell/style、formula/definedName 与 linked-object non-goals。
 - Existing-workbook data-validation API 复用 Streaming 的 owning `DataValidationRule`，但必须单独声明 multi-range `sqref`、formula1/formula2 shape、prompt/error escaping、已有 container/count/schema-order guardrail，以及不创建 `.rels`/content type、不求值/请求重算、不随 structural mutation 同步的边界。共享 rule 类型不代表共享 worksheet DOM 或完整 validation 对象模型。
@@ -68,7 +70,7 @@ Public API 注释至少说明：
 
 每个提案必须回答：
 
-1. 属于 Streaming、Patch 还是 In-memory？
+1. 属于 Streaming write、Streaming read、Patch 还是 In-memory？
 2. public facade 和 internal implementation 分别是什么？
 3. 输入、输出、所有权和错误契约是什么？
 4. 内存随什么增长，是否触碰热路径？

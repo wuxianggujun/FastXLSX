@@ -4,7 +4,7 @@ description: "设计或审查 FastXLSX public API、Doxygen、状态与性能边
 ---
 # FastXLSX API Design Docs
 
-先标记 Streaming/Patch/In-memory 与 public facade，再定义输入、所有权、状态、失败、保存、内存和 OpenXML side effects。
+先标记 Streaming write/Streaming read/Patch/In-memory 与 public facade，再定义输入、所有权、状态、失败、保存、内存和 OpenXML side effects。
 
 Public Doxygen 必须写清：
 - 顺序/随机访问与生命周期。
@@ -18,5 +18,6 @@ Public Doxygen 必须写清：
 - Auto-filter 必须区分 worksheet-root element 与 table-local filter part；写清 whole-element set/clear、旧 criteria/sort metadata 丢弃、clear absent no-op、single range、existing ref/duplicate/schema guardrail、optional-range diagnostic，以及不创建关系/content type/calc metadata、不随 structural mutation 同步的边界；不能扩大为完整 filter 对象模型。
 - Merged-cell 必须写清 multi-cell `CellRange`、merge duplicate/overlap fail、unmerge exact-only、partial overlap fail、absent disjoint no-op，以及 container/count/direct-child/ref/schema guardrail；同时声明 metadata-only、保留非左上角 cell record/value/style/formula、relationships、content types、tables、`calcPr`/`calcChain`，且不随 structural mutation 同步，不能扩大为完整 merged-cell 对象模型。
 - Freeze-pane 必须写清 primary `workbookViewId="0"` direct pane ownership、row/column frozen count、`(0,0)` clear、单轴 active pane、topLeftCell 上界、missing/self-closing view expansion，以及 split/frozenSplit/pivotSelection/失效 selection fail；同时声明保留其他 view、合法 selection、cells、relationships、content types、tables 与 calc metadata，不能扩大为完整 worksheet view 对象模型。
+- Bounded worksheet reader 必须写清 forward-only row/cell source order、每个 borrowed field 的 callback lifetime、formula/cached split、sharedStrings/style 是 opaque index 还是 resolved value、table-count validation 边界、XML window/active-cell text 上限、stored/DEFLATE entry ownership与 callback exception retry；声明 read-only、no seek/DOM/dense matrix/CellStore/Patch handoff，并对 rich/formula metadata 等 unsupported projection 明确 fail。
 
 禁止把 internal 类型、preservation evidence、公式文本或窄图片能力扩大为 public/full support。

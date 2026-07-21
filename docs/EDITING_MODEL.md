@@ -13,6 +13,18 @@ caller rows -> CellView encoding -> worksheet stream -> package writer -> new XL
 - 大型 worksheet 不进入 DOM/dense matrix。
 - close/save 阶段完成 package assembly。
 
+## Streaming Read
+
+```text
+source package -> worksheet entry chunks -> bounded XML events -> active cell projection -> callbacks
+```
+
+- Public facade 是 read-only `WorkbookReader`，不进入 edit plan、save watermark 或 materialized session。
+- `open()` 只保留 package/workbook catalog；每次 worksheet traversal 使用独立 entry source，成功、parser failure 或 callback exception 后都释放。
+- Row/cell 按 source order 单遍输出；borrowed string views 只在当前 callback 内有效。
+- XML window 和 active-cell decoded text 各自有硬上限；不构建 worksheet DOM、dense matrix、完整 sharedStrings table 或 `CellStore`。
+- SharedStrings/style 首切片输出 opaque index，formula 与 cached scalar 分离。Rich/formula metadata 等未投影语义明确 fail，不静默拍平。
+
 ## Patch
 
 ```text

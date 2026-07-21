@@ -5,7 +5,7 @@
 FastXLSX 共享 OpenXML/OPC package 底座，但不会用一个内部模型覆盖所有场景：
 
 ```text
-Streaming  -> 新建大文件，按行增量输出
+Streaming  -> 新建大文件按行增量输出，或对已有 worksheet 做有界顺序读取
 Patch      -> 编辑已有文件，part-level copy/rewrite/remove
 In-memory  -> 小文件稀疏随机编辑，再 handoff 给 Patch
 ```
@@ -18,6 +18,7 @@ In-memory  -> 小文件稀疏随机编辑，再 handoff 给 Patch
 
 - `Workbook`：小型新 workbook convenience API。
 - `WorkbookWriter`：large ordered export 的 Streaming facade。
+- `WorkbookReader`：existing-workbook forward-only bounded read facade。
 - `WorkbookEditor`：existing-workbook Patch facade。
 - `WorksheetEditor`：small-file In-memory borrowed handle。
 
@@ -57,6 +58,19 @@ In-memory  -> 小文件稀疏随机编辑，再 handoff 给 Patch
 Worksheet body batching 以 256 KiB 为当前上限，减少逐 row 文件写调用而不累积完整 worksheet。同步 `close()` 成功后立即关闭并删除 worksheet/image 临时文件，清空 row/body buffer、sharedStrings 与 styles；写包失败保留构建状态以便 retry。
 
 大型 worksheet 不进入完整 DOM，也不构建 dense cell matrix。
+
+### Streaming Read
+
+```text
+source XLSX
+  -> PackageReader / workbook catalog
+  -> fresh worksheet entry chunk source
+  -> bounded WorksheetEventReader window
+  -> active row/cell semantic projection
+  -> callback-lifetime WorksheetCellView
+```
+
+`WorkbookReader` 只在 `open()` 保留小型 package/workbook catalog；每次 `read_worksheet()` 独占一个 stored/DEFLATE entry source，完成或异常退出后立即释放。Public projector 只保留当前 row/cell，XML token window 与 decoded cell text 分别受 option 上限控制。SharedStrings/style 只暴露 workbook-local index，formula 与 cached value 分离；不加载完整 sharedStrings/styles、不构建 DOM/dense matrix/CellStore，也不进入 Patch plan 或 In-memory session。
 
 ### Patch
 
@@ -108,6 +122,7 @@ source worksheet
 ## 文件职责
 
 - `src/streaming_writer.cpp` 负责 Streaming 协调和热路径入口，不应无限承载每个 feature 的全部 serializer。
+- `src/worksheet_reader.cpp` 负责 public bounded read projector；internal raw XML events 和 OPC types 不进入 public header。
 - Feature 已拥有独立状态、XML、验证和大量测试时，应拆分内部实现与 feature-specific tests。
 - `src/package_editor.cpp`、`src/package_reader.cpp` 和 OPC helpers 是 existing-file foundation，不是 public facade。
 - 新增源码或测试文件必须同步 CMake。

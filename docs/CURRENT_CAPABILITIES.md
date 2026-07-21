@@ -20,6 +20,15 @@
 - 保存前在内存中保留已追加 row/cell，适合小文件便利创建。
 - 不是 existing-workbook editor，也不是 Streaming 性能路径。
 
+### Streaming：读取已有 workbook
+
+- `WorkbookReader::open()` 读取 package/OPC metadata 与小型 workbook catalog；`read_worksheet()` 为每次调用新建 worksheet package-entry source，并按 source order 同步回调 row start、cell、row end。
+- `WorksheetCellView` 投影 blank、finite number、boolean、simple inline/text/date token、error、sharedStrings index、simple formula text、可选 cached scalar 和 opaque style index。Formula 与 cached value 分开暴露，不求值或生成 cached value。
+- `reference`、`text_value`、`formula_text` 是 callback-lifetime borrowed view；调用方必须在 callback 返回前复制。Callback exception 原样传播，active stored/DEFLATE entry 由 RAII 释放，同一 `WorkbookReader` 可从头重试。
+- `WorksheetReaderOptions::max_xml_window_bytes` 限制未完成 XML token window，`max_cell_text_bytes` 限制 active cell 的 formula + scalar/inline decoded text 总量；内存不随 worksheet row/cell count增长，除 package reader fixed input buffer 外只保留 workbook catalog、当前 row/cell 和上述两个有界 buffer。
+- SharedStrings 首切片只检查 workbook relationship 存在并输出语法合法的 zero-based index，不读取整张 `sharedStrings.xml`、不验证 item count，也不做 value resolution；style 只输出语法合法的 workbook-local `cellXfs` index，不读取 `styles.xml` 或验证 cellXfs count。
+- Rich inline text、phonetic/extension cell metadata、shared/array 等 formula attributes、unsupported cell attributes、缺失/重复/乱序 row/cell reference、malformed value/XML boundary 和超过 guardrail 的输入明确抛 `FastXlsxError`。该 API 是 read-only forward traversal，不提供 seek、worksheet DOM/dense matrix、Patch mutation、In-memory materialization 或隐式 handoff。
+
 ### Patch：已有 workbook
 
 - `WorkbookEditor::open()` / `save_as()`；`WorkbookEditorSaveOptions::zip_compression_level` 可为 `-1`、`0` 或 `1..9`。
@@ -123,7 +132,8 @@
 ## Planned
 
 - worksheet lifecycle 的最小 add/remove 切片已完成；`remove_worksheet()` 的 unsupported semantics 默认 fail，不扩展为 worksheet clone。
-- `add_internal_hyperlink()`、`add_external_hyperlink()`、`add_data_validation()`、worksheet-root auto-filter set/clear、merged-cell add/remove 与 primary-view freeze-pane set/clear 已完成并进入 public Patch 能力。下一候选主线是 public bounded-memory worksheet reader；开始前必须定义 forward-only row/cell traversal、sharedStrings/formula/style 投影、borrowed/callback lifetime、malformed XML diagnostics、内存上界和与 Patch/In-memory 路径的边界，不通过 worksheet DOM 或 dense matrix 实现。
+- `add_internal_hyperlink()`、`add_external_hyperlink()`、`add_data_validation()`、worksheet-root auto-filter set/clear、merged-cell add/remove 与 primary-view freeze-pane set/clear 已完成并进入 public Patch 能力。
+- Public bounded-memory worksheet reader 首切片已完成。下一候选主线是 bounded sharedStrings item traversal companion：先定义 forward-only item/index callback、simple/rich/phonetic/extension 投影或 fail、borrowed lifetime、item-text/window guardrail 和 package-entry lifecycle；它不能通过完整 sharedStrings table、worksheet DOM 或把 index resolution 隐式塞进 `WorksheetEditor` 实现。
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。
 - `planned-xml` 中的 zlib-ng、Expat、pugixml 当前未被实现链接；manifest presence 不等于当前能力。

@@ -3,10 +3,11 @@
 /// @file fastxlsx.hpp
 /// Umbrella public header for FastXLSX.
 ///
-/// Includes both the small in-memory Workbook API and the streaming-oriented
-/// WorkbookWriter API. Workbook buffers rows until save(); use WorkbookWriter for
-/// large ordered exports that should not retain row data. Prefer including the
-/// narrower header when compile surface matters:
+/// Includes the small in-memory Workbook API plus Streaming write/read and
+/// existing-workbook edit facades. Workbook buffers rows until save(); use
+/// WorkbookWriter for large ordered exports and WorkbookReader for bounded
+/// forward traversal of an existing worksheet. Prefer including the narrower
+/// header when compile surface matters:
 ///
 /// - `fastxlsx/workbook.hpp` for Workbook, Worksheet, Cell, RowOptions, and
 ///   FastXlsxError.
@@ -17,6 +18,8 @@
 /// - `fastxlsx/workbook_editor.hpp` for WorkbookEditor, the Patch-mode facade
 ///   that edits existing workbook sheet data / targeted existing cells and
 ///   writes a new package.
+/// - `fastxlsx/worksheet_reader.hpp` for forward-only, bounded-memory row/cell
+///   traversal of an existing workbook.
 /// - `fastxlsx/image.hpp` for stb-backed PNG/JPEG metadata probing.
 
 #include <fastxlsx/cell_value.hpp>
@@ -26,3 +29,4 @@
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/workbook_editor.hpp>
 #include <fastxlsx/worksheet_metadata.hpp>
+#include <fastxlsx/worksheet_reader.hpp>

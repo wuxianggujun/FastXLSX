@@ -26,8 +26,10 @@
 - `WorksheetCellView` 投影 blank、finite number、boolean、simple inline/text/date token、error、sharedStrings index、simple formula text、可选 cached scalar 和 opaque style index。Formula 与 cached value 分开暴露，不求值或生成 cached value。
 - `reference`、`text_value`、`formula_text` 是 callback-lifetime borrowed view；调用方必须在 callback 返回前复制。Callback exception 原样传播，active stored/DEFLATE entry 由 RAII 释放，同一 `WorkbookReader` 可从头重试。
 - `WorksheetReaderOptions::max_xml_window_bytes` 限制未完成 XML token window，`max_cell_text_bytes` 限制 active cell 的 formula + scalar/inline decoded text 总量；内存不随 worksheet row/cell count增长，除 package reader fixed input buffer 外只保留 workbook catalog、当前 row/cell 和上述两个有界 buffer。
-- SharedStrings 首切片只检查 workbook relationship 存在并输出语法合法的 zero-based index，不读取整张 `sharedStrings.xml`、不验证 item count，也不做 value resolution；style 只输出语法合法的 workbook-local `cellXfs` index，不读取 `styles.xml` 或验证 cellXfs count。
-- Rich inline text、phonetic/extension cell metadata、shared/array 等 formula attributes、unsupported cell attributes、缺失/重复/乱序 row/cell reference、malformed value/XML boundary 和超过 guardrail 的输入明确抛 `FastXlsxError`。该 API 是 read-only forward traversal，不提供 seek、worksheet DOM/dense matrix、Patch mutation、In-memory materialization 或隐式 handoff。
+- `read_worksheet()` 的 SharedStrings 投影只检查 workbook relationship 存在并输出语法合法的 zero-based index，不读取 table、不验证 item count，也不自动做 value resolution；style 只输出语法合法的 workbook-local `cellXfs` index，不读取 `styles.xml` 或验证 cellXfs count。
+- `WorkbookReader::read_shared_strings()` 是独立的 bounded companion：它审计唯一 internal workbook relationship、percent-decoded/normalized target part、part presence 与标准 sharedStrings content type，然后按 zero-based index/source order 回调 `SharedStringItemView`。`text` 只在当前 callback 内有效；callback exception 原样传播，stored/DEFLATE entry 由 RAII 释放且 reader 可从头重试。
+- `SharedStringReaderOptions::max_xml_window_bytes` 与 `max_item_text_bytes` 分别限制未完成 XML token 与 active decoded item text。当前只投影恰好一个 simple `<t>` 的 `<si>`，支持 XML entity/character-reference decode 与 empty text；rich runs、phonetic、extension、nested/extra item metadata 和 malformed boundary 明确 fail。Root `count`/`uniqueCount` 只做 decimal syntax 校验，不与 worksheet references 交叉验证；实现不构建完整 sharedStrings table，也不隐式接入 `read_worksheet()`、Patch 或 In-memory。
+- Rich inline text、phonetic/extension cell metadata、shared/array 等 formula attributes、unsupported cell attributes、缺失/重复/乱序 row/cell reference、malformed value/XML boundary 和超过 guardrail 的输入明确抛 `FastXlsxError`。Reader APIs 是 read-only forward traversal，不提供 seek、worksheet DOM/dense matrix、Patch mutation、In-memory materialization 或隐式 handoff。
 
 ### Patch：已有 workbook
 
@@ -133,7 +135,7 @@
 
 - worksheet lifecycle 的最小 add/remove 切片已完成；`remove_worksheet()` 的 unsupported semantics 默认 fail，不扩展为 worksheet clone。
 - `add_internal_hyperlink()`、`add_external_hyperlink()`、`add_data_validation()`、worksheet-root auto-filter set/clear、merged-cell add/remove 与 primary-view freeze-pane set/clear 已完成并进入 public Patch 能力。
-- Public bounded-memory worksheet reader 首切片已完成。下一候选主线是 bounded sharedStrings item traversal companion：先定义 forward-only item/index callback、simple/rich/phonetic/extension 投影或 fail、borrowed lifetime、item-text/window guardrail 和 package-entry lifecycle；它不能通过完整 sharedStrings table、worksheet DOM 或把 index resolution 隐式塞进 `WorksheetEditor` 实现。
+- Public bounded-memory worksheet reader 与独立 bounded sharedStrings item traversal companion 已完成；两者保持 opaque worksheet index 与显式 table traversal 分离，不构建完整 table 或隐式接入 `WorksheetEditor`。下一候选主线是先设计 bounded styles/cellXfs traversal companion，明确 workbook-local index、number-format/font/fill/alignment 的最小投影、borrowed/owning lifetime、styles relationship/content-type audit、guardrail 和 unsupported metadata fail，再决定是否进入 public API。
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。
 - `planned-xml` 中的 zlib-ng、Expat、pugixml 当前未被实现链接；manifest presence 不等于当前能力。

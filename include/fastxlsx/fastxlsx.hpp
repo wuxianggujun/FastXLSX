@@ -19,7 +19,7 @@
 ///   that edits existing workbook sheet data / targeted existing cells and
 ///   writes a new package.
 /// - `fastxlsx/worksheet_reader.hpp` for forward-only, bounded-memory row/cell
-///   traversal of an existing workbook.
+///   and shared-string-item traversal of an existing workbook.
 /// - `fastxlsx/image.hpp` for stb-backed PNG/JPEG metadata probing.
 
 #include <fastxlsx/cell_value.hpp>

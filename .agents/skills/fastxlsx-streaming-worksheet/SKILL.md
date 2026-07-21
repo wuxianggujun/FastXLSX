@@ -14,6 +14,9 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 - `src/streaming_writer.cpp`
 - `include/fastxlsx/worksheet_reader.hpp`
 - `src/worksheet_reader.cpp`
+- `src/shared_strings_reader.cpp`
+- `tests/test_worksheet_reader.cpp`
+- `tests/test_shared_strings_reader.cpp`
 - streaming tests/benchmarks
 
 ## 热路径
@@ -28,10 +31,12 @@ Cell references、dimension tracking、XML escape、finite numbers、inline/shar
 
 `WorkbookReader` 是 read-only Streaming facade：每次 traversal 新建 package-entry chunk source，按 row start/cell/row end 回调，borrowed strings 只活到当前 callback。保持 XML window 与 active-cell decoded text 双 guardrail；sharedStrings/style 首切片输出 opaque index，formula 与 cached scalar 分离。Callback failure 原样传播并释放 entry，后续可从头读取。禁止完整 sharedStrings/styles、worksheet DOM、dense matrix、`CellStore` 或 Patch/In-memory 隐式 handoff。
 
+`read_shared_strings()` 是显式分离的 bounded companion：审计唯一 internal relationship、normalized target part 与标准 content type，按 index/source order 投影 simple `<si><t>`。Borrowed text 只活到 callback；XML window/item text 双 guardrail，rich/phonetic/extension/extra metadata 明确 fail。禁止构建完整 table、自动解析 worksheet index 或隐式接入 Patch/In-memory。
+
 ## Large Rewrite
 
 Existing-file large worksheet rewrite 属于 C5，不应通过 `WorksheetEditor` materialization 实现。需要 event/stream reader、coordinate/formula policy、metadata audit 和大文件内存证据。
 
 ## 验证
 
-Writer 运行 focused streaming tests、ZIP/XML、Office/openpyxl；性能相关时使用 schema-v6 executable/schema-v3 matrix，检查 generation/package-close/total wall 与 process CPU、CPU 总账、body buffer peak/flush count、process peak working set 和 close 后 active temporary file count。Reader 另测 stored/DEFLATE、typed projection、source order、borrowed copy、callback failure retry、双 guardrail、unsupported metadata 和 malformed diagnostics。
+Writer 运行 focused streaming tests、ZIP/XML、Office/openpyxl；性能相关时使用 schema-v6 executable/schema-v3 matrix，检查 generation/package-close/total wall 与 process CPU、CPU 总账、body buffer peak/flush count、process peak working set 和 close 后 active temporary file count。Worksheet reader 另测 stored/DEFLATE、typed projection、source order、borrowed copy、callback failure retry、双 guardrail、unsupported metadata 和 malformed diagnostics。SharedStrings companion 另测 simple/empty/entity decode、zero-based order、超过 package input chunk 的 token、relationship target/content type、rich/phonetic/extension rejection、callback retry 与双 guardrail。

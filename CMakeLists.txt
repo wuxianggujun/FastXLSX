@@ -43,6 +43,7 @@ set(_fastxlsx_sources
     src/package_editor.cpp
     src/package_reader.cpp
     src/package_writer.cpp
+    src/shared_strings_reader.cpp
     src/streaming_writer.cpp
     src/workbook.cpp
     src/workbook_editor.cpp

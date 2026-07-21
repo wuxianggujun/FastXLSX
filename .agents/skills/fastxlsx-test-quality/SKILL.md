@@ -17,6 +17,7 @@ description: "添加或排查 FastXLSX CTest、OpenXML、profile 和 benchmark e
 - In-memory typed strict category/context、explicit lossy、generic policy mismatch、malformed-source precedence、guardrail、no pollution、`last_edit_error()` preservation。
 - Streaming row order、无 DOM/dense matrix。
 - Public bounded reader 覆盖 stored/production DEFLATE、row/cell callback order、typed scalar/shared/style/formula-cached projection、borrowed copy、callback exception unchanged + entry retry、XML window/cell-text guardrail、coordinate order、relationship presence、rich/formula metadata rejection 与 malformed diagnostics。
+- Public bounded sharedStrings companion 覆盖 stored/production DEFLATE、simple/empty/entity decode、zero-based source order、borrowed copy、超过 package input chunk 的 token、callback exception unchanged + entry retry、XML window/item-text guardrail、missing/external/duplicate relationship、percent-decoded target、part/content-type audit、rich/phonetic/extension/extra metadata rejection与 malformed diagnostics。
 - No-images disabled-feature runtime smoke。
 
 普通 CTest timeout 为 60 秒；public-state 测试已全部拆为 standalone targets，不再保留专用 120 秒 legacy shard。

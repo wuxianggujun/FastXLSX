@@ -129,6 +129,43 @@ struct WorksheetReadSummary {
     std::size_t peak_cell_text_bytes = 0;
 };
 
+/// One forward-only shared-string item callback view.
+///
+/// text is a borrowed view valid only for the duration of the current on_item
+/// callback. Copy it when the value must outlive the callback. index is the
+/// zero-based workbook-local index used by worksheet cells with t="s".
+struct SharedStringItemView {
+    std::uint32_t index = 0;
+    std::string_view text;
+};
+
+/// Callbacks used by WorkbookReader::read_shared_strings().
+///
+/// The callback is optional and is invoked synchronously once per item in
+/// source/index order. Exceptions propagate unchanged; the active package-entry
+/// stream is released during unwinding and a later traversal starts over.
+struct SharedStringReadCallbacks {
+    std::function<void(const SharedStringItemView&)> on_item;
+};
+
+/// Guardrails for one bounded sharedStrings traversal.
+struct SharedStringReaderOptions {
+    /// Maximum bytes retained by the sharedStrings XML token window.
+    ///
+    /// A single XML tag or text token that cannot be completed within this
+    /// window is rejected. This limit is independent of the part's total size.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum decoded text retained for the active shared-string item.
+    std::size_t max_item_text_bytes = 64U * 1024U;
+};
+
+/// Summary returned after one successful sharedStrings traversal.
+struct SharedStringReadSummary {
+    std::uint64_t item_count = 0;
+    std::size_t peak_item_text_bytes = 0;
+};
+
 /// Existing-workbook bounded-memory worksheet reader.
 ///
 /// API mode: Streaming read. WorkbookReader indexes small package/workbook
@@ -143,6 +180,13 @@ struct WorksheetReadSummary {
 /// phonetic/extension cell metadata, formula attributes such as shared/array
 /// formula metadata, unsupported cell attributes, and malformed/out-of-order
 /// worksheet structure fail explicitly instead of being flattened.
+///
+/// read_shared_strings() is a separate forward-only companion. It resolves and
+/// audits the workbook sharedStrings relationship, target part, and content
+/// type, then projects simple `<si><t>...</t></si>` items. Rich runs, phonetic
+/// metadata, extensions, and other item markup fail explicitly instead of
+/// being flattened. It does not build a shared-string table or automatically
+/// resolve indexes emitted by read_worksheet().
 class WorkbookReader {
 public:
     /// Opens and indexes an existing XLSX package.
@@ -189,6 +233,29 @@ public:
         std::string_view sheet_name,
         const WorksheetReadCallbacks& callbacks = {},
         WorksheetReaderOptions options = {}) const;
+
+    /// Traverses sharedStrings items in zero-based index order with bounded memory.
+    ///
+    /// A fresh package-entry source is owned only for this call. Callback text
+    /// is valid only during its callback. The relationship must be unique and
+    /// internal, its target must exist, and the target must carry the standard
+    /// sharedStrings content type. Successful return closes the entry after
+    /// CRC/size validation; callback/parser/package failures release it during
+    /// unwinding and a later call may retry from the beginning.
+    ///
+    /// The current projection accepts only one simple text element per item.
+    /// It rejects rich runs, phonetic data, extension metadata, nested markup,
+    /// malformed XML, and item indexes beyond uint32_t. Root count/uniqueCount
+    /// attributes are syntax-checked when present but are not cross-validated
+    /// against worksheet references.
+    ///
+    /// @throws FastXlsxError if the reader is moved from, options are zero, the
+    /// relationship/content-type/target audit fails, package reading fails, or
+    /// sharedStrings XML is malformed or unsupported. User callback exceptions
+    /// propagate unchanged.
+    [[nodiscard]] SharedStringReadSummary read_shared_strings(
+        const SharedStringReadCallbacks& callbacks = {},
+        SharedStringReaderOptions options = {}) const;
 
 private:
     struct Impl;

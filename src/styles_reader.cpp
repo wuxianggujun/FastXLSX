@@ -204,6 +204,31 @@ bool parse_boolean(std::string_view value, std::string_view context)
         "styles reader found an invalid " + std::string(context));
 }
 
+std::uint32_t parse_argb(std::string_view value, std::string_view context)
+{
+    if (value.size() != 8) {
+        throw fastxlsx::FastXlsxError(
+            "style components reader found an invalid " + std::string(context));
+    }
+
+    std::uint32_t parsed = 0;
+    for (const char ch : value) {
+        std::uint32_t digit = 0;
+        if (ch >= '0' && ch <= '9') {
+            digit = static_cast<std::uint32_t>(ch - '0');
+        } else if (ch >= 'a' && ch <= 'f') {
+            digit = static_cast<std::uint32_t>(ch - 'a' + 10);
+        } else if (ch >= 'A' && ch <= 'F') {
+            digit = static_cast<std::uint32_t>(ch - 'A' + 10);
+        } else {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found an invalid " + std::string(context));
+        }
+        parsed = (parsed << 4U) | digit;
+    }
+    return parsed;
+}
+
 bool is_valid_xml_code_point(std::uint32_t code_point) noexcept
 {
     return code_point == 0x09U || code_point == 0x0AU || code_point == 0x0DU
@@ -803,6 +828,558 @@ private:
     fastxlsx::CellFormatReadSummary summary_;
 };
 
+struct ActiveFontComponent {
+    fastxlsx::CellFormatFontView view;
+    bool saw_bold = false;
+    bool saw_italic = false;
+    bool saw_size = false;
+    bool saw_color = false;
+    bool saw_name = false;
+    bool saw_family = false;
+    bool saw_scheme = false;
+};
+
+struct ActiveFillComponent {
+    std::optional<fastxlsx::CellFormatFillPattern> pattern;
+    std::optional<std::uint32_t> foreground_argb_color;
+    bool saw_background = false;
+};
+
+class StyleComponentProjectionReader {
+public:
+    StyleComponentProjectionReader(
+        const fastxlsx::StyleComponentReadCallbacks& callbacks,
+        fastxlsx::StyleComponentReaderOptions options)
+        : callbacks_(callbacks)
+        , options_(options)
+    {
+    }
+
+    void consume_text(std::string_view text) const
+    {
+        std::size_t offset = 0;
+        if (!saw_root_ && text.substr(0, 3) == "\xef\xbb\xbf") {
+            offset = 3;
+        }
+        if (has_non_whitespace(text.substr(offset))) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found unsupported element text");
+        }
+    }
+
+    void consume_special_markup() const
+    {
+        if (active_font_.has_value() || active_fill_.has_value()) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found unsupported markup inside a component record");
+        }
+    }
+
+    void consume_tag(std::string_view raw_tag)
+    {
+        const ParsedTag tag = parse_tag(raw_tag);
+        if (tag.closing) {
+            consume_closing_tag(tag);
+            return;
+        }
+        consume_opening_tag(tag, raw_tag);
+    }
+
+    [[nodiscard]] fastxlsx::StyleComponentReadSummary finish() const
+    {
+        if (!saw_root_) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader requires a styleSheet root element");
+        }
+        if (!finished_root_ || !element_stack_.empty()
+            || active_font_.has_value() || active_fill_.has_value()) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader ended inside an open XML element");
+        }
+        return summary_;
+    }
+
+private:
+    std::string_view parent_local_name() const noexcept
+    {
+        return element_stack_.empty()
+            ? std::string_view {}
+            : local_name(element_stack_.back());
+    }
+
+    void push_element(std::string_view qualified_name)
+    {
+        if (element_stack_.size() >= options_.max_xml_nesting_depth) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader exceeded max_xml_nesting_depth");
+        }
+        element_stack_.emplace_back(qualified_name);
+        summary_.peak_xml_nesting_depth =
+            std::max(summary_.peak_xml_nesting_depth, element_stack_.size());
+    }
+
+    static void require_no_attributes(
+        std::string_view raw_tag, std::string_view context)
+    {
+        visit_attributes(raw_tag, [context](std::string_view, std::string_view) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found unsupported " + std::string(context)
+                + " metadata");
+        });
+    }
+
+    static bool parse_flag(std::string_view raw_tag, std::string_view context)
+    {
+        std::optional<bool> value;
+        visit_attributes(raw_tag, [&](std::string_view name, std::string_view raw_value) {
+            if (name != "val") {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found unsupported "
+                    + std::string(context) + " metadata");
+            }
+            assign_once(value, parse_boolean(raw_value, context), name);
+        });
+        return value.value_or(true);
+    }
+
+    static std::string_view parse_required_value(
+        std::string_view raw_tag, std::string_view context)
+    {
+        std::optional<std::string_view> value;
+        visit_attributes(raw_tag, [&](std::string_view name, std::string_view raw_value) {
+            if (name != "val") {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found unsupported "
+                    + std::string(context) + " metadata");
+            }
+            assign_once(value, raw_value, name);
+        });
+        if (!value.has_value()) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader requires a " + std::string(context)
+                + " val attribute");
+        }
+        return *value;
+    }
+
+    void consume_font_child(const ParsedTag& tag, std::string_view raw_tag)
+    {
+        if (parent_local_name() != "font") {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found nested font metadata");
+        }
+
+        bool* seen = nullptr;
+        if (tag.local_name == "b") {
+            seen = &active_font_->saw_bold;
+            if (*seen) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found duplicate bold metadata");
+            }
+            *seen = true;
+            active_font_->view.bold = parse_flag(raw_tag, "font bold flag");
+        } else if (tag.local_name == "i") {
+            seen = &active_font_->saw_italic;
+            if (*seen) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found duplicate italic metadata");
+            }
+            *seen = true;
+            active_font_->view.italic = parse_flag(raw_tag, "font italic flag");
+        } else if (tag.local_name == "sz") {
+            seen = &active_font_->saw_size;
+            if (*seen) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found duplicate font size metadata");
+            }
+            *seen = true;
+            const std::string_view value = parse_required_value(raw_tag, "font size");
+            if (value != "11" && value != "11.0") {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader does not project non-default font size");
+            }
+        } else if (tag.local_name == "color") {
+            if (active_font_->saw_color) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found duplicate font color metadata");
+            }
+            active_font_->saw_color = true;
+            std::optional<std::uint32_t> rgb;
+            std::optional<std::uint32_t> theme;
+            visit_attributes(raw_tag,
+                [&](std::string_view name, std::string_view value) {
+                    if (name == "rgb") {
+                        assign_once(rgb, parse_argb(value, "font ARGB color"), name);
+                        return;
+                    }
+                    if (name == "theme") {
+                        assign_once(theme, parse_u32(value, "font theme color"), name);
+                        return;
+                    }
+                    throw fastxlsx::FastXlsxError(
+                        "style components reader found unsupported font color metadata");
+                });
+            if (rgb.has_value() == theme.has_value()) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader requires one font rgb or theme color");
+            }
+            if (theme.has_value() && *theme != 1) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader does not resolve non-default font theme color");
+            }
+            active_font_->view.direct_argb_color = rgb;
+        } else if (tag.local_name == "name") {
+            seen = &active_font_->saw_name;
+            if (*seen) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found duplicate font name metadata");
+            }
+            *seen = true;
+            if (parse_required_value(raw_tag, "font name") != "Calibri") {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader does not project non-default font name");
+            }
+        } else if (tag.local_name == "family") {
+            seen = &active_font_->saw_family;
+            if (*seen) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found duplicate font family metadata");
+            }
+            *seen = true;
+            if (parse_u32(parse_required_value(raw_tag, "font family"), "font family")
+                != 2) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader does not project non-default font family");
+            }
+        } else if (tag.local_name == "scheme") {
+            seen = &active_font_->saw_scheme;
+            if (*seen) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found duplicate font scheme metadata");
+            }
+            *seen = true;
+            if (parse_required_value(raw_tag, "font scheme") != "minor") {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader does not project non-default font scheme");
+            }
+        } else {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found unsupported font metadata");
+        }
+
+        if (!tag.self_closing) {
+            push_element(tag.qualified_name);
+        }
+    }
+
+    void consume_fill_child(const ParsedTag& tag, std::string_view raw_tag)
+    {
+        const std::string_view parent = parent_local_name();
+        if (parent == "fill") {
+            if (tag.local_name != "patternFill" || active_fill_->pattern.has_value()) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader requires one patternFill per fill");
+            }
+            std::optional<std::string_view> pattern_type;
+            visit_attributes(raw_tag,
+                [&](std::string_view name, std::string_view value) {
+                    if (name != "patternType") {
+                        throw fastxlsx::FastXlsxError(
+                            "style components reader found unsupported patternFill metadata");
+                    }
+                    assign_once(pattern_type, value, name);
+                });
+            if (!pattern_type.has_value()) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader requires patternType metadata");
+            }
+            if (*pattern_type == "none") {
+                active_fill_->pattern = fastxlsx::CellFormatFillPattern::None;
+            } else if (*pattern_type == "gray125") {
+                active_fill_->pattern = fastxlsx::CellFormatFillPattern::Gray125;
+            } else if (*pattern_type == "solid") {
+                active_fill_->pattern = fastxlsx::CellFormatFillPattern::Solid;
+            } else {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found unsupported fill pattern");
+            }
+        } else if (parent == "patternFill") {
+            if (tag.local_name == "fgColor") {
+                if (active_fill_->foreground_argb_color.has_value()) {
+                    throw fastxlsx::FastXlsxError(
+                        "style components reader found duplicate fill foreground color");
+                }
+                std::optional<std::uint32_t> rgb;
+                visit_attributes(raw_tag,
+                    [&](std::string_view name, std::string_view value) {
+                        if (name != "rgb") {
+                            throw fastxlsx::FastXlsxError(
+                                "style components reader requires a direct fill foreground color");
+                        }
+                        assign_once(rgb, parse_argb(value, "fill ARGB color"), name);
+                    });
+                if (!rgb.has_value()) {
+                    throw fastxlsx::FastXlsxError(
+                        "style components reader requires a fill foreground rgb color");
+                }
+                active_fill_->foreground_argb_color = rgb;
+            } else if (tag.local_name == "bgColor") {
+                if (active_fill_->saw_background) {
+                    throw fastxlsx::FastXlsxError(
+                        "style components reader found duplicate fill background color");
+                }
+                active_fill_->saw_background = true;
+                std::optional<std::uint32_t> indexed;
+                visit_attributes(raw_tag,
+                    [&](std::string_view name, std::string_view value) {
+                        if (name != "indexed") {
+                            throw fastxlsx::FastXlsxError(
+                                "style components reader requires the default fill background color");
+                        }
+                        assign_once(indexed,
+                            parse_u32(value, "fill background color"), name);
+                    });
+                if (!indexed.has_value() || *indexed != 64) {
+                    throw fastxlsx::FastXlsxError(
+                        "style components reader requires indexed fill background 64");
+                }
+            } else {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found unsupported patternFill child metadata");
+            }
+        } else {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found nested fill metadata");
+        }
+
+        if (!tag.self_closing) {
+            push_element(tag.qualified_name);
+        }
+    }
+
+    void consume_opening_tag(const ParsedTag& tag, std::string_view raw_tag)
+    {
+        if (!saw_root_) {
+            if (tag.local_name != "styleSheet") {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader requires a styleSheet root element");
+            }
+            visit_attributes(raw_tag, [](std::string_view, std::string_view) {});
+            saw_root_ = true;
+            if (tag.self_closing) {
+                finished_root_ = true;
+            } else {
+                push_element(tag.qualified_name);
+            }
+            return;
+        }
+        if (finished_root_) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found markup after the root element");
+        }
+        if (active_font_.has_value()) {
+            consume_font_child(tag, raw_tag);
+            return;
+        }
+        if (active_fill_.has_value()) {
+            consume_fill_child(tag, raw_tag);
+            return;
+        }
+
+        const std::string_view parent = parent_local_name();
+        if (parent == "styleSheet" && tag.local_name == "fonts") {
+            if (saw_fonts_) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found duplicate fonts elements");
+            }
+            if (saw_fills_) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader requires fonts before fills");
+            }
+            saw_fonts_ = true;
+            declared_font_count_ = parse_container_count(raw_tag, "fonts");
+            if (declared_font_count_.has_value()
+                && *declared_font_count_ > options_.max_font_count) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader exceeded max_font_count");
+            }
+            if (tag.self_closing) {
+                validate_count(declared_font_count_, summary_.font_count, "fonts");
+            } else {
+                push_element(tag.qualified_name);
+            }
+            return;
+        }
+        if (parent == "styleSheet" && tag.local_name == "fills") {
+            if (saw_fills_) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found duplicate fills elements");
+            }
+            saw_fills_ = true;
+            declared_fill_count_ = parse_container_count(raw_tag, "fills");
+            if (declared_fill_count_.has_value()
+                && *declared_fill_count_ > options_.max_fill_count) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader exceeded max_fill_count");
+            }
+            if (tag.self_closing) {
+                validate_count(declared_fill_count_, summary_.fill_count, "fills");
+            } else {
+                push_element(tag.qualified_name);
+            }
+            return;
+        }
+        if (parent == "fonts") {
+            if (tag.local_name != "font") {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found unsupported fonts child metadata");
+            }
+            require_no_attributes(raw_tag, "font");
+            active_font_.emplace();
+            if (tag.self_closing) {
+                emit_font();
+            } else {
+                push_element(tag.qualified_name);
+            }
+            return;
+        }
+        if (parent == "fills") {
+            if (tag.local_name != "fill") {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader found unsupported fills child metadata");
+            }
+            require_no_attributes(raw_tag, "fill");
+            active_fill_.emplace();
+            if (tag.self_closing) {
+                emit_fill();
+            } else {
+                push_element(tag.qualified_name);
+            }
+            return;
+        }
+
+        visit_attributes(raw_tag, [](std::string_view, std::string_view) {});
+        if (!tag.self_closing) {
+            push_element(tag.qualified_name);
+        }
+    }
+
+    void consume_closing_tag(const ParsedTag& tag)
+    {
+        if (element_stack_.empty() || element_stack_.back() != tag.qualified_name) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found a mismatched XML boundary");
+        }
+
+        const std::string_view name = local_name(element_stack_.back());
+        if (active_font_.has_value()) {
+            const bool closes_font = name == "font";
+            element_stack_.pop_back();
+            if (closes_font) {
+                emit_font();
+            }
+            return;
+        }
+        if (active_fill_.has_value()) {
+            const bool closes_fill = name == "fill";
+            element_stack_.pop_back();
+            if (closes_fill) {
+                emit_fill();
+            }
+            return;
+        }
+
+        if (name == "fonts") {
+            validate_count(declared_font_count_, summary_.font_count, "fonts");
+        } else if (name == "fills") {
+            validate_count(declared_fill_count_, summary_.fill_count, "fills");
+        } else if (name == "styleSheet") {
+            finished_root_ = true;
+        }
+        element_stack_.pop_back();
+    }
+
+    static void validate_count(const std::optional<std::uint64_t>& declared,
+        std::uint64_t actual,
+        std::string_view container_name)
+    {
+        if (declared.has_value() && *declared != actual) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found a " + std::string(container_name)
+                + " count mismatch");
+        }
+    }
+
+    void emit_font()
+    {
+        if (summary_.font_count >= options_.max_font_count) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader exceeded max_font_count");
+        }
+        if (summary_.font_count
+            > static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader font index exceeds uint32_t");
+        }
+        active_font_->view.index = static_cast<std::uint32_t>(summary_.font_count);
+        if (callbacks_.on_font) {
+            callbacks_.on_font(active_font_->view);
+        }
+        ++summary_.font_count;
+        active_font_.reset();
+    }
+
+    void emit_fill()
+    {
+        if (!active_fill_->pattern.has_value()) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader requires one patternFill per fill");
+        }
+        if (*active_fill_->pattern == fastxlsx::CellFormatFillPattern::Solid) {
+            if (!active_fill_->foreground_argb_color.has_value()) {
+                throw fastxlsx::FastXlsxError(
+                    "style components reader requires a solid fill foreground color");
+            }
+        } else if (active_fill_->foreground_argb_color.has_value()
+            || active_fill_->saw_background) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader found color metadata on a non-solid fill");
+        }
+        if (summary_.fill_count >= options_.max_fill_count) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader exceeded max_fill_count");
+        }
+        if (summary_.fill_count
+            > static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())) {
+            throw fastxlsx::FastXlsxError(
+                "style components reader fill index exceeds uint32_t");
+        }
+
+        const fastxlsx::CellFormatFillView view {
+            static_cast<std::uint32_t>(summary_.fill_count),
+            *active_fill_->pattern,
+            active_fill_->foreground_argb_color};
+        if (callbacks_.on_fill) {
+            callbacks_.on_fill(view);
+        }
+        ++summary_.fill_count;
+        active_fill_.reset();
+    }
+
+    const fastxlsx::StyleComponentReadCallbacks& callbacks_;
+    fastxlsx::StyleComponentReaderOptions options_;
+    bool saw_root_ = false;
+    bool finished_root_ = false;
+    bool saw_fonts_ = false;
+    bool saw_fills_ = false;
+    std::optional<std::uint64_t> declared_font_count_;
+    std::optional<std::uint64_t> declared_fill_count_;
+    std::optional<ActiveFontComponent> active_font_;
+    std::optional<ActiveFillComponent> active_fill_;
+    std::vector<std::string> element_stack_;
+    fastxlsx::StyleComponentReadSummary summary_;
+};
+
 } // namespace
 
 namespace fastxlsx::detail {
@@ -842,6 +1419,45 @@ CellFormatReadSummary read_cell_formats_from_chunk_source(
     };
     scan_bounded_xml_from_chunk_source(
         read_next_chunk, xml_callbacks, options.max_xml_window_bytes, "styles");
+    return reader.finish();
+}
+
+StyleComponentReadSummary read_style_components_from_chunk_source(
+    const StylesInputChunkCallback& read_next_chunk,
+    const StyleComponentReadCallbacks& callbacks,
+    StyleComponentReaderOptions options)
+{
+    if (!read_next_chunk) {
+        throw FastXlsxError("style components reader requires a chunk source");
+    }
+    if (options.max_xml_window_bytes == 0) {
+        throw FastXlsxError(
+            "style components reader requires nonzero max_xml_window_bytes");
+    }
+    if (options.max_xml_nesting_depth == 0) {
+        throw FastXlsxError(
+            "style components reader requires nonzero max_xml_nesting_depth");
+    }
+    if (options.max_font_count == 0) {
+        throw FastXlsxError("style components reader requires nonzero max_font_count");
+    }
+    if (options.max_fill_count == 0) {
+        throw FastXlsxError("style components reader requires nonzero max_fill_count");
+    }
+
+    StyleComponentProjectionReader reader(callbacks, options);
+    BoundedXmlCallbacks xml_callbacks;
+    xml_callbacks.on_text = [&reader](std::string_view text) {
+        reader.consume_text(text);
+    };
+    xml_callbacks.on_tag = [&reader](std::string_view raw_tag) {
+        reader.consume_tag(raw_tag);
+    };
+    xml_callbacks.on_special_markup = [&reader] {
+        reader.consume_special_markup();
+    };
+    scan_bounded_xml_from_chunk_source(read_next_chunk, xml_callbacks,
+        options.max_xml_window_bytes, "style components");
     return reader.finish();
 }
 

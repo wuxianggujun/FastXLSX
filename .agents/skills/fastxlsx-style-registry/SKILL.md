@@ -7,7 +7,7 @@ description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment
 
 ## 当前边界
 
-以 public header/tests 为准：写侧包括 `StyleId`、number formats、wrap text、有限 horizontal/vertical alignment、bold/italic/direct ARGB font color、solid fill 与 worksheet cell `s` 属性；读侧包括独立 bounded custom number-format/cellXfs traversal。
+以 public header/tests 为准：写侧包括 `StyleId`、number formats、wrap text、有限 horizontal/vertical alignment、bold/italic/direct ARGB font color、solid fill 与 worksheet cell `s` 属性；读侧包括独立 bounded custom number-format/cellXfs traversal，以及 writer-compatible bold/italic/direct-ARGB font 与 none/gray125/solid fill component traversal。
 
 ## 设计规则
 
@@ -21,6 +21,8 @@ description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment
 Source style preservation 与 value-only edits 不等于完整 styles migration。Caller-supplied non-default source style handle 的支持以 public contract 为准，不猜测映射。
 
 `WorkbookReader::read_cell_formats()` 只投影 custom format code、zero-based cellXfs、opaque number-format/font/fill ids、apply flags 与窄 alignment；它不构建完整 registry、不解析 font/fill table、不自动关联 worksheet `style_index`。Relationship/content type、container count、duplicate custom id 与 guardrail 必须审计；未支持的 enabled xf metadata 明确 fail，standard explicit false/no-op flags 可接受。
+
+`WorkbookReader::read_style_components()` 独立投影 zero-based owning font/fill values，不改变上述 opaque id 契约。Font 只支持 bold/italic/direct ARGB 与 writer 固定 Calibri 11/family 2/minor/theme 1 metadata；fill 只支持 none/gray125/solid direct ARGB。Container count、XML window/nesting/component-count、relationship/content type 与 callback retry 必须审计；其他 font/theme/color/pattern/gradient fail，不保留完整 table 或自动 join。
 
 ## 非目标
 

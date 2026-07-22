@@ -257,6 +257,72 @@ struct CellFormatReadSummary {
     std::size_t peak_xml_nesting_depth = 0;
 };
 
+/// Fill pattern projected by the narrow style-components reader.
+enum class CellFormatFillPattern {
+    None,
+    Gray125,
+    Solid,
+};
+
+/// One zero-based font record projected from the styles part.
+///
+/// All fields are callback-independent values. direct_argb_color, when present,
+/// stores an OpenXML eight-digit `rgb` value as `0xAARRGGBB`. The narrow
+/// projection supports bold, italic, direct ARGB color, and the fixed default
+/// font metadata emitted by FastXLSX. It does not resolve theme colors or expose
+/// font name, size, family, scheme, underline, strike, or rich-text semantics.
+struct CellFormatFontView {
+    std::uint32_t index = 0;
+    bool bold = false;
+    bool italic = false;
+    std::optional<std::uint32_t> direct_argb_color;
+};
+
+/// One zero-based fill record projected from the styles part.
+///
+/// All fields are callback-independent values. A Solid record carries a direct
+/// ARGB foreground color as `0xAARRGGBB`; None and Gray125 records do not carry
+/// a foreground color. Gradient, theme, tint, and other pattern semantics are
+/// outside this narrow projection.
+struct CellFormatFillView {
+    std::uint32_t index = 0;
+    CellFormatFillPattern pattern = CellFormatFillPattern::None;
+    std::optional<std::uint32_t> foreground_argb_color;
+};
+
+/// Callbacks used by WorkbookReader::read_style_components().
+///
+/// Callbacks are optional and run synchronously in styles source order. Values
+/// contain no borrowed strings and may be copied beyond the callback. User
+/// exceptions propagate unchanged; the active package-entry stream is released
+/// during unwinding and a later traversal starts over.
+struct StyleComponentReadCallbacks {
+    std::function<void(const CellFormatFontView&)> on_font;
+    std::function<void(const CellFormatFillView&)> on_fill;
+};
+
+/// Guardrails for one bounded styles font/fill traversal.
+struct StyleComponentReaderOptions {
+    /// Maximum bytes retained by the styles XML token window.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum XML element nesting depth retained by the structural stack.
+    std::size_t max_xml_nesting_depth = 64U;
+
+    /// Maximum font records accepted and emitted in one traversal.
+    std::size_t max_font_count = 64U * 1024U;
+
+    /// Maximum fill records accepted and emitted in one traversal.
+    std::size_t max_fill_count = 64U * 1024U;
+};
+
+/// Summary returned after one successful styles font/fill traversal.
+struct StyleComponentReadSummary {
+    std::uint64_t font_count = 0;
+    std::uint64_t fill_count = 0;
+    std::size_t peak_xml_nesting_depth = 0;
+};
+
 /// Existing-workbook bounded-memory worksheet reader.
 ///
 /// API mode: Streaming read. WorkbookReader indexes small package/workbook
@@ -283,6 +349,10 @@ struct CellFormatReadSummary {
 /// number-format definitions and narrow cellXfs records without building a
 /// complete styles registry. Worksheet style indexes, font/fill references,
 /// and number-format references remain explicitly caller-resolved.
+///
+/// read_style_components() separately projects the writer-compatible font and
+/// fill subset. It does not make component ids portable or automatically join
+/// component records to cellXfs or worksheet style indexes.
 class WorkbookReader {
 public:
     /// Opens and indexes an existing XLSX package.
@@ -384,6 +454,37 @@ public:
     [[nodiscard]] CellFormatReadSummary read_cell_formats(
         const CellFormatReadCallbacks& callbacks = {},
         CellFormatReaderOptions options = {}) const;
+
+    /// Traverses narrow font and fill records with bounded memory.
+    ///
+    /// A fresh styles package-entry source is owned only for this call. The
+    /// styles relationship, normalized target, part presence, and content type
+    /// receive the same audit as read_cell_formats(). Successful return closes
+    /// the entry after CRC/size validation; callback, parser, or package failures
+    /// release it during unwinding and a later call may retry from the beginning.
+    ///
+    /// Font and fill indexes are zero-based workbook-local values. Font records
+    /// project bold/italic and optional direct ARGB color while accepting only
+    /// the fixed default size/name/family/scheme/theme metadata emitted by the
+    /// current writer. Fill records project none, gray125, or solid direct-ARGB
+    /// patterns. Unsupported font properties, non-default theme metadata,
+    /// gradients, other pattern/color forms, malformed containers, and count
+    /// mismatches fail explicitly rather than being flattened.
+    ///
+    /// All callback fields are owning scalar values. Memory is bounded by the
+    /// XML window, nesting depth, current component record, and configured
+    /// callback-count limits; the method does not retain a component table.
+    /// This read-only traversal does not build a styles DOM/registry, resolve
+    /// cellXfs or WorksheetCellView::style_index automatically, mutate the
+    /// package, or hand styles to Patch or In-memory editors.
+    ///
+    /// @throws FastXlsxError if the reader is moved from, an option is zero, the
+    /// relationship/content-type/target audit fails, package reading fails, or
+    /// styles XML is malformed or outside the narrow projection. User callback
+    /// exceptions propagate unchanged.
+    [[nodiscard]] StyleComponentReadSummary read_style_components(
+        const StyleComponentReadCallbacks& callbacks = {},
+        StyleComponentReaderOptions options = {}) const;
 
 private:
     struct Impl;

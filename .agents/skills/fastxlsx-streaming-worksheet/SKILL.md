@@ -35,6 +35,8 @@ Cell references、dimension tracking、XML escape、finite numbers、inline/shar
 
 `read_cell_formats()` 是显式分离的 bounded styles companion：审计唯一 internal relationship、normalized target part 与标准 content type，按 source order 分别投影 custom `numFmtId + formatCode` 和 zero-based `cellXfs`。Format code 只活到 callback；cell format ids/apply/alignment 是 owning values，number-format/font/fill ids 保持 opaque。XML window、active format-code、nesting 与 custom-id count 提供 guardrail；enabled border/base-style/protection/quote/pivot、extension 和其他未投影 metadata 明确 fail。禁止完整 styles registry、自动解析 worksheet style index 或隐式接入 Patch/In-memory。
 
+`read_style_components()` 是另一条显式 bounded styles traversal：按 source order 投影 zero-based owning font/fill values，font 仅含 bold/italic/optional direct ARGB 并接受 writer 固定 default metadata，fill 仅含 none/gray125/solid direct ARGB。XML window、nesting、font/fill count 与 container count 必须有门禁；theme/tint inheritance、其他 font/color/pattern/gradient 明确 fail。它不保留 component table，也不自动关联 cellXfs 或 worksheet style index。
+
 ## Large Rewrite
 
 Existing-file large worksheet rewrite 属于 C5，不应通过 `WorksheetEditor` materialization 实现。需要 event/stream reader、coordinate/formula policy、metadata audit 和大文件内存证据。

@@ -1189,4 +1189,43 @@ CellFormatReadSummary WorkbookReader::read_cell_formats(
         impl_->package.entry_chunk_source(part.zip_path()), callbacks, options);
 }
 
+StyleComponentReadSummary WorkbookReader::read_style_components(
+    const StyleComponentReadCallbacks& callbacks,
+    StyleComponentReaderOptions options) const
+{
+    if (!impl_) {
+        throw FastXlsxError("WorkbookReader is not open");
+    }
+    if (options.max_xml_window_bytes == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_xml_window_bytes");
+    }
+    if (options.max_xml_nesting_depth == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_xml_nesting_depth");
+    }
+    if (options.max_font_count == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_font_count");
+    }
+    if (options.max_fill_count == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_fill_count");
+    }
+    if (!impl_->relationships.styles.has_value()) {
+        throw FastXlsxError("WorkbookReader workbook has no styles relationship");
+    }
+
+    const detail::PartName part = resolve_workbook_relationship_part(
+        impl_->package.workbook_part(), *impl_->relationships.styles, "styles");
+    const detail::PackagePart* package_part = impl_->package.part_index().find_part(part);
+    if (package_part == nullptr) {
+        throw FastXlsxError(
+            "WorkbookReader styles relationship targets an unknown part");
+    }
+    if (package_part->content_type != styles_content_type) {
+        throw FastXlsxError(
+            "WorkbookReader styles relationship target has the wrong content type");
+    }
+
+    return detail::read_style_components_from_chunk_source(
+        impl_->package.entry_chunk_source(part.zip_path()), callbacks, options);
+}
+
 } // namespace fastxlsx

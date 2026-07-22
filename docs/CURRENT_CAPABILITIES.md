@@ -31,6 +31,8 @@
 - `SharedStringReaderOptions::max_xml_window_bytes` 与 `max_item_text_bytes` 分别限制未完成 XML token 与 active decoded item text。当前只投影恰好一个 simple `<t>` 的 `<si>`，支持 XML entity/character-reference decode 与 empty text；rich runs、phonetic、extension、nested/extra item metadata 和 malformed boundary 明确 fail。Root `count`/`uniqueCount` 只做 decimal syntax 校验，不与 worksheet references 交叉验证；实现不构建完整 sharedStrings table，也不隐式接入 `read_worksheet()`、Patch 或 In-memory。
 - `WorkbookReader::read_cell_formats()` 是独立的 bounded styles/cellXfs companion：它审计唯一 internal styles relationship、percent-decoded/normalized target part、part presence 与标准 styles content type；按 source order 回调 custom `numFmtId + formatCode` 与 zero-based `cellXfs`。`format_code` 是 callback-lifetime decoded view；cell format 的 number-format/font/fill ids、apply flags 与窄 alignment 是可复制值，其中 component ids 保持 opaque workbook-local references。
 - `CellFormatReaderOptions` 分别限制 XML token window、active format-code bytes、XML nesting depth 与用于 custom `numFmtId` 去重的数量；container `count` 与 direct record 数量必须一致。当前只接受 zero border/base-style reference、显式 false 的 no-op standard flags，以及 wrap/left-center-right/top-center-bottom alignment；enabled border/protection/quote/pivot、protection/extension child 和其他 cell-format/alignment metadata 明确 fail。实现不构建完整 styles registry，不解析 font/fill table，不自动解析 worksheet `style_index`，也不隐式接入 Patch 或 In-memory。
+- `WorkbookReader::read_style_components()` 是另一个独立 bounded styles companion：它复用相同的唯一 internal relationship、normalized target、part presence 与 content-type audit，按 source order 回调 zero-based font/fill record。所有字段都是可复制标量；font 只投影 bold/italic/optional direct `0xAARRGGBB` 并接受当前 writer 的固定 Calibri 11/family 2/minor/theme 1 metadata，fill 只投影 none、gray125 与 solid direct-ARGB foreground。
+- `StyleComponentReaderOptions` 限制 XML token window、nesting depth、font count 与 fill count；container `count` 必须与 direct records 一致。Underline/strike/其他 font 属性、非默认 size/name/family/scheme/theme、indexed/auto/tint color、gradient/其他 pattern 与 malformed nesting 明确 fail。该 traversal 不保留 component table、不构建完整 registry、不自动关联 cellXfs 或 worksheet `style_index`，也不进入 Patch/In-memory。
 - Rich inline text、phonetic/extension cell metadata、shared/array 等 formula attributes、unsupported cell attributes、缺失/重复/乱序 row/cell reference、malformed value/XML boundary 和超过 guardrail 的输入明确抛 `FastXlsxError`。Reader APIs 是 read-only forward traversal，不提供 seek、worksheet DOM/dense matrix、Patch mutation、In-memory materialization 或隐式 handoff。
 
 ### Patch：已有 workbook
@@ -137,7 +139,7 @@
 
 - worksheet lifecycle 的最小 add/remove 切片已完成；`remove_worksheet()` 的 unsupported semantics 默认 fail，不扩展为 worksheet clone。
 - `add_internal_hyperlink()`、`add_external_hyperlink()`、`add_data_validation()`、worksheet-root auto-filter set/clear、merged-cell add/remove 与 primary-view freeze-pane set/clear 已完成并进入 public Patch 能力。
-- Public bounded-memory worksheet reader、bounded sharedStrings item traversal 与 bounded styles/cellXfs traversal companion 已完成；三者保持 opaque worksheet index 与显式 companion traversal 分离，不构建完整 table/registry 或隐式接入 `WorksheetEditor`。
+- Public bounded-memory worksheet reader、bounded sharedStrings item、styles/cellXfs 与 narrow font/fill component traversal companion 已完成；四条路径保持 opaque worksheet index 与显式 companion traversal 分离，不构建完整 table/registry 或隐式接入 `WorksheetEditor`。
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。
 - `planned-xml` 中的 zlib-ng、Expat、pugixml 当前未被实现链接；manifest presence 不等于当前能力。

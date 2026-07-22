@@ -35,6 +35,7 @@ if(FASTXLSX_ENABLE_PORTABLE_CRC_PROFILING AND NOT FASTXLSX_ENABLE_MINIZIP_NG)
 endif()
 
 set(_fastxlsx_sources
+    src/bounded_xml_reader.cpp
     src/cell_store.cpp
     src/cell_value.cpp
     src/formula.cpp
@@ -44,6 +45,7 @@ set(_fastxlsx_sources
     src/package_reader.cpp
     src/package_writer.cpp
     src/shared_strings_reader.cpp
+    src/styles_reader.cpp
     src/streaming_writer.cpp
     src/workbook.cpp
     src/workbook_editor.cpp

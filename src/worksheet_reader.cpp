@@ -4,6 +4,7 @@
 
 #include "package_reader.hpp"
 #include "shared_strings_reader.hpp"
+#include "styles_reader.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -25,6 +26,8 @@ constexpr std::string_view styles_relationship_type =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 constexpr std::string_view shared_strings_content_type =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
+constexpr std::string_view styles_content_type =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml";
 
 bool is_space(char ch) noexcept
 {
@@ -868,7 +871,7 @@ private:
 
 struct WorkbookRelationshipPresence {
     std::optional<fastxlsx::detail::Relationship> shared_strings;
-    bool styles = false;
+    std::optional<fastxlsx::detail::Relationship> styles;
 };
 
 WorkbookRelationshipPresence inspect_workbook_relationships(
@@ -902,7 +905,7 @@ WorkbookRelationshipPresence inspect_workbook_relationships(
         if (relationship.type != styles_relationship_type) {
             continue;
         }
-        if (presence.styles) {
+        if (presence.styles.has_value()) {
             throw fastxlsx::FastXlsxError(
                 "WorkbookReader found duplicate workbook relationship type: "
                 + relationship.type);
@@ -912,7 +915,7 @@ WorkbookRelationshipPresence inspect_workbook_relationships(
             throw fastxlsx::FastXlsxError(
                 "WorkbookReader requires internal workbook relationships");
         }
-        presence.styles = true;
+        presence.styles = relationship;
     }
     return presence;
 }
@@ -931,7 +934,8 @@ int relationship_hex_digit(char ch) noexcept
     return -1;
 }
 
-std::string decode_relationship_target(std::string_view target)
+std::string decode_relationship_target(
+    std::string_view target, std::string_view relationship_name)
 {
     std::string decoded;
     decoded.reserve(target.size());
@@ -943,18 +947,21 @@ std::string decode_relationship_target(std::string_view target)
         }
         if (index + 2 >= target.size()) {
             throw fastxlsx::FastXlsxError(
-                "sharedStrings relationship target has an incomplete percent escape");
+                std::string(relationship_name)
+                + " relationship target has an incomplete percent escape");
         }
         const int high = relationship_hex_digit(target[index + 1]);
         const int low = relationship_hex_digit(target[index + 2]);
         if (high < 0 || low < 0) {
             throw fastxlsx::FastXlsxError(
-                "sharedStrings relationship target has an invalid percent escape");
+                std::string(relationship_name)
+                + " relationship target has an invalid percent escape");
         }
         const char decoded_char = static_cast<char>((high << 4) | low);
         if (decoded_char == '\0') {
             throw fastxlsx::FastXlsxError(
-                "sharedStrings relationship target contains a null byte");
+                std::string(relationship_name)
+                + " relationship target contains a null byte");
         }
         decoded.push_back(decoded_char);
         index += 2;
@@ -962,25 +969,30 @@ std::string decode_relationship_target(std::string_view target)
     return decoded;
 }
 
-fastxlsx::detail::PartName resolve_shared_strings_part(
+fastxlsx::detail::PartName resolve_workbook_relationship_part(
     const fastxlsx::detail::PartName& workbook_part,
-    const fastxlsx::detail::Relationship& relationship)
+    const fastxlsx::detail::Relationship& relationship,
+    std::string_view relationship_name)
 {
     if (relationship.target_mode
         != fastxlsx::detail::Relationship::TargetMode::Internal) {
         throw fastxlsx::FastXlsxError(
-            "WorkbookReader requires an internal sharedStrings relationship");
+            "WorkbookReader requires an internal " + std::string(relationship_name)
+            + " relationship");
     }
     if (relationship.target.empty()
         || relationship.target.find_first_of("?#") != std::string::npos) {
         throw fastxlsx::FastXlsxError(
-            "sharedStrings relationship target must be a package part");
+            std::string(relationship_name)
+            + " relationship target must be a package part");
     }
 
-    std::string target = decode_relationship_target(relationship.target);
+    std::string target =
+        decode_relationship_target(relationship.target, relationship_name);
     if (target.empty()) {
         throw fastxlsx::FastXlsxError(
-            "sharedStrings relationship target must be a package part");
+            std::string(relationship_name)
+            + " relationship target must be a package part");
     }
     if (target.front() == '/') {
         return fastxlsx::detail::PartName(target);
@@ -1087,7 +1099,8 @@ WorksheetReadSummary WorkbookReader::read_worksheet(
     }
 
     WorksheetProjectionReader projection_reader(callbacks, options,
-        impl_->relationships.shared_strings.has_value(), impl_->relationships.styles);
+        impl_->relationships.shared_strings.has_value(),
+        impl_->relationships.styles.has_value());
     detail::WorksheetEventReaderOptions event_options;
     event_options.max_window_bytes = options.max_xml_window_bytes;
     event_options.copy_context_attributes = true;
@@ -1119,8 +1132,9 @@ SharedStringReadSummary WorkbookReader::read_shared_strings(
             "WorkbookReader workbook has no sharedStrings relationship");
     }
 
-    const detail::PartName part = resolve_shared_strings_part(
-        impl_->package.workbook_part(), *impl_->relationships.shared_strings);
+    const detail::PartName part = resolve_workbook_relationship_part(
+        impl_->package.workbook_part(), *impl_->relationships.shared_strings,
+        "sharedStrings");
     const detail::PackagePart* package_part = impl_->package.part_index().find_part(part);
     if (package_part == nullptr) {
         throw FastXlsxError(
@@ -1132,6 +1146,46 @@ SharedStringReadSummary WorkbookReader::read_shared_strings(
     }
 
     return detail::read_shared_strings_from_chunk_source(
+        impl_->package.entry_chunk_source(part.zip_path()), callbacks, options);
+}
+
+CellFormatReadSummary WorkbookReader::read_cell_formats(
+    const CellFormatReadCallbacks& callbacks,
+    CellFormatReaderOptions options) const
+{
+    if (!impl_) {
+        throw FastXlsxError("WorkbookReader is not open");
+    }
+    if (options.max_xml_window_bytes == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_xml_window_bytes");
+    }
+    if (options.max_format_code_bytes == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_format_code_bytes");
+    }
+    if (options.max_xml_nesting_depth == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_xml_nesting_depth");
+    }
+    if (options.max_custom_number_format_count == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_custom_number_format_count");
+    }
+    if (!impl_->relationships.styles.has_value()) {
+        throw FastXlsxError("WorkbookReader workbook has no styles relationship");
+    }
+
+    const detail::PartName part = resolve_workbook_relationship_part(
+        impl_->package.workbook_part(), *impl_->relationships.styles, "styles");
+    const detail::PackagePart* package_part = impl_->package.part_index().find_part(part);
+    if (package_part == nullptr) {
+        throw FastXlsxError(
+            "WorkbookReader styles relationship targets an unknown part");
+    }
+    if (package_part->content_type != styles_content_type) {
+        throw FastXlsxError(
+            "WorkbookReader styles relationship target has the wrong content type");
+    }
+
+    return detail::read_cell_formats_from_chunk_source(
         impl_->package.entry_chunk_source(part.zip_path()), callbacks, options);
 }
 

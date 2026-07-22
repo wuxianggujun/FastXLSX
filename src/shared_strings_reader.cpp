@@ -1,5 +1,7 @@
 #include "shared_strings_reader.hpp"
 
+#include "bounded_xml_reader.hpp"
+
 #include <fastxlsx/workbook.hpp>
 
 #include <algorithm>
@@ -499,122 +501,6 @@ private:
     fastxlsx::SharedStringReadSummary summary_;
 };
 
-std::size_t find_markup_end(std::string_view xml, std::size_t open) noexcept
-{
-    char quote = '\0';
-    for (std::size_t index = open + 1; index < xml.size(); ++index) {
-        const char ch = xml[index];
-        if (quote != '\0') {
-            if (ch == quote) {
-                quote = '\0';
-            }
-        } else if (ch == '"' || ch == '\'') {
-            quote = ch;
-        } else if (ch == '>') {
-            return index;
-        }
-    }
-    return std::string_view::npos;
-}
-
-std::size_t consume_available(
-    std::string_view window, bool final_chunk, SharedStringProjectionReader& reader)
-{
-    std::size_t position = 0;
-    while (position < window.size()) {
-        if (window[position] != '<') {
-            const std::size_t open = window.find('<', position);
-            if (open == std::string_view::npos && !final_chunk) {
-                return position;
-            }
-            const std::size_t end =
-                open == std::string_view::npos ? window.size() : open;
-            reader.consume_text(window.substr(position, end - position));
-            position = end;
-            continue;
-        }
-
-        if (window.substr(position).starts_with("<!--")) {
-            const std::size_t end = window.find("-->", position + 4);
-            if (end == std::string_view::npos) {
-                if (!final_chunk) {
-                    return position;
-                }
-                throw fastxlsx::FastXlsxError(
-                    "sharedStrings reader found an unterminated XML comment");
-            }
-            reader.consume_special_markup();
-            position = end + 3;
-            continue;
-        }
-        if (window.substr(position).starts_with("<?")) {
-            const std::size_t end = window.find("?>", position + 2);
-            if (end == std::string_view::npos) {
-                if (!final_chunk) {
-                    return position;
-                }
-                throw fastxlsx::FastXlsxError(
-                    "sharedStrings reader found an unterminated processing instruction");
-            }
-            reader.consume_special_markup();
-            position = end + 2;
-            continue;
-        }
-        if (window.substr(position).starts_with("<!")) {
-            throw fastxlsx::FastXlsxError(
-                "sharedStrings reader does not support declaration or CDATA markup");
-        }
-
-        const std::size_t close = find_markup_end(window, position);
-        if (close == std::string_view::npos) {
-            if (!final_chunk) {
-                return position;
-            }
-            throw fastxlsx::FastXlsxError(
-                "sharedStrings reader found unterminated XML markup");
-        }
-        reader.consume_tag(window.substr(position, close + 1 - position));
-        position = close + 1;
-    }
-    return position;
-}
-
-void process_window(std::string& window, bool final_chunk,
-    SharedStringProjectionReader& reader)
-{
-    const std::size_t consumed = consume_available(window, final_chunk, reader);
-    if (consumed != 0) {
-        window.erase(0, consumed);
-    }
-}
-
-void process_source_chunk(std::string_view chunk,
-    fastxlsx::SharedStringReaderOptions options,
-    std::string& window,
-    SharedStringProjectionReader& reader)
-{
-    std::size_t chunk_offset = 0;
-    while (chunk_offset < chunk.size()) {
-        process_window(window, false, reader);
-        if (window.size() >= options.max_xml_window_bytes) {
-            throw fastxlsx::FastXlsxError(
-                "sharedStrings reader exceeded bounded input window");
-        }
-
-        const std::size_t available = options.max_xml_window_bytes - window.size();
-        const std::size_t bytes_to_append =
-            std::min(available, chunk.size() - chunk_offset);
-        window.append(chunk.data() + chunk_offset, bytes_to_append);
-        chunk_offset += bytes_to_append;
-        process_window(window, false, reader);
-
-        if (bytes_to_append == 0 && !window.empty()) {
-            throw fastxlsx::FastXlsxError(
-                "sharedStrings reader exceeded bounded input window");
-        }
-    }
-}
-
 } // namespace
 
 namespace fastxlsx::detail {
@@ -637,14 +523,18 @@ SharedStringReadSummary read_shared_strings_from_chunk_source(
     }
 
     SharedStringProjectionReader reader(callbacks, options);
-    std::string window;
-    window.reserve(std::min<std::size_t>(options.max_xml_window_bytes, 4096U));
-
-    std::string chunk;
-    while (read_next_chunk(chunk)) {
-        process_source_chunk(chunk, options, window, reader);
-    }
-    process_window(window, true, reader);
+    BoundedXmlCallbacks xml_callbacks;
+    xml_callbacks.on_text = [&reader](std::string_view text) {
+        reader.consume_text(text);
+    };
+    xml_callbacks.on_tag = [&reader](std::string_view raw_tag) {
+        reader.consume_tag(raw_tag);
+    };
+    xml_callbacks.on_special_markup = [&reader] {
+        reader.consume_special_markup();
+    };
+    scan_bounded_xml_from_chunk_source(read_next_chunk, xml_callbacks,
+        options.max_xml_window_bytes, "sharedStrings");
     return reader.finish();
 }
 

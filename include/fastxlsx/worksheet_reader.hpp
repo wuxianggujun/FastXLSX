@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -166,6 +167,96 @@ struct SharedStringReadSummary {
     std::size_t peak_item_text_bytes = 0;
 };
 
+/// Horizontal alignment projected from one narrow cellXfs record.
+enum class CellFormatHorizontalAlignment {
+    Left,
+    Center,
+    Right,
+};
+
+/// Vertical alignment projected from one narrow cellXfs record.
+enum class CellFormatVerticalAlignment {
+    Top,
+    Center,
+    Bottom,
+};
+
+/// One custom number-format definition emitted by read_cell_formats().
+///
+/// format_code is a borrowed decoded view valid only for the duration of the
+/// current on_number_format callback. The id is workbook-local and is not a
+/// portable handle for another workbook.
+struct NumberFormatView {
+    std::uint32_t id = 0;
+    std::string_view format_code;
+};
+
+/// Narrow alignment metadata owned by one CellFormatView value.
+///
+/// Optional fields preserve the distinction between an absent OpenXML
+/// attribute and an explicit false/default value.
+struct CellFormatAlignmentView {
+    std::optional<bool> wrap_text;
+    std::optional<CellFormatHorizontalAlignment> horizontal;
+    std::optional<CellFormatVerticalAlignment> vertical;
+};
+
+/// One zero-based workbook-local cellXfs record.
+///
+/// All fields are callback-independent values. number_format_id, font_id, and
+/// fill_id remain opaque workbook-local references; this bounded companion does
+/// not build or resolve complete number-format, font, or fill tables. Custom
+/// number-format definitions are instead emitted separately through
+/// CellFormatReadCallbacks::on_number_format.
+struct CellFormatView {
+    /// Zero-based source index referenced by worksheet cell `s` attributes.
+    std::uint32_t index = 0;
+
+    std::uint32_t number_format_id = 0;
+    std::uint32_t font_id = 0;
+    std::uint32_t fill_id = 0;
+
+    std::optional<bool> apply_number_format;
+    std::optional<bool> apply_font;
+    std::optional<bool> apply_fill;
+    std::optional<bool> apply_alignment;
+
+    std::optional<CellFormatAlignmentView> alignment;
+};
+
+/// Callbacks used by WorkbookReader::read_cell_formats().
+///
+/// Callbacks are optional and run synchronously in source order. User
+/// exceptions propagate unchanged; the active package-entry stream is released
+/// during unwinding and a later traversal starts over.
+struct CellFormatReadCallbacks {
+    std::function<void(const NumberFormatView&)> on_number_format;
+    std::function<void(const CellFormatView&)> on_cell_format;
+};
+
+/// Guardrails for one bounded styles/cellXfs traversal.
+struct CellFormatReaderOptions {
+    /// Maximum bytes retained by the styles XML token window.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum decoded bytes retained for one active custom format code.
+    std::size_t max_format_code_bytes = 64U * 1024U;
+
+    /// Maximum XML element nesting depth retained by the structural stack.
+    std::size_t max_xml_nesting_depth = 64U;
+
+    /// Maximum custom number-format ids retained for duplicate detection.
+    std::size_t max_custom_number_format_count = 64U * 1024U;
+};
+
+/// Summary returned after one successful styles/cellXfs traversal.
+struct CellFormatReadSummary {
+    std::uint64_t custom_number_format_count = 0;
+    std::uint64_t cell_format_count = 0;
+    std::size_t peak_format_code_bytes = 0;
+    std::size_t peak_xml_nesting_depth = 0;
+};
+
 /// Existing-workbook bounded-memory worksheet reader.
 ///
 /// API mode: Streaming read. WorkbookReader indexes small package/workbook
@@ -187,6 +278,11 @@ struct SharedStringReadSummary {
 /// metadata, extensions, and other item markup fail explicitly instead of
 /// being flattened. It does not build a shared-string table or automatically
 /// resolve indexes emitted by read_worksheet().
+///
+/// read_cell_formats() is another separate bounded companion. It emits custom
+/// number-format definitions and narrow cellXfs records without building a
+/// complete styles registry. Worksheet style indexes, font/fill references,
+/// and number-format references remain explicitly caller-resolved.
 class WorkbookReader {
 public:
     /// Opens and indexes an existing XLSX package.
@@ -256,6 +352,38 @@ public:
     [[nodiscard]] SharedStringReadSummary read_shared_strings(
         const SharedStringReadCallbacks& callbacks = {},
         SharedStringReaderOptions options = {}) const;
+
+    /// Traverses custom number formats and cellXfs records with bounded memory.
+    ///
+    /// A fresh styles package-entry source is owned only for this call. The
+    /// styles relationship must be unique and internal, its normalized target
+    /// must exist, and the target must carry the standard styles content type.
+    /// Successful return closes the entry after CRC/size validation; callback,
+    /// parser, or package failures release it during unwinding and a later call
+    /// may retry from the beginning.
+    ///
+    /// Custom number formats are emitted separately from cellXfs records;
+    /// format_code is callback-lifetime only. Cell format fields are owning
+    /// scalar values, but number-format/font/fill ids remain opaque workbook-
+    /// local references. The current projection accepts zero border/base-style
+    /// references and narrow wrap/left-center-right/top-center-bottom alignment.
+    /// Borders, protection, extension children, other alignment semantics, and
+    /// other cell-format metadata fail explicitly instead of being flattened.
+    /// Container counts are syntax-checked and matched to emitted direct
+    /// records, but ids are not cross-resolved against complete component
+    /// tables or worksheet references.
+    ///
+    /// This read-only traversal does not seek, build a styles DOM/registry,
+    /// resolve WorksheetCellView::style_index automatically, mutate the package,
+    /// or hand styles to Patch or In-memory editors.
+    ///
+    /// @throws FastXlsxError if the reader is moved from, an option is zero, the
+    /// relationship/content-type/target audit fails, package reading fails, or
+    /// styles XML is malformed or outside the narrow projection. User callback
+    /// exceptions propagate unchanged.
+    [[nodiscard]] CellFormatReadSummary read_cell_formats(
+        const CellFormatReadCallbacks& callbacks = {},
+        CellFormatReaderOptions options = {}) const;
 
 private:
     struct Impl;

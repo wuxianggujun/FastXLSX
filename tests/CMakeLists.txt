@@ -339,6 +339,26 @@ set_tests_properties(fastxlsx.shared_strings_reader PROPERTIES
     TIMEOUT 60
 )
 
+add_executable(fastxlsx_styles_reader_tests
+    test_styles_reader.cpp
+)
+
+target_link_libraries(fastxlsx_styles_reader_tests PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_styles_reader_tests PRIVATE cxx_std_20)
+target_include_directories(fastxlsx_styles_reader_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(FASTXLSX_ENABLE_MINIZIP_NG)
+    target_link_libraries(fastxlsx_styles_reader_tests PRIVATE MINIZIP::minizip-ng)
+    target_compile_definitions(fastxlsx_styles_reader_tests PRIVATE
+        FASTXLSX_TEST_HAS_MINIZIP_NG=1
+    )
+endif()
+
+add_test(NAME fastxlsx.styles_reader COMMAND fastxlsx_styles_reader_tests)
+set_tests_properties(fastxlsx.styles_reader PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    TIMEOUT 60
+)
+
 add_executable(fastxlsx_worksheet_cell_index_tests
     test_worksheet_cell_index.cpp
 )

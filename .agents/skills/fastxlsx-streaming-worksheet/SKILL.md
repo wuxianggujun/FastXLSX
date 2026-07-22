@@ -33,10 +33,12 @@ Cell references、dimension tracking、XML escape、finite numbers、inline/shar
 
 `read_shared_strings()` 是显式分离的 bounded companion：审计唯一 internal relationship、normalized target part 与标准 content type，按 index/source order 投影 simple `<si><t>`。Borrowed text 只活到 callback；XML window/item text 双 guardrail，rich/phonetic/extension/extra metadata 明确 fail。禁止构建完整 table、自动解析 worksheet index 或隐式接入 Patch/In-memory。
 
+`read_cell_formats()` 是显式分离的 bounded styles companion：审计唯一 internal relationship、normalized target part 与标准 content type，按 source order 分别投影 custom `numFmtId + formatCode` 和 zero-based `cellXfs`。Format code 只活到 callback；cell format ids/apply/alignment 是 owning values，number-format/font/fill ids 保持 opaque。XML window、active format-code、nesting 与 custom-id count 提供 guardrail；enabled border/base-style/protection/quote/pivot、extension 和其他未投影 metadata 明确 fail。禁止完整 styles registry、自动解析 worksheet style index 或隐式接入 Patch/In-memory。
+
 ## Large Rewrite
 
 Existing-file large worksheet rewrite 属于 C5，不应通过 `WorksheetEditor` materialization 实现。需要 event/stream reader、coordinate/formula policy、metadata audit 和大文件内存证据。
 
 ## 验证
 
-Writer 运行 focused streaming tests、ZIP/XML、Office/openpyxl；性能相关时使用 schema-v6 executable/schema-v3 matrix，检查 generation/package-close/total wall 与 process CPU、CPU 总账、body buffer peak/flush count、process peak working set 和 close 后 active temporary file count。Worksheet reader 另测 stored/DEFLATE、typed projection、source order、borrowed copy、callback failure retry、双 guardrail、unsupported metadata 和 malformed diagnostics。SharedStrings companion 另测 simple/empty/entity decode、zero-based order、超过 package input chunk 的 token、relationship target/content type、rich/phonetic/extension rejection、callback retry 与双 guardrail。
+Writer 运行 focused streaming tests、ZIP/XML、Office/openpyxl；性能相关时使用 schema-v6 executable/schema-v3 matrix，检查 generation/package-close/total wall 与 process CPU、CPU 总账、body buffer peak/flush count、process peak working set 和 close 后 active temporary file count。Worksheet reader 另测 stored/DEFLATE、typed projection、source order、borrowed copy、callback failure retry、双 guardrail、unsupported metadata 和 malformed diagnostics。SharedStrings companion 另测 simple/empty/entity decode、zero-based order、超过 package input chunk 的 token、relationship target/content type、rich/phonetic/extension rejection、callback retry 与双 guardrail。Cell-formats companion 另测 custom formats/cellXfs source order、format-code decode/borrowed copy、两类 callback retry、跨 package chunk token、四类 guardrail、container count/duplicate id、relationship/content type 与 unsupported xf/alignment metadata。

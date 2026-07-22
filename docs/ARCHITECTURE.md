@@ -64,13 +64,14 @@ Worksheet body batching 以 256 KiB 为当前上限，减少逐 row 文件写调
 ```text
 source XLSX
   -> PackageReader / workbook catalog
-  -> fresh worksheet entry chunk source
-  -> bounded WorksheetEventReader window
-  -> active row/cell semantic projection
-  -> callback-lifetime WorksheetCellView
+  -> fresh target entry chunk source
+  -> worksheet: bounded WorksheetEventReader -> active row/cell projection
+  -> sharedStrings: bounded XML scanner -> active simple item projection
+  -> styles: bounded XML scanner -> custom numFmt / cellXfs projection
+  -> synchronous public callbacks
 ```
 
-`WorkbookReader` 只在 `open()` 保留小型 package/workbook catalog；每次 `read_worksheet()` 独占一个 stored/DEFLATE entry source，完成或异常退出后立即释放。Public projector 只保留当前 row/cell，XML token window 与 decoded cell text 分别受 option 上限控制。SharedStrings/style 只暴露 workbook-local index，formula 与 cached value 分离；不加载完整 sharedStrings/styles、不构建 DOM/dense matrix/CellStore，也不进入 Patch plan 或 In-memory session。
+`WorkbookReader` 只在 `open()` 保留小型 package/workbook catalog；每次 traversal 独占一个 stored/DEFLATE entry source，完成或异常退出后立即释放。Worksheet projector 只保留当前 row/cell；sharedStrings projector 只保留当前 item；styles projector 只保留当前 custom format/cellXfs record、bounded nesting stack 与 bounded `numFmtId` 去重集合。各自 XML/text/count 上限由 public options 控制。`read_worksheet()` 的 sharedStrings/style 仍只暴露 workbook-local index；两个 companion 不自动做 index resolution。三条读取路径都不加载完整 sharedStrings/styles、不构建 DOM/dense matrix/CellStore，也不进入 Patch plan 或 In-memory session。
 
 ### Patch
 

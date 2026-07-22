@@ -18,8 +18,8 @@
 /// - `fastxlsx/workbook_editor.hpp` for WorkbookEditor, the Patch-mode facade
 ///   that edits existing workbook sheet data / targeted existing cells and
 ///   writes a new package.
-/// - `fastxlsx/worksheet_reader.hpp` for forward-only, bounded-memory row/cell
-///   and shared-string-item traversal of an existing workbook.
+/// - `fastxlsx/worksheet_reader.hpp` for forward-only, bounded-memory row/cell,
+///   shared-string-item, and cell-format traversal of an existing workbook.
 /// - `fastxlsx/image.hpp` for stb-backed PNG/JPEG metadata probing.
 
 #include <fastxlsx/cell_value.hpp>

@@ -9,7 +9,7 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 
 - `docs/CURRENT_CAPABILITIES.md`、`docs/ARCHITECTURE.md`、`docs/EDITING_MODEL.md`
 - `include/fastxlsx/streaming_writer.hpp`、`include/fastxlsx/worksheet_reader.hpp`、`include/fastxlsx/workbook_editor.hpp`
-- `src/streaming_writer.cpp`、`src/worksheet_metadata_reader.cpp`、`src/workbook_editor*.cpp`、`src/package_editor.cpp`
+- `src/streaming_writer.cpp`、`src/worksheet_metadata_reader.cpp`、`src/worksheet_data_validation_reader.cpp`、`src/workbook_editor*.cpp`、`src/package_editor.cpp`
 - 对应 metadata、relationship、preservation 和 failure-recovery tests
 
 ## 功能边界
@@ -27,6 +27,7 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 - Public `WorkbookReader::read_worksheet_metadata()` 只投影 primary frozen pane、worksheet-root auto-filter 与 worksheet-root merged ranges；callback 值全部 owning，其他 view 只审计，table-local filter 不读取。
 - 复用 bounded worksheet event source，但必须独立维护 XML nesting、reference bytes、sheetView count 与 retained merge count guardrail；merge overlap audit 可保留受限 ranges，禁止 worksheet DOM/dense matrix/CellStore。
 - Parser/package failure 前允许已有 source-order callbacks，成功返回才是原子收集的 completion signal；callback exception 原样传播并允许 stored/DEFLATE entry 从头 retry。该路径不修改 relationships、content types、manifest、Patch state 或 In-memory state。
+- Public `WorkbookReader::read_worksheet_data_validations()` 与通用 metadata traversal 分离，按 source order 投影 zero-based owning multi-range `sqref + DataValidationRule`。复用 shared rule validator，但独立审计 container/direct child/QName/schema、boolean/enum/entity、formula1/formula2 shape 与 XML/nesting/count/range/text guardrail；target 外 foreign extension local-name 不得误识别，target 内 unsupported metadata 明确 fail。它不求值、不校验 cell values、不做 overlap repair，也不修改 OPC/Patch/In-memory state。
 
 ## Existing Workbook
 
@@ -51,4 +52,5 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 - Merged-cell 另测 missing/append/self-closing/remove-container、exact removal/absent no-op、count/ref/child/schema/overlap audit、cell payload/table preservation，以及 `calcPr`、`calcChain` part、workbook relationship 和 content type 的 exact preservation。
 - Freeze-pane 另测 missing/self-closing view metadata、other workbook views、single-/dual-axis active pane、zero clear/absent no-op、QName、selection preserve/fail、unsupported pane state/pivot/schema audit、final split diagnostic，以及 cells/table/relationships/content types/`calcPr`/`calcChain` exact preservation。
 - Metadata read 另测 primary/other view、frozen/root-filter/merged source order、owning values、callback retry、stored/DEFLATE、XML/nesting/reference/view/merge guardrail、QName/schema/count/overlap/unsupported pane rejection和 package no-side-effect。
+- Data-validation read 另测 owning multi-range/rule、entity decode、formula shape、absent/empty container、callback retry、stored/DEFLATE、XML/nesting/validation/range/sqref/formula/text guardrail、count/direct-child/QName/schema/unsupported metadata rejection、foreign extension disambiguation和 package no-side-effect。
 - 使用 OpenPyXL/XlsxWriter 做结构对照；Office 未运行时明确记录 `not_run`。

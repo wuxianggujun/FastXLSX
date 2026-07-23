@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fastxlsx/workbook.hpp>
+#include <fastxlsx/worksheet_metadata.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -481,6 +482,63 @@ struct WorksheetMetadataReadSummary {
     std::size_t peak_retained_merged_cell_count = 0;
 };
 
+/// Owning projection of one worksheet-local data-validation rule.
+///
+/// `index` is zero-based in source order within the worksheet-root
+/// dataValidations container. The range list and DataValidationRule strings
+/// own their data and may be copied beyond the callback.
+struct WorksheetDataValidationView {
+    std::uint64_t index = 0;
+    std::vector<CellRange> ranges;
+    DataValidationRule rule;
+};
+
+/// Callbacks used by WorkbookReader::read_worksheet_data_validations().
+///
+/// The optional callback runs synchronously once per complete validation in
+/// source order. A later parser/package failure may follow callbacks already
+/// delivered; callers needing an atomic collected result must publish it only
+/// after successful return. User exceptions propagate unchanged, and a later
+/// call on the same WorkbookReader starts a fresh package-entry traversal.
+struct WorksheetDataValidationReadCallbacks {
+    std::function<void(const WorksheetDataValidationView&)> on_data_validation;
+};
+
+/// Guardrails for one bounded worksheet data-validation traversal.
+struct WorksheetDataValidationReaderOptions {
+    /// Maximum bytes retained by the worksheet XML token window.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum worksheet metadata nesting depth retained by the structural stack.
+    std::size_t max_xml_nesting_depth = 64U;
+
+    /// Maximum dataValidation records accepted and emitted in one traversal.
+    std::size_t max_validation_count = 64U * 1024U;
+
+    /// Maximum ranges retained for one active dataValidation record.
+    std::size_t max_ranges_per_validation = 64U * 1024U;
+
+    /// Maximum decoded bytes accepted for one `sqref` attribute.
+    std::size_t max_sqref_bytes = 64U * 1024U;
+
+    /// Maximum decoded bytes retained for each formula1/formula2 value.
+    std::size_t max_formula_text_bytes = 64U * 1024U;
+
+    /// Maximum decoded bytes retained for each prompt/error title or text field.
+    std::size_t max_metadata_text_bytes = 32U * 1024U;
+};
+
+/// Summary returned after one successful worksheet data-validation traversal.
+struct WorksheetDataValidationReadSummary {
+    std::uint64_t validation_count = 0;
+    std::uint64_t range_count = 0;
+    std::size_t peak_ranges_per_validation = 0;
+    std::size_t peak_sqref_bytes = 0;
+    std::size_t peak_formula_text_bytes = 0;
+    std::size_t peak_metadata_text_bytes = 0;
+    std::size_t peak_xml_nesting_depth = 0;
+};
+
 /// Existing-workbook bounded-memory worksheet reader.
 ///
 /// API mode: Streaming read. WorkbookReader indexes small package/workbook
@@ -522,6 +580,11 @@ struct WorksheetMetadataReadSummary {
 /// worksheet-root auto-filter, and worksheet-root merged-cell ranges. It does
 /// not construct a worksheet DOM, dense matrix, CellStore, relationship graph,
 /// or Patch/In-memory handoff.
+///
+/// read_worksheet_data_validations() separately projects the writer-compatible
+/// worksheet-root data-validation subset as owning range/rule values. It does
+/// not create a full validation object model or connect the values to Patch or
+/// In-memory state.
 class WorkbookReader {
 public:
     /// Opens and indexes an existing XLSX package.
@@ -721,6 +784,37 @@ public:
         std::string_view sheet_name,
         const WorksheetMetadataReadCallbacks& callbacks = {},
         WorksheetMetadataReaderOptions options = {}) const;
+
+    /// Traverses worksheet-root data validations in source order with bounded memory.
+    ///
+    /// A fresh worksheet package-entry source is owned only for this call. Each
+    /// complete direct `<dataValidation>` child is projected as a zero-based
+    /// source index, one or more owning CellRange values, and an owning shared
+    /// DataValidationRule. Entity-decoded formula, prompt, error, and title text
+    /// is retained only for the active rule. Successful return is the completion
+    /// signal when callbacks have been collected atomically.
+    ///
+    /// The narrow projection requires an explicit writer-compatible type,
+    /// non-empty `sqref`, formula1, and the same operator/formula2 shape accepted
+    /// by Streaming/Patch serialization. Container count, QName, direct-child
+    /// nesting, worksheet suffix schema order, boolean/enumeration syntax, and
+    /// configured XML/range/text limits are audited. Unsupported `imeMode`,
+    /// extension/foreign attributes or children, and non-default container
+    /// prompt-window metadata fail explicitly instead of being flattened.
+    ///
+    /// This read-only method does not evaluate formulas, validate cell values,
+    /// detect range overlap, seek, materialize a worksheet, mutate relationships,
+    /// content types or manifest state, or hand values to Patch/In-memory APIs.
+    ///
+    /// @throws FastXlsxError if the reader is moved from, the worksheet is
+    /// absent, an option is zero, package reading fails, or worksheet validation
+    /// XML is malformed or outside the narrow projection. User callback
+    /// exceptions propagate unchanged.
+    [[nodiscard]] WorksheetDataValidationReadSummary
+    read_worksheet_data_validations(
+        std::string_view sheet_name,
+        const WorksheetDataValidationReadCallbacks& callbacks = {},
+        WorksheetDataValidationReaderOptions options = {}) const;
 
 private:
     struct Impl;

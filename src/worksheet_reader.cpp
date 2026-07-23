@@ -5,6 +5,7 @@
 #include "package_reader.hpp"
 #include "shared_strings_reader.hpp"
 #include "styles_reader.hpp"
+#include "worksheet_data_validation_reader.hpp"
 #include "worksheet_metadata_reader.hpp"
 
 #include <algorithm>
@@ -1306,6 +1307,53 @@ WorksheetMetadataReadSummary WorkbookReader::read_worksheet_metadata(
             "WorkbookReader worksheet not found: " + std::string(sheet_name));
     }
     return detail::read_worksheet_metadata_from_chunk_source(
+        impl_->package.entry_chunk_source(sheet->part_name.zip_path()),
+        callbacks,
+        options);
+}
+
+WorksheetDataValidationReadSummary WorkbookReader::read_worksheet_data_validations(
+    std::string_view sheet_name,
+    const WorksheetDataValidationReadCallbacks& callbacks,
+    WorksheetDataValidationReaderOptions options) const
+{
+    if (!impl_) {
+        throw FastXlsxError("WorkbookReader is not open");
+    }
+    if (options.max_xml_window_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_xml_window_bytes");
+    }
+    if (options.max_xml_nesting_depth == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_xml_nesting_depth");
+    }
+    if (options.max_validation_count == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_validation_count");
+    }
+    if (options.max_ranges_per_validation == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_ranges_per_validation");
+    }
+    if (options.max_sqref_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_sqref_bytes");
+    }
+    if (options.max_formula_text_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_formula_text_bytes");
+    }
+    if (options.max_metadata_text_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_metadata_text_bytes");
+    }
+    const Impl::Sheet* sheet = impl_->find_sheet(sheet_name);
+    if (sheet == nullptr) {
+        throw FastXlsxError(
+            "WorkbookReader worksheet not found: " + std::string(sheet_name));
+    }
+    return detail::read_worksheet_data_validations_from_chunk_source(
         impl_->package.entry_chunk_source(sheet->part_name.zip_path()),
         callbacks,
         options);

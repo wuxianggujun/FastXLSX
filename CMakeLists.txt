@@ -51,6 +51,7 @@ set(_fastxlsx_sources
     src/workbook_editor.cpp
     src/workbook_editor_formula_diagnostics.cpp
     src/worksheet_event_reader.cpp
+    src/worksheet_metadata_reader.cpp
     src/worksheet_metadata_rewriter.cpp
     src/worksheet_transformer.cpp
     src/workbook_editor_image_edit.cpp

@@ -407,6 +407,80 @@ struct StyleComponentReadSummary {
     std::size_t peak_xml_nesting_depth = 0;
 };
 
+/// Owning projection of the primary worksheet frozen pane.
+///
+/// The split values are counts of frozen rows and columns. `topLeftCell` and
+/// `activePane`, when present in the source XML, are audited for supported
+/// syntax but are intentionally not exposed by this narrow companion.
+struct WorksheetFrozenPaneView {
+    std::uint32_t row_split = 0;
+    std::uint32_t column_split = 0;
+};
+
+/// Owning projection of one worksheet-root auto-filter.
+///
+/// This is the worksheet-root element only. Table-local filter metadata is a
+/// separate part and is not traversed by this companion.
+struct WorksheetAutoFilterView {
+    CellRange range;
+};
+
+/// Owning projection of one worksheet-root merged-cell range.
+///
+/// `index` is zero-based in source order within the worksheet's mergeCells
+/// container. A merged range always covers at least two cells.
+struct WorksheetMergedCellView {
+    std::uint64_t index = 0;
+    CellRange range;
+};
+
+/// Callbacks used by WorkbookReader::read_worksheet_metadata().
+///
+/// Callbacks are synchronous and source ordered: a primary frozen pane (when
+/// present), the worksheet-root auto-filter (when present), then merged-cell
+/// ranges. All callback fields contain owning values, so they may be retained
+/// after the callback returns. A later parser/package failure may follow
+/// callbacks already delivered for earlier metadata; callers needing an atomic
+/// collected result must publish it only after successful return. Exceptions
+/// propagate unchanged; a later call on the same WorkbookReader starts a fresh
+/// package-entry traversal.
+struct WorksheetMetadataReadCallbacks {
+    std::function<void(const WorksheetFrozenPaneView&)> on_frozen_pane;
+    std::function<void(const WorksheetAutoFilterView&)> on_auto_filter;
+    std::function<void(const WorksheetMergedCellView&)> on_merged_cell;
+};
+
+/// Guardrails for one bounded worksheet metadata traversal.
+struct WorksheetMetadataReaderOptions {
+    /// Maximum bytes retained by the worksheet XML token window.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum metadata element nesting depth retained by the structural
+    /// stack. This is independent of worksheet size.
+    std::size_t max_xml_nesting_depth = 64U;
+
+    /// Maximum source bytes accepted for one A1/range reference or pane
+    /// top-left cell attribute.
+    std::size_t max_range_reference_bytes = 256U;
+
+    /// Maximum worksheet sheetView elements audited in one traversal.
+    std::size_t max_sheet_view_count = 1024U;
+
+    /// Maximum merged-cell elements retained for overlap auditing.
+    std::size_t max_merged_cell_count = 64U * 1024U;
+};
+
+/// Summary returned after one successful bounded worksheet metadata traversal.
+struct WorksheetMetadataReadSummary {
+    std::uint64_t frozen_pane_count = 0;
+    std::uint64_t auto_filter_count = 0;
+    std::uint64_t merged_cell_count = 0;
+    std::size_t peak_xml_nesting_depth = 0;
+    std::size_t peak_range_reference_bytes = 0;
+    std::size_t peak_sheet_view_count = 0;
+    std::size_t peak_retained_merged_cell_count = 0;
+};
+
 /// Existing-workbook bounded-memory worksheet reader.
 ///
 /// API mode: Streaming read. WorkbookReader indexes small package/workbook
@@ -442,6 +516,12 @@ struct StyleComponentReadSummary {
 /// read_style_components() separately projects the writer-compatible font and
 /// fill subset. It does not make component ids portable or automatically join
 /// component records to cellXfs or worksheet style indexes.
+///
+/// read_worksheet_metadata() is an independent bounded companion. It audits
+/// worksheet structure and projects only the primary frozen pane, the
+/// worksheet-root auto-filter, and worksheet-root merged-cell ranges. It does
+/// not construct a worksheet DOM, dense matrix, CellStore, relationship graph,
+/// or Patch/In-memory handoff.
 class WorkbookReader {
 public:
     /// Opens and indexes an existing XLSX package.
@@ -610,6 +690,37 @@ public:
     [[nodiscard]] StyleComponentReadSummary read_style_components(
         const StyleComponentReadCallbacks& callbacks = {},
         StyleComponentReaderOptions options = {}) const;
+
+    /// Traverses narrow worksheet metadata in source order with bounded memory.
+    ///
+    /// The worksheet relationship/part is opened afresh for this call. The
+    /// primary `workbookViewId="0"` direct frozen pane is projected before
+    /// sheetData, followed by the worksheet-root autoFilter and mergeCells
+    /// records after sheetData. Other workbook views are audited but are not
+    /// projected. Callback values own their scalar/range data and may be copied
+    /// beyond the callback. Callback, parser, and package failures release the
+    /// active entry during unwinding; a later call retries from the beginning.
+    ///
+    /// The projection accepts only frozen panes with integer row/column splits,
+    /// a single worksheet-root autoFilter with a valid A1 range, and
+    /// non-overlapping multi-cell mergeCell ranges. Split/frozenSplit panes,
+    /// primary-view pivotSelection, duplicate target containers, malformed
+    /// nesting/QName, schema-order violations, count mismatches, and guardrail
+    /// violations fail explicitly. `topLeftCell` and `activePane` are audited
+    /// but not exposed. Table-local filters and all non-target metadata remain
+    /// outside this read-only companion.
+    ///
+    /// This method does not seek, materialize a worksheet, mutate the package,
+    /// or alter relationships, content types, manifest, Patch state, or
+    /// In-memory state.
+    ///
+    /// @throws FastXlsxError if the reader is moved from, the worksheet is
+    /// absent, an option is zero, package reading fails, or worksheet XML is
+    /// malformed/unsupported. User callback exceptions propagate unchanged.
+    [[nodiscard]] WorksheetMetadataReadSummary read_worksheet_metadata(
+        std::string_view sheet_name,
+        const WorksheetMetadataReadCallbacks& callbacks = {},
+        WorksheetMetadataReaderOptions options = {}) const;
 
 private:
     struct Impl;

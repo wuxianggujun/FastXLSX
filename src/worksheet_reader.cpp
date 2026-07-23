@@ -5,6 +5,7 @@
 #include "package_reader.hpp"
 #include "shared_strings_reader.hpp"
 #include "styles_reader.hpp"
+#include "worksheet_metadata_reader.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -1269,6 +1270,45 @@ StyleComponentReadSummary WorkbookReader::read_style_components(
 
     return detail::read_style_components_from_chunk_source(
         impl_->package.entry_chunk_source(part.zip_path()), callbacks, options);
+}
+
+WorksheetMetadataReadSummary WorkbookReader::read_worksheet_metadata(
+    std::string_view sheet_name,
+    const WorksheetMetadataReadCallbacks& callbacks,
+    WorksheetMetadataReaderOptions options) const
+{
+    if (!impl_) {
+        throw FastXlsxError("WorkbookReader is not open");
+    }
+    if (options.max_xml_window_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_xml_window_bytes");
+    }
+    if (options.max_xml_nesting_depth == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_xml_nesting_depth");
+    }
+    if (options.max_range_reference_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_range_reference_bytes");
+    }
+    if (options.max_sheet_view_count == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_sheet_view_count");
+    }
+    if (options.max_merged_cell_count == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_merged_cell_count");
+    }
+    const Impl::Sheet* sheet = impl_->find_sheet(sheet_name);
+    if (sheet == nullptr) {
+        throw FastXlsxError(
+            "WorkbookReader worksheet not found: " + std::string(sheet_name));
+    }
+    return detail::read_worksheet_metadata_from_chunk_source(
+        impl_->package.entry_chunk_source(sheet->part_name.zip_path()),
+        callbacks,
+        options);
 }
 
 } // namespace fastxlsx

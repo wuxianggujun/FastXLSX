@@ -167,6 +167,90 @@ struct SharedStringReadSummary {
     std::size_t peak_item_text_bytes = 0;
 };
 
+/// Source shape represented by one shared-string run callback.
+enum class SharedStringRunKind {
+    /// One simple direct `<si><t>...</t></si>` item projected as one run.
+    SimpleText,
+
+    /// One explicit `<si><r>...</r></si>` rich-text run.
+    RichText,
+};
+
+/// One shared-string item boundary value.
+///
+/// index is the zero-based workbook-local shared-string index. The value owns
+/// no borrowed data and may be copied beyond the callback.
+struct SharedStringRunItemView {
+    std::uint32_t index = 0;
+};
+
+/// Narrow owning formatting projected for one shared-string run.
+///
+/// direct_argb_color, when present, stores an OpenXML eight-digit `rgb` value
+/// as `0xAARRGGBB`. Theme and tint inheritance are not resolved.
+struct SharedStringRunFormat {
+    bool bold = false;
+    bool italic = false;
+    std::optional<std::uint32_t> direct_argb_color;
+};
+
+/// One forward-only shared-string run callback view.
+///
+/// text is borrowed and valid only for the duration of the current on_run
+/// callback. Copy it when it must outlive the callback. The indexes, kind, and
+/// format are owning values. run_index is zero-based within item_index.
+struct SharedStringRunView {
+    std::uint32_t item_index = 0;
+    std::uint32_t run_index = 0;
+    SharedStringRunKind kind = SharedStringRunKind::SimpleText;
+    std::string_view text;
+    SharedStringRunFormat format;
+};
+
+/// Callbacks used by WorkbookReader::read_shared_string_runs().
+///
+/// All callbacks are optional. On successful traversal, each item is emitted
+/// synchronously as one on_item_start callback, one or more on_run callbacks,
+/// then one on_item_end callback. Simple items are represented by one
+/// SimpleText run. A parser/package failure may follow callbacks already emitted
+/// for earlier items or the active item; consumers that need atomic results must
+/// publish them only after the traversal returns successfully. Exceptions
+/// propagate unchanged, the active package-entry stream is released during
+/// unwinding, and a later traversal starts over.
+struct SharedStringRunReadCallbacks {
+    std::function<void(const SharedStringRunItemView&)> on_item_start;
+    std::function<void(const SharedStringRunView&)> on_run;
+    std::function<void(const SharedStringRunItemView&)> on_item_end;
+};
+
+/// Guardrails for one bounded shared-string run traversal.
+struct SharedStringRunReaderOptions {
+    /// Maximum bytes retained by the sharedStrings XML token window.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum decoded text bytes accepted across one item.
+    std::size_t max_item_text_bytes = 64U * 1024U;
+
+    /// Maximum decoded text bytes retained for the active run.
+    std::size_t max_run_text_bytes = 64U * 1024U;
+
+    /// Maximum simple/rich runs accepted and emitted for one item.
+    std::size_t max_runs_per_item = 64U * 1024U;
+
+    /// Maximum XML element nesting depth retained by the structural stack.
+    std::size_t max_xml_nesting_depth = 64U;
+};
+
+/// Summary returned after one successful shared-string run traversal.
+struct SharedStringRunReadSummary {
+    std::uint64_t item_count = 0;
+    std::uint64_t run_count = 0;
+    std::size_t peak_item_text_bytes = 0;
+    std::size_t peak_run_text_bytes = 0;
+    std::size_t peak_runs_per_item = 0;
+    std::size_t peak_xml_nesting_depth = 0;
+};
+
 /// Horizontal alignment projected from one narrow cellXfs record.
 enum class CellFormatHorizontalAlignment {
     Left,
@@ -345,6 +429,11 @@ struct StyleComponentReadSummary {
 /// being flattened. It does not build a shared-string table or automatically
 /// resolve indexes emitted by read_worksheet().
 ///
+/// read_shared_string_runs() is an independent traversal of the same part. It
+/// preserves item/run boundaries and narrow owning run formatting while also
+/// representing a simple item as one default-format run. It does not change the
+/// stricter read_shared_strings() projection or join results to worksheet cells.
+///
 /// read_cell_formats() is another separate bounded companion. It emits custom
 /// number-format definitions and narrow cellXfs records without building a
 /// complete styles registry. Worksheet style indexes, font/fill references,
@@ -422,6 +511,42 @@ public:
     [[nodiscard]] SharedStringReadSummary read_shared_strings(
         const SharedStringReadCallbacks& callbacks = {},
         SharedStringReaderOptions options = {}) const;
+
+    /// Traverses simple and narrow rich shared-string runs with bounded memory.
+    ///
+    /// A fresh sharedStrings package-entry source is owned only for this call.
+    /// The unique internal relationship, normalized target, part presence, and
+    /// content type receive the same audit as read_shared_strings(). Successful
+    /// return closes the entry after CRC/size validation; callback, parser, or
+    /// package failures release it during unwinding and a later call may retry.
+    ///
+    /// Valid callbacks run in item/index source order as item start, one or more
+    /// runs, and item end. A direct `<t>` item becomes one SimpleText run. Rich
+    /// `<r>` records remain distinct RichText runs and project bold, italic, and
+    /// optional direct ARGB color while accepting only fixed Calibri 11,
+    /// family 2, minor-scheme, or theme-1 default metadata. Run text is borrowed
+    /// only for on_run; boundary indexes and run formatting are owning values.
+    /// Earlier callbacks, including a start or run for the active item, may have
+    /// executed before a later parser/package failure; successful return is the
+    /// completion signal for callers that require an atomic collected result.
+    ///
+    /// XML window, item/run text, runs-per-item, and nesting limits bound parser
+    /// state. Phonetic/extension metadata, mixed simple/rich item shapes,
+    /// underline/strike and other run properties, non-default font metadata,
+    /// theme/tint inheritance, malformed containers, and unsupported markup
+    /// fail explicitly rather than being flattened.
+    ///
+    /// This read-only traversal does not build a shared-string table, resolve
+    /// worksheet shared-string indexes, mutate the package, materialize a
+    /// worksheet, or hand values to Patch or In-memory editors.
+    ///
+    /// @throws FastXlsxError if the reader is moved from, an option is zero, the
+    /// relationship/content-type/target audit fails, package reading fails, or
+    /// sharedStrings XML is malformed or outside the narrow projection. User
+    /// callback exceptions propagate unchanged.
+    [[nodiscard]] SharedStringRunReadSummary read_shared_string_runs(
+        const SharedStringRunReadCallbacks& callbacks = {},
+        SharedStringRunReaderOptions options = {}) const;
 
     /// Traverses custom number formats and cellXfs records with bounded memory.
     ///

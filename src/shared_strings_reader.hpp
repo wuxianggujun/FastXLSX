@@ -14,4 +14,9 @@ using SharedStringsInputChunkCallback = std::function<bool(std::string& output_c
     const SharedStringReadCallbacks& callbacks,
     SharedStringReaderOptions options);
 
+[[nodiscard]] SharedStringRunReadSummary read_shared_string_runs_from_chunk_source(
+    const SharedStringsInputChunkCallback& read_next_chunk,
+    const SharedStringRunReadCallbacks& callbacks,
+    SharedStringRunReaderOptions options);
+
 } // namespace fastxlsx::detail

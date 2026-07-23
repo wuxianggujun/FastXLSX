@@ -17,6 +17,7 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 - `src/shared_strings_reader.cpp`
 - `tests/test_worksheet_reader.cpp`
 - `tests/test_shared_strings_reader.cpp`
+- `tests/test_shared_string_runs_reader.cpp`
 - streaming tests/benchmarks
 
 ## 热路径
@@ -33,6 +34,8 @@ Cell references、dimension tracking、XML escape、finite numbers、inline/shar
 
 `read_shared_strings()` 是显式分离的 bounded companion：审计唯一 internal relationship、normalized target part 与标准 content type，按 index/source order 投影 simple `<si><t>`。Borrowed text 只活到 callback；XML window/item text 双 guardrail，rich/phonetic/extension/extra metadata 明确 fail。禁止构建完整 table、自动解析 worksheet index 或隐式接入 Patch/In-memory。
 
+`read_shared_string_runs()` 是独立的 bounded rich companion：成功时按 item start/run/item end 顺序保留 rich `<r>` boundary，并把 simple `<t>` 映射成一个默认 run。Run text 只活到 `on_run`；index/kind/format owning。限制 XML window、item/run bytes、runs per item 与 nesting；只投影 bold/italic/direct ARGB 并接受固定 default font metadata。失败前可能已有 partial callbacks；需原子结果时只在成功返回后发布。Mixed shape、phonetic/extension、非默认 font/theme/tint 和其他 run property 明确 fail；禁止完整 table、format inheritance、worksheet index 自动关联或 Patch/In-memory handoff。
+
 `read_cell_formats()` 是显式分离的 bounded styles companion：审计唯一 internal relationship、normalized target part 与标准 content type，按 source order 分别投影 custom `numFmtId + formatCode` 和 zero-based `cellXfs`。Format code 只活到 callback；cell format ids/apply/alignment 是 owning values，number-format/font/fill ids 保持 opaque。XML window、active format-code、nesting 与 custom-id count 提供 guardrail；enabled border/base-style/protection/quote/pivot、extension 和其他未投影 metadata 明确 fail。禁止完整 styles registry、自动解析 worksheet style index 或隐式接入 Patch/In-memory。
 
 `read_style_components()` 是另一条显式 bounded styles traversal：按 source order 投影 zero-based owning font/fill values，font 仅含 bold/italic/optional direct ARGB 并接受 writer 固定 default metadata，fill 仅含 none/gray125/solid direct ARGB。XML window、nesting、font/fill count 与 container count 必须有门禁；theme/tint inheritance、其他 font/color/pattern/gradient 明确 fail。它不保留 component table，也不自动关联 cellXfs 或 worksheet style index。
@@ -43,4 +46,4 @@ Existing-file large worksheet rewrite 属于 C5，不应通过 `WorksheetEditor`
 
 ## 验证
 
-Writer 运行 focused streaming tests、ZIP/XML、Office/openpyxl；性能相关时使用 schema-v6 executable/schema-v3 matrix，检查 generation/package-close/total wall 与 process CPU、CPU 总账、body buffer peak/flush count、process peak working set 和 close 后 active temporary file count。Worksheet reader 另测 stored/DEFLATE、typed projection、source order、borrowed copy、callback failure retry、双 guardrail、unsupported metadata 和 malformed diagnostics。SharedStrings companion 另测 simple/empty/entity decode、zero-based order、超过 package input chunk 的 token、relationship target/content type、rich/phonetic/extension rejection、callback retry 与双 guardrail。Cell-formats companion 另测 custom formats/cellXfs source order、format-code decode/borrowed copy、两类 callback retry、跨 package chunk token、四类 guardrail、container count/duplicate id、relationship/content type 与 unsupported xf/alignment metadata。
+Writer 运行 focused streaming tests、ZIP/XML、Office/openpyxl；性能相关时使用 schema-v6 executable/schema-v3 matrix，检查 generation/package-close/total wall 与 process CPU、CPU 总账、body buffer peak/flush count、process peak working set 和 close 后 active temporary file count。Worksheet reader 另测 stored/DEFLATE、typed projection、source order、borrowed copy、callback failure retry、双 guardrail、unsupported metadata 和 malformed diagnostics。Strict sharedStrings companion 另测 simple/empty/entity decode、zero-based order、超过 package input chunk 的 token、relationship target/content type、rich/phonetic/extension rejection、callback retry 与双 guardrail。Rich-run companion 另测 item/run 顺序、simple compatibility、owning format、三类 callback retry、五类 guardrail、chunk boundary、OPC audit、mixed/phonetic/extension/unsupported format 与 malformed diagnostics。Cell-formats companion 另测 custom formats/cellXfs source order、format-code decode/borrowed copy、两类 callback retry、跨 package chunk token、四类 guardrail、container count/duplicate id、relationship/content type 与 unsupported xf/alignment metadata。

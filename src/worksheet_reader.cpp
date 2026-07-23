@@ -1149,6 +1149,49 @@ SharedStringReadSummary WorkbookReader::read_shared_strings(
         impl_->package.entry_chunk_source(part.zip_path()), callbacks, options);
 }
 
+SharedStringRunReadSummary WorkbookReader::read_shared_string_runs(
+    const SharedStringRunReadCallbacks& callbacks,
+    SharedStringRunReaderOptions options) const
+{
+    if (!impl_) {
+        throw FastXlsxError("WorkbookReader is not open");
+    }
+    if (options.max_xml_window_bytes == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_xml_window_bytes");
+    }
+    if (options.max_item_text_bytes == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_item_text_bytes");
+    }
+    if (options.max_run_text_bytes == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_run_text_bytes");
+    }
+    if (options.max_runs_per_item == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_runs_per_item");
+    }
+    if (options.max_xml_nesting_depth == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_xml_nesting_depth");
+    }
+    if (!impl_->relationships.shared_strings.has_value()) {
+        throw FastXlsxError("WorkbookReader workbook has no sharedStrings relationship");
+    }
+
+    const detail::PartName part = resolve_workbook_relationship_part(
+        impl_->package.workbook_part(), *impl_->relationships.shared_strings,
+        "sharedStrings");
+    const detail::PackagePart* package_part = impl_->package.part_index().find_part(part);
+    if (package_part == nullptr) {
+        throw FastXlsxError(
+            "WorkbookReader sharedStrings relationship targets an unknown part");
+    }
+    if (package_part->content_type != shared_strings_content_type) {
+        throw FastXlsxError(
+            "WorkbookReader sharedStrings relationship target has the wrong content type");
+    }
+
+    return detail::read_shared_string_runs_from_chunk_source(
+        impl_->package.entry_chunk_source(part.zip_path()), callbacks, options);
+}
+
 CellFormatReadSummary WorkbookReader::read_cell_formats(
     const CellFormatReadCallbacks& callbacks,
     CellFormatReaderOptions options) const

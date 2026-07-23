@@ -67,12 +67,13 @@ source XLSX
   -> fresh target entry chunk source
   -> worksheet: bounded WorksheetEventReader -> active row/cell projection
   -> sharedStrings: bounded XML scanner -> active simple item projection
+  -> sharedStrings: bounded XML scanner -> active simple/rich run projection
   -> styles: bounded XML scanner -> custom numFmt / cellXfs projection
   -> styles: bounded XML scanner -> active narrow font/fill projection
   -> synchronous public callbacks
 ```
 
-`WorkbookReader` 只在 `open()` 保留小型 package/workbook catalog；每次 traversal 独占一个 stored/DEFLATE entry source，完成或异常退出后立即释放。Worksheet projector 只保留当前 row/cell；sharedStrings projector 只保留当前 item；cell-format projector 只保留当前 custom format/cellXfs record、bounded nesting stack 与 bounded `numFmtId` 去重集合；style-component projector 只保留当前 font/fill value 与 bounded nesting stack。各自 XML/text/count 上限由 public options 控制。`read_worksheet()` 的 sharedStrings/style 仍只暴露 workbook-local index；三个 companion 都不自动做 index resolution。四条读取路径都不加载完整 sharedStrings/styles、不构建 DOM/dense matrix/CellStore，也不进入 Patch plan 或 In-memory session。
+`WorkbookReader` 只在 `open()` 保留小型 package/workbook catalog；每次 traversal 独占一个 stored/DEFLATE entry source，完成或异常退出后立即释放。Worksheet projector 只保留当前 row/cell；strict sharedStrings projector 只保留当前 item；run projector 只保留当前 item/run text、format 与 bounded element stack；cell-format projector 只保留当前 custom format/cellXfs record、bounded nesting stack 与 bounded `numFmtId` 去重集合；style-component projector 只保留当前 font/fill value 与 bounded nesting stack。各自 XML/text/count 上限由 public options 控制。`read_worksheet()` 的 sharedStrings/style 仍只暴露 workbook-local index；四个 companion 都不自动做 index resolution。五条读取路径都不加载完整 sharedStrings/styles、不构建 DOM/dense matrix/CellStore，也不进入 Patch plan 或 In-memory session。
 
 ### Patch
 

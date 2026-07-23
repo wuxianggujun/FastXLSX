@@ -88,7 +88,7 @@ int main()
 }
 ```
 
-`WorkbookReader` 每次调用只顺序打开目标 package entry，不构建 worksheet DOM、dense matrix 或 `CellStore`。Worksheet traversal 支持 typed number/boolean、simple inline/text/date token、error、formula + cached scalar、sharedStrings index 和 opaque style index；独立 companion 可顺序读取 simple sharedStrings、custom number format/cellXfs，以及 writer-compatible bold/italic/direct-ARGB font 与 none/gray125/solid fill。各 traversal 不自动关联 index，也不保留完整 table/registry；rich inline text、formula metadata、theme/tint、gradient 与其他未投影语义会明确失败。回调中的 borrowed 字符串必须在 callback 返回前复制，各 XML/text/count 上限由对应 ReaderOptions 控制。
+`WorkbookReader` 每次调用只顺序打开目标 package entry，不构建 worksheet DOM、dense matrix 或 `CellStore`。Worksheet traversal 支持 typed number/boolean、simple inline/text/date token、error、formula + cached scalar、sharedStrings index 和 opaque style index；独立 companion 可顺序读取 strict simple sharedStrings item、保留 item/run 边界的 narrow rich sharedStrings、custom number format/cellXfs，以及 writer-compatible bold/italic/direct-ARGB font 与 none/gray125/solid fill。Rich-run traversal 把 simple item 映射为一个默认格式 run，只投影 bold、italic 与 direct ARGB，并对 phonetic、extension、非默认 font/theme/tint 等未投影语义明确失败。各 traversal 不自动关联 index，也不保留完整 table/registry；回调中的 borrowed 字符串必须在 callback 返回前复制，各 XML/text/count 上限由对应 ReaderOptions 控制。
 
 ### Patch / In-memory
 

@@ -4,7 +4,7 @@ FastXLSX 是一个 C++20 XLSX 创建与编辑库，优先支持 MSVC 2026。项�
 
 当前版本为 **v0.1.0 Preview**。Public API/ABI 尚未承诺稳定，`0.x` 升级后应重新编译 consumer；首版支持边界以 [当前能力](docs/CURRENT_CAPABILITIES.md) 和 [Changelog](CHANGELOG.md) 为准。
 
-- **Streaming**：`WorkbookWriter` / `WorksheetWriter` 面向按行创建大型新 workbook；`WorkbookReader` 面向已有 workbook 的 forward-only bounded row/cell、worksheet metadata、data-validation、sharedStrings 与 styles companion traversal。
+- **Streaming**：`WorkbookWriter` / `WorksheetWriter` 面向按行创建大型新 workbook；`WorkbookReader` 面向已有 workbook 的 forward-only bounded row/cell、worksheet metadata、data-validation、hyperlink、conditional-formatting、sharedStrings 与 styles companion traversal。
 - **Patch**：`WorkbookEditor`，面向已有 workbook 的 part-level rewrite；未修改和未知 part 默认保留。
 - **In-memory**：`WorksheetEditor`，面向小型 worksheet 的受限稀疏随机编辑。
 
@@ -88,7 +88,7 @@ int main()
 }
 ```
 
-`WorkbookReader` 每次调用只顺序打开目标 package entry，不构建 worksheet DOM、dense matrix 或 `CellStore`。Worksheet traversal 支持 typed number/boolean、simple inline/text/date token、error、formula + cached scalar、sharedStrings index 和 opaque style index；独立 companion 可顺序读取 primary frozen pane、worksheet-root auto-filter、merged-cell ranges、writer-compatible worksheet data validations、worksheet-local internal/external hyperlinks、strict simple sharedStrings item、保留 item/run 边界的 narrow rich sharedStrings、custom number format/cellXfs，以及 writer-compatible bold/italic/direct-ARGB font 与 none/gray125/solid fill。Metadata/data-validation/hyperlink callback 的字段均为 owning value，table-local filter 不在这些 projection；rich-run traversal 的 text 等 borrowed 字段仍必须在 callback 返回前复制。各 traversal 不自动关联 index，也不保留完整 table/registry；XML/text/nesting/count 上限由对应 ReaderOptions 控制。
+`WorkbookReader` 每次调用只顺序打开目标 package entry，不构建 worksheet DOM、dense matrix 或 `CellStore`。Worksheet traversal 支持 typed number/boolean、simple inline/text/date token、error、formula + cached scalar、sharedStrings index 和 opaque style index；独立 companion 可顺序读取 primary frozen pane、worksheet-root auto-filter、merged-cell ranges、writer-compatible worksheet data validations、worksheet-local internal/external hyperlinks、writer-compatible conditional formatting、strict simple sharedStrings item、保留 item/run 边界的 narrow rich sharedStrings、custom number format/cellXfs，以及 writer-compatible bold/italic/direct-ARGB font 与 none/gray125/solid fill。Metadata/data-validation/hyperlink/conditional-format callback 的字段均为 owning value，table-local filter 不在这些 projection；rich-run traversal 的 text 等 borrowed 字段仍必须在 callback 返回前复制。各 traversal 不自动关联 index，也不保留完整 table/registry；XML/text/nesting/count 上限由对应 ReaderOptions 控制。
 
 ### Patch / In-memory
 
@@ -147,7 +147,7 @@ auto sheet = editor.worksheet("Data", options);
 
 - `save_as()` 写到新路径，不是 atomic in-place save。Production minizip-ng 对 method 匹配的未修改 entry 保留 exact compressed payload bytes；它不保留 source local header、central-directory record、extra fields 或整包布局。Rewritten entry、stored bootstrap 和 method-changing save 正常重新编码。
 - 当前 reader/writer 不支持 Zip64 或 multi-disk ZIP；单 entry 超过 ZIP32 size、entry count 超过 ZIP32 上限或 source 使用 Zip64 时会拒绝，不承诺接近/超过 4 GiB 的 XLSX。
-- `WorkbookReader` 是 read-only forward traversal，不提供 seek、自动 sharedStrings/style resolution、worksheet mutation 或与 `WorkbookEditor` / `WorksheetEditor` 的隐式 handoff。Shared-string/style index 只做语法与关系存在性检查，不验证对应 table 的 index 上界；显式 companion traversal 也不会自动关联这些 index。`read_worksheet_metadata()` 只审计并投影 primary frozen pane、worksheet-root auto-filter 和 worksheet-root merged cells；`read_worksheet_data_validations()` 只投影 writer-compatible worksheet-root rules、`sqref`、formula1/formula2 与 prompt/error metadata；`read_worksheet_hyperlinks()` 只投影单一 A1 cell/range、worksheet-local internal `location` 或经 owner-local `.rels` 解析的 external target，并严格审计 relationship type/`TargetMode`、QName、schema order 和 duplicate/overlap。它不读取 table-local filter，不检查 hyperlink target reachability，也不创建、修复、裁剪或修改 relationships/content types/manifest。
+- `WorkbookReader` 是 read-only forward traversal，不提供 seek、自动 sharedStrings/style resolution、worksheet mutation 或与 `WorkbookEditor` / `WorksheetEditor` 的隐式 handoff。Shared-string/style index 只做语法与关系存在性检查，不验证对应 table 的 index 上界；显式 companion traversal 也不会自动关联这些 index。`read_worksheet_metadata()` 只审计并投影 primary frozen pane、worksheet-root auto-filter 和 worksheet-root merged cells；`read_worksheet_data_validations()` 只投影 writer-compatible worksheet-root rules、`sqref`、formula1/formula2 与 prompt/error metadata；`read_worksheet_hyperlinks()` 只投影单一 A1 cell/range、worksheet-local internal `location` 或经 owner-local `.rels` 解析的 external target，并严格审计 relationship type/`TargetMode`、QName、schema order 和 duplicate/overlap；`read_worksheet_conditional_formats()` 只投影 writer-compatible two-/three-color color scale、basic data bar、basic `3Arrows` icon set、multi-range `sqref` 与 priority，严格审计 rule shape、schema order 和 guardrail。它不读取 table-local filter，不检查 hyperlink target reachability，不支持 advanced/custom icon sets、advanced data bars、`dxf`/styles object model、formula/cellIs rule family，也不创建、修复、裁剪或修改 relationships/content types/manifest。
 - `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、`RelationshipGraph` 是 internal。
 - 公式支持文本、审计、窄重写和请求重算；不求值、不生成 cached value、不完整重建 `calcChain.xml`。
 - `replace_image()` 只替换已有 PNG/JPEG media bytes；不编辑 drawing/anchor/relationship。

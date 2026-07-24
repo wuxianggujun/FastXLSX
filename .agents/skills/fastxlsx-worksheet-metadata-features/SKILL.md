@@ -9,7 +9,7 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 
 - `docs/CURRENT_CAPABILITIES.md`、`docs/ARCHITECTURE.md`、`docs/EDITING_MODEL.md`
 - `include/fastxlsx/streaming_writer.hpp`、`include/fastxlsx/worksheet_reader.hpp`、`include/fastxlsx/workbook_editor.hpp`
-- `src/streaming_writer.cpp`、`src/worksheet_metadata_reader.cpp`、`src/worksheet_data_validation_reader.cpp`、`src/worksheet_hyperlink_reader.cpp`、`src/workbook_editor*.cpp`、`src/package_editor.cpp`
+- `src/streaming_writer.cpp`、`src/worksheet_metadata_reader.cpp`、`src/worksheet_data_validation_reader.cpp`、`src/worksheet_hyperlink_reader.cpp`、`src/worksheet_conditional_format_reader.cpp`、`src/workbook_editor*.cpp`、`src/package_editor.cpp`
 - 对应 metadata、relationship、preservation 和 failure-recovery tests
 
 ## 功能边界
@@ -29,6 +29,7 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 - Parser/package failure 前允许已有 source-order callbacks，成功返回才是原子收集的 completion signal；callback exception 原样传播并允许 stored/DEFLATE entry 从头 retry。该路径不修改 relationships、content types、manifest、Patch state 或 In-memory state。
 - Public `WorkbookReader::read_worksheet_data_validations()` 与通用 metadata traversal 分离，按 source order 投影 zero-based owning multi-range `sqref + DataValidationRule`。复用 shared rule validator，但独立审计 container/direct child/QName/schema、boolean/enum/entity、formula1/formula2 shape 与 XML/nesting/count/range/text guardrail；target 外 foreign extension local-name 不得误识别，target 内 unsupported metadata 明确 fail。它不求值、不校验 cell values、不做 overlap repair，也不修改 OPC/Patch/In-memory state。
 - Public `WorkbookReader::read_worksheet_hyperlinks()` 是独立 bounded worksheet-root companion，按 source order 投影 owning A1 cell/range、internal `location` 或 external relationship target 与 display/tooltip。Internal 不要求 `.rels`；external 只接受当前 worksheet owner-local relationship、标准 hyperlink type、`TargetMode="External"` 和非空 target，relationship id 保持 internal。独立审计唯一 container/direct child/QName/namespace scope/suffix schema、恰好一个 location/id、unsupported metadata、duplicate/overlap 与 XML/ref/id/target/text guardrail；target 外 foreign extension local-name 不得误识别。失败前 partial callback、成功返回 completion、callback exception retry 契约与其他 bounded companions 一致。它不检查 target reachability、不创建/修复/裁剪 relationships，也不修改 OPC/Patch/In-memory state。
+- Public `WorkbookReader::read_worksheet_conditional_formats()` 是独立 bounded worksheet-root companion，按 source order 投影 owning multi-range `sqref`、priority 与 writer-compatible conditional-format rule payload。当前只接受 two-/three-color color scale、basic data bar 和 basic `3Arrows` icon set；独立审计唯一 container/direct child/QName/namespace scope/suffix schema、单个 direct `cfRule`、priority、rule kind/operator、`cfvo`/color/icon threshold shape、ARGB、unsupported metadata 与 XML/nesting/count/range/sqref guardrail；target 外 foreign extension local-name 不得误识别。失败前 partial callback、成功返回 completion、callback exception retry 契约与其他 bounded companions 一致。它不求值、不修复 dxf/styles、不修改 OPC/Patch/In-memory state。
 
 ## Existing Workbook
 
@@ -55,4 +56,5 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 - Metadata read 另测 primary/other view、frozen/root-filter/merged source order、owning values、callback retry、stored/DEFLATE、XML/nesting/reference/view/merge guardrail、QName/schema/count/overlap/unsupported pane rejection和 package no-side-effect。
 - Data-validation read 另测 owning multi-range/rule、entity decode、formula shape、absent/empty container、callback retry、stored/DEFLATE、XML/nesting/validation/range/sqref/formula/text guardrail、count/direct-child/QName/schema/unsupported metadata rejection、foreign extension disambiguation和 package no-side-effect。
 - Hyperlink read 另测 owning internal/external projection、entity decode、cell/range source order、internal no-`.rels`、absent/empty container、callback retry、stored/DEFLATE、XML/nesting/ref/relationship-id/target/text guardrail、relationship missing/type/TargetMode/target rejection、namespace scope/duplicate semantic id/QName/schema/direct-child/unsupported metadata、duplicate/overlap、foreign extension disambiguation和 package no-side-effect。
+- Conditional-format read 另测 owning multi-range/priority/rule payload、source order、absent container、callback retry、stored/DEFLATE、XML/nesting/format/range/sqref guardrail、schema/QName/namespace/rule-shape diagnostics、advanced/custom/dxf/formula rejection、foreign extension disambiguation 和 package no-side-effect。
 - 使用 OpenPyXL/XlsxWriter 做结构对照；Office 未运行时明确记录 `not_run`。

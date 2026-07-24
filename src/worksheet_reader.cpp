@@ -5,6 +5,7 @@
 #include "package_reader.hpp"
 #include "shared_strings_reader.hpp"
 #include "styles_reader.hpp"
+#include "worksheet_conditional_format_reader.hpp"
 #include "worksheet_data_validation_reader.hpp"
 #include "worksheet_hyperlink_reader.hpp"
 #include "worksheet_metadata_reader.hpp"
@@ -1404,6 +1405,45 @@ WorksheetHyperlinkReadSummary WorkbookReader::read_worksheet_hyperlinks(
     return detail::read_worksheet_hyperlinks_from_chunk_source(
         impl_->package.entry_chunk_source(sheet->part_name.zip_path()),
         impl_->package.relationships_for(sheet->part_name), callbacks, options);
+}
+
+WorksheetConditionalFormatReadSummary
+WorkbookReader::read_worksheet_conditional_formats(
+    std::string_view sheet_name,
+    const WorksheetConditionalFormatReadCallbacks& callbacks,
+    WorksheetConditionalFormatReaderOptions options) const
+{
+    if (!impl_) {
+        throw FastXlsxError("WorkbookReader is not open");
+    }
+    if (options.max_xml_window_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_xml_window_bytes");
+    }
+    if (options.max_xml_nesting_depth == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_xml_nesting_depth");
+    }
+    if (options.max_conditional_format_count == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_conditional_format_count");
+    }
+    if (options.max_ranges_per_format == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_ranges_per_format");
+    }
+    if (options.max_sqref_bytes == 0) {
+        throw FastXlsxError("WorkbookReader requires nonzero max_sqref_bytes");
+    }
+    const Impl::Sheet* sheet = impl_->find_sheet(sheet_name);
+    if (sheet == nullptr) {
+        throw FastXlsxError(
+            "WorkbookReader worksheet not found: " + std::string(sheet_name));
+    }
+    return detail::read_worksheet_conditional_formats_from_chunk_source(
+        impl_->package.entry_chunk_source(sheet->part_name.zip_path()),
+        callbacks,
+        options);
 }
 
 } // namespace fastxlsx

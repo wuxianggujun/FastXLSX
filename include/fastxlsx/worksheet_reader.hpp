@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fastxlsx/streaming_writer.hpp>
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/worksheet_metadata.hpp>
 
@@ -611,6 +612,74 @@ struct WorksheetHyperlinkReadSummary {
     std::size_t peak_retained_range_count = 0;
 };
 
+/// Conditional-formatting rule shape projected by the bounded worksheet reader.
+enum class WorksheetConditionalFormatKind {
+    TwoColorScale,
+    ThreeColorScale,
+    DataBar,
+    IconSet,
+};
+
+/// Owning projection of one worksheet-root conditional-formatting rule.
+///
+/// `index` is zero-based in source order across projected `<cfRule>` records.
+/// `ranges` preserves the source-order `sqref` ranges from the owning
+/// `<conditionalFormatting>` element. `priority` is the worksheet-local
+/// OpenXML priority value; FastXLSX does not normalize, resequence, or evaluate
+/// it. Exactly one optional rule payload matches `kind`.
+struct WorksheetConditionalFormatView {
+    std::uint64_t index = 0;
+    std::vector<CellRange> ranges;
+    std::uint32_t priority = 0;
+    WorksheetConditionalFormatKind kind = WorksheetConditionalFormatKind::TwoColorScale;
+    std::optional<TwoColorScaleRule> two_color_scale;
+    std::optional<ThreeColorScaleRule> three_color_scale;
+    std::optional<DataBarRule> data_bar;
+    std::optional<IconSetRule> icon_set;
+};
+
+/// Callbacks used by WorkbookReader::read_worksheet_conditional_formats().
+///
+/// The optional callback runs synchronously once per complete writer-compatible
+/// conditional-formatting rule in source order. Values own all projected data
+/// and may be retained. A later parser/package failure can follow callbacks
+/// already delivered; successful return is the completion signal for atomic
+/// collection. User exceptions propagate unchanged, and a later call starts
+/// from the beginning.
+struct WorksheetConditionalFormatReadCallbacks {
+    std::function<void(const WorksheetConditionalFormatView&)> on_conditional_format;
+};
+
+/// Guardrails for one bounded worksheet conditional-formatting traversal.
+struct WorksheetConditionalFormatReaderOptions {
+    /// Maximum bytes retained by the worksheet XML token window.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum worksheet metadata nesting depth retained by the structural stack.
+    std::size_t max_xml_nesting_depth = 64U;
+
+    /// Maximum conditional-formatting rules accepted and emitted in one traversal.
+    std::size_t max_conditional_format_count = 64U * 1024U;
+
+    /// Maximum ranges retained for one active `sqref` value.
+    std::size_t max_ranges_per_format = 64U * 1024U;
+
+    /// Maximum decoded bytes accepted for one `sqref` attribute.
+    std::size_t max_sqref_bytes = 64U * 1024U;
+};
+
+/// Summary returned after one successful worksheet conditional-format traversal.
+struct WorksheetConditionalFormatReadSummary {
+    std::uint64_t conditional_format_count = 0;
+    std::uint64_t color_scale_count = 0;
+    std::uint64_t data_bar_count = 0;
+    std::uint64_t icon_set_count = 0;
+    std::uint64_t range_count = 0;
+    std::size_t peak_ranges_per_format = 0;
+    std::size_t peak_sqref_bytes = 0;
+    std::size_t peak_xml_nesting_depth = 0;
+};
+
 /// Existing-workbook bounded-memory worksheet reader.
 ///
 /// API mode: Streaming read. WorkbookReader indexes small package/workbook
@@ -661,6 +730,12 @@ struct WorksheetHyperlinkReadSummary {
 /// read_worksheet_hyperlinks() separately projects worksheet-local locations
 /// and external relationship targets as owning values. It audits but never
 /// repairs or mutates worksheet relationships.
+///
+/// read_worksheet_conditional_formats() separately projects the current
+/// writer-compatible worksheet-root conditional-formatting subset:
+/// two-/three-color scales, basic data bars, and built-in 3Arrows icon sets.
+/// It does not build a full conditional-formatting object model or resolve
+/// dxf/style/formula semantics.
 class WorkbookReader {
 public:
     /// Opens and indexes an existing XLSX package.
@@ -920,6 +995,35 @@ public:
         std::string_view sheet_name,
         const WorksheetHyperlinkReadCallbacks& callbacks = {},
         WorksheetHyperlinkReaderOptions options = {}) const;
+
+    /// Traverses worksheet-root conditional formatting in source order.
+    ///
+    /// A fresh worksheet package-entry source is owned only for this call. Each
+    /// complete writer-compatible `<cfRule>` is projected as an owning value
+    /// containing source-order `sqref` ranges, the original priority, and one
+    /// of the narrow rule payloads already used by WorksheetWriter.
+    ///
+    /// The projection accepts only two-/three-color scales, basic data bars,
+    /// and built-in `3Arrows` icon sets. It audits `sqref`, priority, cfvo
+    /// types/values, direct ARGB colors, target element order/count, QName,
+    /// worksheet suffix schema order, and configured XML/range limits. Multiple
+    /// `<conditionalFormatting>` elements are read in source order, but each
+    /// container must carry exactly one direct writer-compatible `<cfRule>`.
+    ///
+    /// This read-only method does not evaluate cell values, normalize priority,
+    /// repair overlapping ranges, resolve dxf/styles/formulas, create package
+    /// relationships/content types, seek, materialize a worksheet, or enter
+    /// Patch/In-memory state.
+    ///
+    /// @throws FastXlsxError if the reader is moved from, the worksheet is
+    /// absent, an option is zero, package reading fails, or the worksheet
+    /// conditional-formatting XML is malformed or outside the narrow projection.
+    /// User callback exceptions propagate unchanged.
+    [[nodiscard]] WorksheetConditionalFormatReadSummary
+    read_worksheet_conditional_formats(
+        std::string_view sheet_name,
+        const WorksheetConditionalFormatReadCallbacks& callbacks = {},
+        WorksheetConditionalFormatReaderOptions options = {}) const;
 
 private:
     struct Impl;

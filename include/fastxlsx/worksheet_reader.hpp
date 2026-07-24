@@ -539,6 +539,78 @@ struct WorksheetDataValidationReadSummary {
     std::size_t peak_xml_nesting_depth = 0;
 };
 
+/// Hyperlink target shape projected by the bounded worksheet reader.
+enum class WorksheetHyperlinkKind {
+    /// Worksheet-local `location` stored directly in worksheet XML.
+    Internal,
+
+    /// External target resolved through the worksheet-owned relationship id.
+    External,
+};
+
+/// Owning projection of one worksheet-root hyperlink.
+///
+/// `index` is zero-based in source order within the hyperlinks container. An
+/// Internal value has a non-empty location and empty external_target. An
+/// External value has a non-empty external_target and empty location. The
+/// relationship id is package-local implementation detail and is not exposed.
+struct WorksheetHyperlinkView {
+    std::uint64_t index = 0;
+    CellRange range;
+    WorksheetHyperlinkKind kind = WorksheetHyperlinkKind::Internal;
+    std::string location;
+    std::string external_target;
+    HyperlinkOptions options;
+};
+
+/// Callbacks used by WorkbookReader::read_worksheet_hyperlinks().
+///
+/// The optional callback runs synchronously once per complete hyperlink in
+/// source order. Values own all projected data and may be retained. A later
+/// parser/package/relationship failure can follow callbacks already delivered;
+/// successful return is the completion signal for atomic collection. User
+/// exceptions propagate unchanged, and a later call starts from the beginning.
+struct WorksheetHyperlinkReadCallbacks {
+    std::function<void(const WorksheetHyperlinkView&)> on_hyperlink;
+};
+
+/// Guardrails for one bounded worksheet hyperlink traversal.
+struct WorksheetHyperlinkReaderOptions {
+    /// Maximum bytes retained by the worksheet XML token window.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum worksheet metadata nesting depth retained by the structural stack.
+    std::size_t max_xml_nesting_depth = 64U;
+
+    /// Maximum hyperlink records retained for overlap audit and emitted.
+    std::size_t max_hyperlink_count = 64U * 1024U;
+
+    /// Maximum decoded bytes accepted for one hyperlink `ref` attribute.
+    std::size_t max_reference_bytes = 256U;
+
+    /// Maximum decoded bytes accepted for one external relationship id.
+    std::size_t max_relationship_id_bytes = 4U * 1024U;
+
+    /// Maximum bytes accepted for one internal location or external target.
+    std::size_t max_target_text_bytes = 64U * 1024U;
+
+    /// Maximum decoded bytes accepted for each display or tooltip value.
+    std::size_t max_metadata_text_bytes = 32U * 1024U;
+};
+
+/// Summary returned after one successful worksheet hyperlink traversal.
+struct WorksheetHyperlinkReadSummary {
+    std::uint64_t hyperlink_count = 0;
+    std::uint64_t internal_hyperlink_count = 0;
+    std::uint64_t external_hyperlink_count = 0;
+    std::size_t peak_xml_nesting_depth = 0;
+    std::size_t peak_reference_bytes = 0;
+    std::size_t peak_relationship_id_bytes = 0;
+    std::size_t peak_target_text_bytes = 0;
+    std::size_t peak_metadata_text_bytes = 0;
+    std::size_t peak_retained_range_count = 0;
+};
+
 /// Existing-workbook bounded-memory worksheet reader.
 ///
 /// API mode: Streaming read. WorkbookReader indexes small package/workbook
@@ -585,6 +657,10 @@ struct WorksheetDataValidationReadSummary {
 /// worksheet-root data-validation subset as owning range/rule values. It does
 /// not create a full validation object model or connect the values to Patch or
 /// In-memory state.
+///
+/// read_worksheet_hyperlinks() separately projects worksheet-local locations
+/// and external relationship targets as owning values. It audits but never
+/// repairs or mutates worksheet relationships.
 class WorkbookReader {
 public:
     /// Opens and indexes an existing XLSX package.
@@ -815,6 +891,35 @@ public:
         std::string_view sheet_name,
         const WorksheetDataValidationReadCallbacks& callbacks = {},
         WorksheetDataValidationReaderOptions options = {}) const;
+
+    /// Traverses worksheet-root hyperlinks in source order with bounded memory.
+    ///
+    /// A fresh worksheet package-entry source is owned only for this call.
+    /// Internal links resolve their non-empty `location` directly from worksheet
+    /// XML and do not require a relationships part. External links resolve their
+    /// non-empty target through the current worksheet's `r:id`; the relationship
+    /// must exist, use the standard hyperlink type, and be External. Display and
+    /// tooltip attributes are entity-decoded into owning HyperlinkOptions.
+    ///
+    /// The narrow projection requires exactly one of `location` or relationship
+    /// id, accepts one valid A1 cell or range per record, and rejects duplicate or
+    /// overlapping refs. Unique container/direct-child shape, QName, worksheet
+    /// suffix schema order, relationship namespace binding, and configured
+    /// XML/count/reference/id/target/text limits are audited. Unsupported child
+    /// markup and hyperlink attributes fail explicitly.
+    ///
+    /// This read-only method does not validate target reachability, create,
+    /// repair, prune, or rewrite relationships, style or change cell contents,
+    /// seek, materialize a worksheet, or enter Patch/In-memory state.
+    ///
+    /// @throws FastXlsxError if the reader is moved from, the worksheet is
+    /// absent, an option is zero, package/relationship reading fails, or the
+    /// worksheet hyperlink XML is malformed or outside the narrow projection.
+    /// User callback exceptions propagate unchanged.
+    [[nodiscard]] WorksheetHyperlinkReadSummary read_worksheet_hyperlinks(
+        std::string_view sheet_name,
+        const WorksheetHyperlinkReadCallbacks& callbacks = {},
+        WorksheetHyperlinkReaderOptions options = {}) const;
 
 private:
     struct Impl;

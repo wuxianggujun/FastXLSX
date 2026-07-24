@@ -68,6 +68,7 @@ source XLSX
   -> worksheet: bounded WorksheetEventReader -> active row/cell projection
   -> worksheet: bounded WorksheetEventReader -> root metadata projection/audit
   -> worksheet: bounded WorksheetEventReader -> active data-validation projection
+  -> worksheet: bounded WorksheetEventReader + owner .rels -> active hyperlink projection
   -> sharedStrings: bounded XML scanner -> active simple item projection
   -> sharedStrings: bounded XML scanner -> active simple/rich run projection
   -> styles: bounded XML scanner -> custom numFmt / cellXfs projection
@@ -75,7 +76,7 @@ source XLSX
   -> synchronous public callbacks
 ```
 
-`WorkbookReader` 只在 `open()` 保留小型 package/workbook catalog；每次 traversal 独占一个 stored/DEFLATE entry source，完成或异常退出后立即释放。Worksheet projector 只保留当前 row/cell；metadata projector 只保留 bounded element/view-id stack 与受 count guardrail 限制的 merged ranges，用于结束前的 overlap audit；data-validation projector 只保留当前 owning rule/ranges、formula/prompt/error text 与 bounded element stack；strict sharedStrings projector 只保留当前 item；run projector 只保留当前 item/run text、format 与 bounded element stack；cell-format projector 只保留当前 custom format/cellXfs record、bounded nesting stack 与 bounded `numFmtId` 去重集合；style-component projector 只保留当前 font/fill value 与 bounded nesting stack。各自 XML/text/nesting/count 上限由 public options 控制。`read_worksheet()` 的 sharedStrings/style 仍只暴露 workbook-local index；六个 companion 都不自动做 index/object handoff。七条读取路径都不加载完整 worksheet/sharedStrings/styles 对象、不构建 DOM/dense matrix/CellStore，也不进入 Patch plan 或 In-memory session。
+`WorkbookReader` 只在 `open()` 保留小型 package/workbook catalog；每次 traversal 独占一个 stored/DEFLATE entry source，完成或异常退出后立即释放。Worksheet projector 只保留当前 row/cell；metadata projector 只保留 bounded element/view-id stack 与受 count guardrail 限制的 merged ranges，用于结束前的 overlap audit；data-validation projector 只保留当前 owning rule/ranges、formula/prompt/error text 与 bounded element stack；hyperlink projector 只保留当前 owning record、受 count guardrail 限制的 ranges、relationship namespace scope，并按需查询当前 worksheet 的小型 relationship set；strict sharedStrings projector 只保留当前 item；run projector 只保留当前 item/run text、format 与 bounded element stack；cell-format projector 只保留当前 custom format/cellXfs record、bounded nesting stack 与 bounded `numFmtId` 去重集合；style-component projector 只保留当前 font/fill value 与 bounded nesting stack。各自 XML/text/nesting/count 上限由 public options 控制。`read_worksheet()` 的 sharedStrings/style 仍只暴露 workbook-local index；七个 companion 都不自动做 index/object handoff。八条读取路径都不加载完整 worksheet/sharedStrings/styles 对象、不构建 DOM/dense matrix/CellStore，也不进入 Patch plan 或 In-memory session。
 
 ### Patch
 
@@ -127,7 +128,7 @@ source worksheet
 ## 文件职责
 
 - `src/streaming_writer.cpp` 负责 Streaming 协调和热路径入口，不应无限承载每个 feature 的全部 serializer。
-- `src/worksheet_reader.cpp` 负责 public bounded read projector；internal raw XML events 和 OPC types 不进入 public header。
+- `src/worksheet_reader.cpp` 负责 public bounded read facade 协调；feature projector 可拆到独立 source，internal raw XML events、relationship id 和 OPC types 不进入 public header。
 - Feature 已拥有独立状态、XML、验证和大量测试时，应拆分内部实现与 feature-specific tests。
 - `src/package_editor.cpp`、`src/package_reader.cpp` 和 OPC helpers 是 existing-file foundation，不是 public facade。
 - 新增源码或测试文件必须同步 CMake。

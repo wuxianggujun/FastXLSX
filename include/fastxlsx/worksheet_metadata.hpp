@@ -10,10 +10,12 @@ namespace fastxlsx {
 
 /// Optional display metadata for a worksheet hyperlink.
 ///
-/// Empty strings are omitted. Non-empty strings are copied into writer/editor
-/// state and emitted as worksheet `<hyperlink>` attributes. These options do
-/// not write cell text, create hyperlink styles, validate target reachability,
-/// or imply external relationship creation.
+/// API mode: Streaming new-workbook metadata, Patch existing-workbook
+/// metadata, and bounded existing-workbook read projection. Empty strings are
+/// omitted by writers. Non-empty strings are copied into writer/editor state or
+/// owning reader views and emitted/read as worksheet `<hyperlink>` attributes.
+/// These options do not write cell text, create hyperlink styles, validate
+/// target reachability, or imply external relationship creation.
 struct HyperlinkOptions {
     /// Optional display text written as the OpenXML `display` attribute.
     std::string display;

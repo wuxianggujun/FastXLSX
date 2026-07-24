@@ -6,6 +6,7 @@
 #include "shared_strings_reader.hpp"
 #include "styles_reader.hpp"
 #include "worksheet_data_validation_reader.hpp"
+#include "worksheet_hyperlink_reader.hpp"
 #include "worksheet_metadata_reader.hpp"
 
 #include <algorithm>
@@ -1357,6 +1358,52 @@ WorksheetDataValidationReadSummary WorkbookReader::read_worksheet_data_validatio
         impl_->package.entry_chunk_source(sheet->part_name.zip_path()),
         callbacks,
         options);
+}
+
+WorksheetHyperlinkReadSummary WorkbookReader::read_worksheet_hyperlinks(
+    std::string_view sheet_name,
+    const WorksheetHyperlinkReadCallbacks& callbacks,
+    WorksheetHyperlinkReaderOptions options) const
+{
+    if (!impl_) {
+        throw FastXlsxError("WorkbookReader is not open");
+    }
+    if (options.max_xml_window_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_xml_window_bytes");
+    }
+    if (options.max_xml_nesting_depth == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_xml_nesting_depth");
+    }
+    if (options.max_hyperlink_count == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_hyperlink_count");
+    }
+    if (options.max_reference_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_reference_bytes");
+    }
+    if (options.max_relationship_id_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_relationship_id_bytes");
+    }
+    if (options.max_target_text_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_target_text_bytes");
+    }
+    if (options.max_metadata_text_bytes == 0) {
+        throw FastXlsxError(
+            "WorkbookReader requires nonzero max_metadata_text_bytes");
+    }
+    const Impl::Sheet* sheet = impl_->find_sheet(sheet_name);
+    if (sheet == nullptr) {
+        throw FastXlsxError(
+            "WorkbookReader worksheet not found: " + std::string(sheet_name));
+    }
+    return detail::read_worksheet_hyperlinks_from_chunk_source(
+        impl_->package.entry_chunk_source(sheet->part_name.zip_path()),
+        impl_->package.relationships_for(sheet->part_name), callbacks, options);
 }
 
 } // namespace fastxlsx

@@ -70,6 +70,8 @@ source XLSX
   -> worksheet: bounded WorksheetEventReader -> active data-validation projection
   -> worksheet: bounded WorksheetEventReader + owner .rels -> active hyperlink projection
   -> worksheet: bounded WorksheetEventReader -> active conditional-format projection
+  -> worksheet: bounded WorksheetEventReader + owner .rels -> table relationship ids
+     -> linked table part: bounded XML scanner -> active basic table projection
   -> sharedStrings: bounded XML scanner -> active simple item projection
   -> sharedStrings: bounded XML scanner -> active simple/rich run projection
   -> styles: bounded XML scanner -> custom numFmt / cellXfs projection
@@ -77,7 +79,7 @@ source XLSX
   -> synchronous public callbacks
 ```
 
-`WorkbookReader` 只在 `open()` 保留小型 package/workbook catalog；每次 traversal 独占一个 stored/DEFLATE entry source，完成或异常退出后立即释放。Worksheet projector 只保留当前 row/cell；metadata projector 只保留 bounded element/view-id stack 与受 count guardrail 限制的 merged ranges，用于结束前的 overlap audit；data-validation projector 只保留当前 owning rule/ranges、formula/prompt/error text 与 bounded element stack；hyperlink projector 只保留当前 owning record、受 count guardrail 限制的 ranges、relationship namespace scope，并按需查询当前 worksheet 的小型 relationship set；conditional-format projector 只保留当前 owning rule/ranges、bounded element stack 和受 guardrail 限制的 counters；strict sharedStrings projector 只保留当前 item；run projector 只保留当前 item/run text、format 与 bounded element stack；cell-format projector 只保留当前 custom format/cellXfs record、bounded nesting stack 与 bounded `numFmtId` 去重集合；style-component projector 只保留当前 font/fill value 与 bounded nesting stack。各自 XML/text/nesting/count 上限由 public options 控制。`read_worksheet()` 的 sharedStrings/style 仍只暴露 workbook-local index；八个 companion 都不自动做 index/object handoff。九条读取路径都不加载完整 worksheet/sharedStrings/styles 对象、不构建 DOM/dense matrix/CellStore，也不进入 Patch plan 或 In-memory session。
+`WorkbookReader` 只在 `open()` 保留小型 package/workbook catalog；每次 traversal 独占一个 stored/DEFLATE entry source，完成或异常退出后立即释放。Worksheet projector 只保留当前 row/cell；metadata projector 只保留 bounded element/view-id stack 与受 count guardrail 限制的 merged ranges，用于结束前的 overlap audit；data-validation projector 只保留当前 owning rule/ranges、formula/prompt/error text 与 bounded element stack；hyperlink projector 只保留当前 owning record、受 count guardrail 限制的 ranges、relationship namespace scope，并按需查询当前 worksheet 的小型 relationship set；conditional-format projector 只保留当前 owning rule/ranges、bounded element stack 和受 guardrail 限制的 counters；table projector 先保留受 count/id guardrail 限制的 worksheet table relationship ids，再逐 part 只保留当前 owning table/header columns、bounded element stack 与受限去重集合；strict sharedStrings projector 只保留当前 item；run projector 只保留当前 item/run text、format 与 bounded element stack；cell-format projector 只保留当前 custom format/cellXfs record、bounded nesting stack 与 bounded `numFmtId` 去重集合；style-component projector 只保留当前 font/fill value 与 bounded nesting stack。各自 XML/text/nesting/count 上限由 public options 控制。`read_worksheet()` 的 sharedStrings/style 仍只暴露 workbook-local index；九个 companion 都不自动做 index/object handoff。十条读取路径都不加载完整 worksheet/sharedStrings/styles/table 对象、不构建 DOM/dense matrix/CellStore，也不进入 Patch plan 或 In-memory session。
 
 ### Patch
 

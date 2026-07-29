@@ -680,6 +680,87 @@ struct WorksheetConditionalFormatReadSummary {
     std::size_t peak_xml_nesting_depth = 0;
 };
 
+/// Owning projection of one basic table header column.
+///
+/// `id` is the table-part-local OpenXML column id. It is not a worksheet column
+/// number and remains meaningful only together with the owning table.
+struct WorksheetTableColumnView {
+    std::uint32_t id = 0;
+    std::string name;
+};
+
+/// Owning projection of one worksheet table and its basic header metadata.
+///
+/// `index` is zero-based in worksheet `<tableParts>` source order. The optional
+/// auto-filter is the table-local filter boundary from the linked table part,
+/// not the worksheet-root auto-filter returned by read_worksheet_metadata().
+/// Relationship ids and part names are intentionally not exposed.
+struct WorksheetTableView {
+    std::uint64_t index = 0;
+    CellRange range;
+    std::string name;
+    std::string display_name;
+    std::vector<WorksheetTableColumnView> columns;
+    std::optional<CellRange> auto_filter_range;
+};
+
+/// Callbacks used by WorkbookReader::read_worksheet_tables().
+///
+/// The optional callback runs synchronously once per complete linked table in
+/// worksheet `<tableParts>` source order. Values own all projected data and may
+/// be retained. A later table-part/package failure can follow callbacks already
+/// delivered; successful return is the completion signal for atomic collection.
+/// User exceptions propagate unchanged, and a later call starts from the
+/// worksheet entry again.
+struct WorksheetTableReadCallbacks {
+    std::function<void(const WorksheetTableView&)> on_table;
+};
+
+/// Guardrails for one bounded worksheet table traversal.
+struct WorksheetTableReaderOptions {
+    /// Maximum bytes retained by either the worksheet or table-part XML window.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum worksheet/table-part element nesting depth retained at once.
+    std::size_t max_xml_nesting_depth = 64U;
+
+    /// Maximum tablePart records retained from one worksheet and emitted.
+    std::size_t max_table_count = 64U * 1024U;
+
+    /// Maximum decoded bytes accepted for one worksheet relationship id.
+    std::size_t max_relationship_id_bytes = 4U * 1024U;
+
+    /// Maximum bytes accepted for one table relationship target.
+    std::size_t max_relationship_target_bytes = 64U * 1024U;
+
+    /// Maximum decoded bytes accepted for table `name` or `displayName`.
+    std::size_t max_table_name_bytes = 32U * 1024U;
+
+    /// Maximum basic header columns retained for one active table.
+    std::size_t max_columns_per_table = 16U * 1024U;
+
+    /// Maximum decoded bytes accepted for one table-column name.
+    std::size_t max_column_name_bytes = 32U * 1024U;
+
+    /// Maximum decoded bytes accepted for one table or auto-filter A1 range.
+    std::size_t max_range_reference_bytes = 256U;
+};
+
+/// Summary returned after one successful bounded worksheet table traversal.
+struct WorksheetTableReadSummary {
+    std::uint64_t table_count = 0;
+    std::uint64_t column_count = 0;
+    std::uint64_t auto_filter_count = 0;
+    std::size_t peak_xml_nesting_depth = 0;
+    std::size_t peak_relationship_id_bytes = 0;
+    std::size_t peak_relationship_target_bytes = 0;
+    std::size_t peak_table_name_bytes = 0;
+    std::size_t peak_columns_per_table = 0;
+    std::size_t peak_column_name_bytes = 0;
+    std::size_t peak_range_reference_bytes = 0;
+    std::size_t peak_retained_relationship_count = 0;
+};
+
 /// Existing-workbook bounded-memory worksheet reader.
 ///
 /// API mode: Streaming read. WorkbookReader indexes small package/workbook
@@ -736,6 +817,11 @@ struct WorksheetConditionalFormatReadSummary {
 /// two-/three-color scales, basic data bars, and built-in 3Arrows icon sets.
 /// It does not build a full conditional-formatting object model or resolve
 /// dxf/style/formula semantics.
+///
+/// read_worksheet_tables() separately follows worksheet table relationships and
+/// projects linked table ranges, names, basic header columns, and table-local
+/// auto-filter boundaries. It does not build a relationship graph or table/style,
+/// formula, totals-row, or filter-criteria object model.
 class WorkbookReader {
 public:
     /// Opens and indexes an existing XLSX package.
@@ -1024,6 +1110,39 @@ public:
         std::string_view sheet_name,
         const WorksheetConditionalFormatReadCallbacks& callbacks = {},
         WorksheetConditionalFormatReaderOptions options = {}) const;
+
+    /// Traverses linked worksheet tables in `<tableParts>` source order.
+    ///
+    /// The worksheet entry is scanned first with bounded memory to collect its
+    /// table relationship ids. Each id must resolve through the current
+    /// worksheet's relationships to a unique internal standard table target;
+    /// the target part must exist and have the standard table content type. A
+    /// fresh stored/DEFLATE table-part entry source is owned only while that part
+    /// is parsed. Callback values own their projected strings, ranges, and basic
+    /// column records.
+    ///
+    /// The narrow projection accepts a standard table root with non-empty
+    /// `name`/`displayName`, a valid range, one header row, direct tableColumns
+    /// matching the range width, optional table-local autoFilter boundaries, and
+    /// writer-compatible tableStyleInfo metadata that is audited but not
+    /// projected. Totals rows, totals/calculated formulas, full filter criteria,
+    /// extension metadata, and other table semantics fail explicitly instead of
+    /// being flattened.
+    ///
+    /// This read-only method does not inspect header cell payloads, infer names,
+    /// enforce workbook-wide table-name uniqueness, modify relationships/content
+    /// types/manifest state, seek, materialize a worksheet, or enter Patch or
+    /// In-memory state.
+    ///
+    /// @throws FastXlsxError if the reader is moved from, the worksheet is
+    /// absent, an option is zero, tableParts/relationship/content-type audit
+    /// fails, package reading fails, or worksheet/table XML is malformed or
+    /// outside the narrow projection. User callback exceptions propagate
+    /// unchanged.
+    [[nodiscard]] WorksheetTableReadSummary read_worksheet_tables(
+        std::string_view sheet_name,
+        const WorksheetTableReadCallbacks& callbacks = {},
+        WorksheetTableReaderOptions options = {}) const;
 
 private:
     struct Impl;

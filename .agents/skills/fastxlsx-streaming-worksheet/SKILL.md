@@ -17,11 +17,13 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 - `src/worksheet_data_validation_reader.cpp`
 - `src/worksheet_hyperlink_reader.cpp`
 - `src/worksheet_conditional_format_reader.cpp`
+- `src/worksheet_table_reader.cpp`
 - `src/shared_strings_reader.cpp`
 - `tests/test_worksheet_reader.cpp`
 - `tests/test_worksheet_data_validation_reader.cpp`
 - `tests/test_worksheet_hyperlink_reader.cpp`
 - `tests/test_worksheet_conditional_format_reader.cpp`
+- `tests/test_worksheet_table_reader.cpp`
 - `tests/test_shared_strings_reader.cpp`
 - `tests/test_shared_string_runs_reader.cpp`
 - streaming tests/benchmarks
@@ -46,6 +48,8 @@ Cell references、dimension tracking、XML escape、finite numbers、inline/shar
 
 `read_worksheet_conditional_formats()` 是独立 bounded worksheet-root companion：按 source order 投影 owning multi-range `sqref`、priority 与 writer-compatible rule payload，当前只接受 two-/three-color color scale、basic data bar 和 basic `3Arrows` icon set。保持 XML window、nesting、format/range count 与 `sqref` guardrail；审计唯一 container/direct child、QName/namespace scope、suffix schema、单个 direct `cfRule`、priority、rule kind/operator、`cfvo`/color/icon threshold shape、ARGB 与 unsupported metadata。失败前允许 partial callbacks，callback exception 原样传播且 entry 可从头 retry；禁止 advanced/custom icon sets、advanced data bars、`dxf`/styles、formula/cellIs、OPC mutation 或 Patch/In-memory handoff。
 
+`read_worksheet_tables()` 是独立 bounded linked-table companion：先按 worksheet `tableParts` source order 保留受 count/id guardrail 限制的 relationship ids，再逐个跟随 owner-local 标准 internal relationship，以 fresh table-part entry source 投影 owning range/name/displayName/basic header columns/table-local auto-filter。审计 QName/namespace/schema/count、percent-decoded normalized unique target、part/content type、table root/header/filter boundary，并限制 XML/nesting/table/id/target/name/column/range。Writer-compatible tableStyleInfo 只审计；totals/formula/full filter/extensions 明确 fail。失败前允许 partial callbacks且可从 worksheet retry；禁止 header-cell inference、完整 table model、OPC mutation或 Patch/In-memory handoff。
+
 `read_shared_strings()` 是显式分离的 bounded companion：审计唯一 internal relationship、normalized target part 与标准 content type，按 index/source order 投影 simple `<si><t>`。Borrowed text 只活到 callback；XML window/item text 双 guardrail，rich/phonetic/extension/extra metadata 明确 fail。禁止构建完整 table、自动解析 worksheet index 或隐式接入 Patch/In-memory。
 
 `read_shared_string_runs()` 是独立的 bounded rich companion：成功时按 item start/run/item end 顺序保留 rich `<r>` boundary，并把 simple `<t>` 映射成一个默认 run。Run text 只活到 `on_run`；index/kind/format owning。限制 XML window、item/run bytes、runs per item 与 nesting；只投影 bold/italic/direct ARGB 并接受固定 default font metadata。失败前可能已有 partial callbacks；需原子结果时只在成功返回后发布。Mixed shape、phonetic/extension、非默认 font/theme/tint 和其他 run property 明确 fail；禁止完整 table、format inheritance、worksheet index 自动关联或 Patch/In-memory handoff。
@@ -59,5 +63,7 @@ Cell references、dimension tracking、XML escape、finite numbers、inline/shar
 Existing-file large worksheet rewrite 属于 C5，不应通过 `WorksheetEditor` materialization 实现。需要 event/stream reader、coordinate/formula policy、metadata audit 和大文件内存证据。
 
 ## 验证
+
+- Table companion 另测 stored/production DEFLATE、source order、owning basic projection、callback retry、absent/foreign extension、XML/nesting/table/id/target/name/column/range guardrail、relationship type/mode/target/part/content type、table shape/filter boundary/style audit、totals/formula/full-filter rejection 与 package no-side-effect。
 
 Writer 运行 focused streaming tests、ZIP/XML、Office/openpyxl；性能相关时使用 schema-v6 executable/schema-v3 matrix，检查 generation/package-close/total wall 与 process CPU、CPU 总账、body buffer peak/flush count、process peak working set 和 close 后 active temporary file count。Worksheet reader 另测 stored/DEFLATE、typed projection、source order、borrowed copy、callback failure retry、双 guardrail、unsupported metadata 和 malformed diagnostics。Worksheet metadata companion 另测 primary/other view、frozen/root-filter/merged source order、owning values、partial callback retry、五类 guardrail、QName/schema/count/overlap/unsupported pane rejection与 package no-side-effect。Data-validation companion 另测 owning multi-range/rule、entity decode、absent/empty container、partial callback retry、七类 guardrail、count/direct-child/QName/schema/formula-shape rejection、foreign extension disambiguation 与 package no-side-effect。Hyperlink companion 另测 owning internal/external projection、source order、internal no-`.rels`、callback retry、relationship missing/type/TargetMode/target、namespace scope/duplicate semantic id、container/direct-child/QName/schema/unsupported metadata、duplicate/overlap、foreign extension disambiguation、stored/DEFLATE 与 package no-side-effect。Conditional-format companion 另测 owning multi-range/priority/rule payload、source order、callback retry、XML/nesting/format/range/sqref guardrail、schema/QName/namespace/rule-shape diagnostics、advanced/custom/dxf/formula rejection、foreign extension disambiguation、stored/DEFLATE 与 package no-side-effect。Strict sharedStrings companion 另测 simple/empty/entity decode、zero-based order、超过 package input chunk 的 token、relationship target/content type、rich/phonetic/extension rejection、callback retry 与双 guardrail。Rich-run companion 另测 item/run 顺序、simple compatibility、owning format、三类 callback retry、五类 guardrail、chunk boundary、OPC audit、mixed/phonetic/extension/unsupported format 与 malformed diagnostics。Cell-formats companion 另测 custom formats/cellXfs source order、format-code decode/borrowed copy、两类 callback retry、跨 package chunk token、四类 guardrail、container count/duplicate id、relationship/content type 与 unsupported xf/alignment metadata。

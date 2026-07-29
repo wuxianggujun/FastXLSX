@@ -69,6 +69,7 @@ set(_fastxlsx_sources
     src/worksheet_cell_index.cpp
     src/worksheet_conditional_format_reader.cpp
     src/worksheet_reader.cpp
+    src/worksheet_table_reader.cpp
     src/xml.cpp
     src/zip_store_writer.cpp
 )

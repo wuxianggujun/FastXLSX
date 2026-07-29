@@ -9,6 +9,7 @@
 #include "worksheet_data_validation_reader.hpp"
 #include "worksheet_hyperlink_reader.hpp"
 #include "worksheet_metadata_reader.hpp"
+#include "worksheet_table_reader.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -1444,6 +1445,23 @@ WorkbookReader::read_worksheet_conditional_formats(
         impl_->package.entry_chunk_source(sheet->part_name.zip_path()),
         callbacks,
         options);
+}
+
+WorksheetTableReadSummary WorkbookReader::read_worksheet_tables(
+    std::string_view sheet_name,
+    const WorksheetTableReadCallbacks& callbacks,
+    WorksheetTableReaderOptions options) const
+{
+    if (!impl_) {
+        throw FastXlsxError("WorkbookReader is moved from");
+    }
+    const Impl::Sheet* sheet = impl_->find_sheet(sheet_name);
+    if (sheet == nullptr) {
+        throw FastXlsxError(
+            "WorkbookReader worksheet not found: " + std::string(sheet_name));
+    }
+    return detail::read_worksheet_tables_from_package(
+        impl_->package, sheet->part_name, callbacks, options);
 }
 
 } // namespace fastxlsx

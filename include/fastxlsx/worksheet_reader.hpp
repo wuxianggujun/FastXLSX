@@ -848,6 +848,91 @@ struct WorksheetImageReadSummary {
     std::size_t peak_retained_media_count = 0;
 };
 
+/// Owning projection of one classic worksheet comment, also shown as a note
+/// by current spreadsheet applications.
+///
+/// `index` is zero-based comments-part source order. `row` and `column` are
+/// one-based worksheet coordinates parsed from the comment's single-cell
+/// reference. The part-local author id is resolved to owning author text and
+/// is intentionally not exposed.
+struct WorksheetCommentView {
+    std::uint64_t index = 0;
+    std::uint32_t row = 1;
+    std::uint32_t column = 1;
+    std::string author;
+    std::string text;
+};
+
+/// Callbacks used by WorkbookReader::read_worksheet_comments().
+///
+/// The optional callback runs synchronously once per complete classic comment
+/// in comments-part source order. Values own all projected fields and may be
+/// retained. A later parser/package failure can follow callbacks already
+/// delivered; successful return is the completion signal for atomic collection.
+/// User exceptions propagate unchanged, and a later call starts from the
+/// worksheet entry again.
+struct WorksheetCommentReadCallbacks {
+    std::function<void(const WorksheetCommentView&)> on_comment;
+};
+
+/// Guardrails for one bounded classic worksheet comments traversal.
+struct WorksheetCommentReaderOptions {
+    /// Maximum bytes retained by either worksheet or comments XML token window.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum worksheet/comments element nesting depth retained at once.
+    std::size_t max_xml_nesting_depth = 64U;
+
+    /// Maximum classic comments accepted and emitted from one comments part.
+    std::size_t max_comment_count = 64U * 1024U;
+
+    /// Maximum authors retained from one comments part.
+    std::size_t max_author_count = 4U * 1024U;
+
+    /// Maximum decoded bytes accepted for one author.
+    std::size_t max_author_bytes = 32U * 1024U;
+
+    /// Maximum aggregate decoded bytes retained by the author table.
+    std::size_t max_total_author_bytes = 1024U * 1024U;
+
+    /// Maximum decoded bytes accepted for one simple comment text value.
+    std::size_t max_comment_text_bytes = 1024U * 1024U;
+
+    /// Maximum source bytes accepted for one single-cell A1 reference.
+    std::size_t max_cell_reference_bytes = 64U;
+
+    /// Maximum source bytes accepted for one numeric authorId.
+    std::size_t max_author_id_bytes = 32U;
+
+    /// Maximum decoded bytes accepted for one legacyDrawing relationship id.
+    std::size_t max_relationship_id_bytes = 4U * 1024U;
+
+    /// Maximum bytes accepted for one comments or VML relationship target.
+    std::size_t max_relationship_target_bytes = 64U * 1024U;
+
+    /// Maximum source bytes accepted for one optional numeric comment shapeId.
+    std::size_t max_shape_id_bytes = 32U;
+};
+
+/// Summary returned after one successful classic worksheet comments traversal.
+struct WorksheetCommentReadSummary {
+    std::uint64_t comment_count = 0;
+    std::uint64_t author_count = 0;
+    std::uint64_t comment_with_shape_id_count = 0;
+    bool has_legacy_drawing = false;
+    std::size_t total_author_bytes = 0;
+    std::size_t peak_xml_nesting_depth = 0;
+    std::size_t peak_author_bytes = 0;
+    std::size_t peak_comment_text_bytes = 0;
+    std::size_t peak_cell_reference_bytes = 0;
+    std::size_t peak_author_id_bytes = 0;
+    std::size_t peak_shape_id_bytes = 0;
+    std::size_t peak_relationship_id_bytes = 0;
+    std::size_t peak_relationship_target_bytes = 0;
+    std::size_t peak_retained_author_count = 0;
+    std::size_t peak_retained_comment_reference_count = 0;
+};
+
 /// Existing-workbook bounded-memory worksheet reader.
 ///
 /// API mode: Streaming read. WorkbookReader indexes small package/workbook
@@ -914,6 +999,11 @@ struct WorksheetImageReadSummary {
 /// drawing-local image relationships. It projects the current writer-compatible
 /// two-cell picture anchor metadata and audits PNG/JPEG media without decoding
 /// pixels or retaining encoded payloads.
+///
+/// read_worksheet_comments() separately follows the worksheet-local classic
+/// comments relationship, resolves its author table, and projects only
+/// single-cell comments containing one simple text value. Rich text and
+/// threaded comments are not flattened into this classic-note projection.
 class WorkbookReader {
 public:
     /// Opens and indexes an existing XLSX package.
@@ -1267,6 +1357,41 @@ public:
         std::string_view sheet_name,
         const WorksheetImageReadCallbacks& callbacks = {},
         WorksheetImageReaderOptions options = {}) const;
+
+    /// Traverses classic worksheet comments/notes in comments-part source order.
+    ///
+    /// The current worksheet must have at most one standard internal comments
+    /// relationship. Its percent-decoded normalized target must exist and carry
+    /// the standard comments content type. Authors are retained under explicit
+    /// count/per-author/aggregate-byte limits, and each comment resolves a valid
+    /// authorId plus one single-cell A1 reference before callback delivery.
+    ///
+    /// The narrow projection accepts one simple `<text><t>` value per comment.
+    /// Rich runs, phonetic/extension metadata, unsupported comment attributes or
+    /// children, duplicate cell references, and a worksheet-local threaded-
+    /// comment relationship fail explicitly instead of being flattened.
+    /// Optional numeric `shapeId` is syntax-audited but not exposed.
+    ///
+    /// A direct worksheet `legacyDrawing` reference is optional. When present,
+    /// its owner-local relationship, internal target, part presence, standard
+    /// VML content type, and ZIP-entry presence are audited, and
+    /// `has_legacy_drawing` is reported. The opaque VML payload, note visibility,
+    /// shape geometry/style, and threaded-comments/persons parts are not parsed
+    /// or projected.
+    ///
+    /// This read-only method does not edit comments, VML, relationships, content
+    /// types, or manifest state; it does not attach comments to row/cell callbacks,
+    /// materialize a worksheet, or enter Patch/In-memory state. Absence of a
+    /// classic comments relationship returns an empty summary.
+    ///
+    /// @throws FastXlsxError if the reader is moved from, the worksheet is
+    /// absent, an option is zero, relationship/content-type/VML audit fails,
+    /// package reading fails, or worksheet/comments XML is malformed or outside
+    /// the narrow projection. User callback exceptions propagate unchanged.
+    [[nodiscard]] WorksheetCommentReadSummary read_worksheet_comments(
+        std::string_view sheet_name,
+        const WorksheetCommentReadCallbacks& callbacks = {},
+        WorksheetCommentReaderOptions options = {}) const;
 
 private:
     struct Impl;

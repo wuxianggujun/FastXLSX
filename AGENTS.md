@@ -25,6 +25,7 @@ FastXLSX 是 C++20 / MSVC 2026 优先的 XLSX 创建与编辑库，公开 Stream
 - Calc metadata、sheet rename、internal document-properties、internal part removal 与 materialized small-part replacement 联动必须先在 plan/replacements/omitted entries/manifest/public diagnostics 副本完成，再以 noexcept commit 发布；提交前失败保留调用前状态并可重试。
 - 公式不求值、不生成 cached value、不完整重建 calcChain。
 - `read_worksheet_images()` 只读投影 writer-compatible two-cell picture anchor 并审计 PNG/JPEG media；`replace_image()` 只替换已有 media bytes；`add_image()` 是 new-workbook insertion，三者均不是完整 drawing 编辑。
+- `read_worksheet_comments()` 只读投影 classic comments/notes 的 single-cell ref、resolved author 与 simple text；optional legacy VML 只审计 relationship/part presence，不解析 payload，也不形成 comments/VML/threaded-comments 编辑能力。
 - `FASTXLSX_ENABLE_IMAGES=OFF` 不需要 stb，public image symbol 调用抛错，`FASTXLSX_HAS_IMAGES=0` 传播给 consumer。
 
 ## 架构约束

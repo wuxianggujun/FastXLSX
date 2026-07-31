@@ -33,6 +33,8 @@ description: "规划或实现 FastXLSX 图片读取/插入、stb 图片解码、
 
 Existing drawing/anchor/relationship mutation、`xdr:oneCellAnchor` / `xdr:absoluteAnchor` element projection、chart/shape/group/connector、crop/rotation/position transform、picture hyperlink、任意 media type conversion 和完整图片保真对象模型。
 
+Classic worksheet note 的 `<legacyDrawing>` 指向 VML part，不是 `read_worksheet_images()` 的 spreadsheet drawing/image relationship。Comments reader 只审计该 VML relationship/part 存在性，不得将 VML payload、note visibility 或 shape metadata 路由到 image reader。
+
 ## 验证
 
 Writer/Patch 验证 PNG/JPEG metadata、media bytes、drawing/rels/content types、multi-image ordering、invalid input、Excel/openpyxl smoke 和 existing-file preservation。Bounded reader 另测 stored/production DEFLATE、source order、owning anchor/metadata、unique media reuse、entity decode、callback retry、absent drawing、九类 guardrail、worksheet/drawing relationship/target/content-type audit、signature/CRC、unsupported drawing shape 与 source package no-side-effect；no-images runtime smoke 必须实际调用 reader symbol。

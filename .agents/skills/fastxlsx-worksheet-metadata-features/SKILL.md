@@ -1,6 +1,6 @@
 ---
 name: fastxlsx-worksheet-metadata-features
-description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Streaming 或 existing-workbook 的 data validations、hyperlinks、conditional formatting、tables、freeze panes、auto filter、merged cells、worksheet relationships、content types，以及判断 metadata mutation 是否破坏 row-order、Patch preservation 或事务状态。"
+description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Streaming 或 existing-workbook 的 data validations、hyperlinks、conditional formatting、tables、classic comments/notes、freeze panes、auto filter、merged cells、worksheet relationships、content types，以及判断 metadata mutation 是否破坏 row-order、Patch preservation 或事务状态。"
 ---
 
 # FastXLSX Worksheet Metadata Features
@@ -9,7 +9,7 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 
 - `docs/CURRENT_CAPABILITIES.md`、`docs/ARCHITECTURE.md`、`docs/EDITING_MODEL.md`
 - `include/fastxlsx/streaming_writer.hpp`、`include/fastxlsx/worksheet_reader.hpp`、`include/fastxlsx/workbook_editor.hpp`
-- `src/streaming_writer.cpp`、`src/worksheet_metadata_reader.cpp`、`src/worksheet_data_validation_reader.cpp`、`src/worksheet_hyperlink_reader.cpp`、`src/worksheet_conditional_format_reader.cpp`、`src/worksheet_table_reader.cpp`、`src/worksheet_image_reader.cpp`、`src/workbook_editor*.cpp`、`src/package_editor.cpp`
+- `src/streaming_writer.cpp`、`src/worksheet_metadata_reader.cpp`、`src/worksheet_data_validation_reader.cpp`、`src/worksheet_hyperlink_reader.cpp`、`src/worksheet_conditional_format_reader.cpp`、`src/worksheet_table_reader.cpp`、`src/worksheet_image_reader.cpp`、`src/worksheet_comment_reader.cpp`、`src/workbook_editor*.cpp`、`src/package_editor.cpp`
 - 对应 metadata、relationship、preservation 和 failure-recovery tests
 
 ## 功能边界
@@ -32,6 +32,7 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 - Public `WorkbookReader::read_worksheet_conditional_formats()` 是独立 bounded worksheet-root companion，按 source order 投影 owning multi-range `sqref`、priority 与 writer-compatible conditional-format rule payload。当前只接受 two-/three-color color scale、basic data bar 和 basic `3Arrows` icon set；独立审计唯一 container/direct child/QName/namespace scope/suffix schema、单个 direct `cfRule`、priority、rule kind/operator、`cfvo`/color/icon threshold shape、ARGB、unsupported metadata 与 XML/nesting/count/range/sqref guardrail；target 外 foreign extension local-name 不得误识别。失败前 partial callback、成功返回 completion、callback exception retry 契约与其他 bounded companions 一致。它不求值、不修复 dxf/styles、不修改 OPC/Patch/In-memory state。
 - Public `WorkbookReader::read_worksheet_tables()` 是独立 bounded linked-table companion，先按 worksheet `tableParts` source order 保留受限 relationship ids，再逐个解析 owner-local 标准 internal table relationship 与 target part，投影 owning range/name/displayName/basic header columns/table-local auto-filter。独立审计 tableParts count/direct child/QName/relationship namespace/suffix schema、percent-decoded normalized unique target、part/content type、table root/header/filter boundary/tableStyleInfo 与 XML/nesting/table/id/target/name/column/range guardrail；target 外 foreign extension local-name 不得误识别。失败前 partial callback、成功返回 completion、callback exception从 worksheet retry。Totals/formula/full filter/extensions 明确 fail；它不读取 header cells、不构建 table model、不修改 OPC/Patch/In-memory state。
 - Public `WorkbookReader::read_worksheet_images()` 是独立 bounded drawing/image companion，先解析 worksheet 唯一 direct standard drawing relationship，再按 drawing direct `xdr:twoCellAnchor` source order 投影 owning writer-compatible picture anchor/transform/name/description/format/encoded size。独立审计 worksheet/drawing QName/namespace/schema、standard internal relationships、percent-decoded normalized target、part/content type、PNG/JPEG signature/ZIP size/CRC 与 XML/nesting/image/id/target/name/description/numeric/media guardrail；每个 unique media 每次调用只完整 drain 一次，不保留 payload、不解码 pixels。失败前 partial callback、成功返回 completion、callback exception 后从 worksheet retry。`xdr:oneCellAnchor` / `xdr:absoluteAnchor` 元素、chart/shape/crop/rotation/hyperlink 明确 fail；它不构建 drawing model、不修改 OPC/Patch/In-memory state，no-images build 调用抛错。
+- Public `WorkbookReader::read_worksheet_comments()` 是独立 bounded classic comments/notes companion，跟随 worksheet-local 唯一 standard internal comments relationship，按 comments-part source order 投影 owning one-based row/column、resolved author 与 simple text。独立审计 comments target part/content type、受限 author table、duplicate cell ref、authorId bounds、optional numeric shapeId，以及 optional direct legacy VML relationship/target/part/content type/entry presence；XML/nesting/comment/author/text/ref/id/target 均有 guardrail。失败前 partial callback、成功返回 completion、callback exception 后从 fresh worksheet/comments entry retry。Rich/phonetic/extension 与 worksheet-local threaded-comment relationship 明确 fail；persons part 与 VML payload/visibility/shape 不跟随、不投影。它不构建 comments model、不修改 OPC/Patch/In-memory state。
 
 ## Existing Workbook
 

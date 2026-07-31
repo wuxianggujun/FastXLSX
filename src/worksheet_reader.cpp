@@ -6,6 +6,7 @@
 #include "shared_strings_reader.hpp"
 #include "styles_reader.hpp"
 #include "worksheet_conditional_format_reader.hpp"
+#include "worksheet_comment_reader.hpp"
 #include "worksheet_data_validation_reader.hpp"
 #include "worksheet_hyperlink_reader.hpp"
 #include "worksheet_image_reader.hpp"
@@ -1488,6 +1489,23 @@ WorksheetImageReadSummary WorkbookReader::read_worksheet_images(
     return detail::read_worksheet_images_from_package(
         impl_->package, sheet->part_name, callbacks, options);
 #endif
+}
+
+WorksheetCommentReadSummary WorkbookReader::read_worksheet_comments(
+    std::string_view sheet_name,
+    const WorksheetCommentReadCallbacks& callbacks,
+    WorksheetCommentReaderOptions options) const
+{
+    if (!impl_) {
+        throw FastXlsxError("WorkbookReader is moved from");
+    }
+    const Impl::Sheet* sheet = impl_->find_sheet(sheet_name);
+    if (sheet == nullptr) {
+        throw FastXlsxError(
+            "WorkbookReader worksheet not found: " + std::string(sheet_name));
+    }
+    return detail::read_worksheet_comments_from_package(
+        impl_->package, sheet->part_name, callbacks, options);
 }
 
 } // namespace fastxlsx

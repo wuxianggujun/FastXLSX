@@ -53,6 +53,7 @@ set(_fastxlsx_sources
     src/worksheet_event_reader.cpp
     src/worksheet_data_validation_reader.cpp
     src/worksheet_hyperlink_reader.cpp
+    src/worksheet_image_reader.cpp
     src/worksheet_metadata_reader.cpp
     src/worksheet_metadata_rewriter.cpp
     src/worksheet_transformer.cpp

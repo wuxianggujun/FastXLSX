@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fastxlsx/image.hpp>
 #include <fastxlsx/streaming_writer.hpp>
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/worksheet_metadata.hpp>
@@ -761,6 +762,92 @@ struct WorksheetTableReadSummary {
     std::size_t peak_retained_relationship_count = 0;
 };
 
+/// One zero-based OpenXML marker in a worksheet picture anchor.
+///
+/// Column/row indexes are the values stored in drawing XML. The ending marker
+/// may therefore use column 16384 or row 1048576 to represent an image ending
+/// at Excel's final worksheet cell.
+struct WorksheetImageAnchorMarker {
+    std::uint32_t column_index = 0;
+    std::uint32_t row_index = 0;
+    ImageAnchorOffset offset;
+};
+
+/// Owning projection of one writer-compatible worksheet picture anchor.
+///
+/// `index` is zero-based drawing source order. The encoded media payload is
+/// audited and fully streamed for ZIP CRC/size validation but is not retained,
+/// decoded, or exposed. Multiple views may report the same media size when
+/// their drawing relationships intentionally reuse one package media part.
+struct WorksheetImageView {
+    std::uint64_t index = 0;
+    ImageEditAs edit_as = ImageEditAs::TwoCell;
+    WorksheetImageAnchorMarker from;
+    WorksheetImageAnchorMarker to;
+    std::uint64_t transform_width_emu = 0;
+    std::uint64_t transform_height_emu = 0;
+    std::string name;
+    std::string description;
+    ImageFormat format = ImageFormat::Png;
+    std::uint64_t encoded_size_bytes = 0;
+};
+
+/// Callbacks used by WorkbookReader::read_worksheet_images().
+///
+/// The optional callback runs synchronously once per complete picture in
+/// drawing source order. Values own all projected metadata and may be retained.
+/// A later drawing/media/package failure can follow callbacks already delivered;
+/// successful return is the completion signal for atomic collection. User
+/// exceptions propagate unchanged, and a later call starts from the worksheet.
+struct WorksheetImageReadCallbacks {
+    std::function<void(const WorksheetImageView&)> on_image;
+};
+
+/// Guardrails for one bounded worksheet drawing/image traversal.
+struct WorksheetImageReaderOptions {
+    /// Maximum bytes retained by either worksheet or drawing XML token window.
+    std::size_t max_xml_window_bytes = 64U * 1024U;
+
+    /// Maximum worksheet/drawing element nesting depth retained at once.
+    std::size_t max_xml_nesting_depth = 64U;
+
+    /// Maximum picture anchors accepted and emitted from one drawing.
+    std::size_t max_image_count = 64U * 1024U;
+
+    /// Maximum decoded bytes accepted for one relationship id.
+    std::size_t max_relationship_id_bytes = 4U * 1024U;
+
+    /// Maximum bytes accepted for one drawing or media relationship target.
+    std::size_t max_relationship_target_bytes = 64U * 1024U;
+
+    /// Maximum decoded bytes accepted for one non-visual picture name.
+    std::size_t max_name_bytes = 32U * 1024U;
+
+    /// Maximum decoded bytes accepted for one picture description.
+    std::size_t max_description_bytes = 64U * 1024U;
+
+    /// Maximum raw text bytes retained for one numeric drawing element.
+    std::size_t max_numeric_text_bytes = 64U;
+
+    /// Maximum uncompressed encoded bytes accepted for one unique media part.
+    std::uint64_t max_media_bytes = 256ULL * 1024ULL * 1024ULL;
+};
+
+/// Summary returned after one successful worksheet drawing/image traversal.
+struct WorksheetImageReadSummary {
+    std::uint64_t image_count = 0;
+    std::uint64_t unique_media_count = 0;
+    std::uint64_t unique_media_bytes = 0;
+    std::uint64_t peak_media_bytes = 0;
+    std::size_t peak_xml_nesting_depth = 0;
+    std::size_t peak_relationship_id_bytes = 0;
+    std::size_t peak_relationship_target_bytes = 0;
+    std::size_t peak_name_bytes = 0;
+    std::size_t peak_description_bytes = 0;
+    std::size_t peak_numeric_text_bytes = 0;
+    std::size_t peak_retained_media_count = 0;
+};
+
 /// Existing-workbook bounded-memory worksheet reader.
 ///
 /// API mode: Streaming read. WorkbookReader indexes small package/workbook
@@ -822,6 +909,11 @@ struct WorksheetTableReadSummary {
 /// projects linked table ranges, names, basic header columns, and table-local
 /// auto-filter boundaries. It does not build a relationship graph or table/style,
 /// formula, totals-row, or filter-criteria object model.
+///
+/// read_worksheet_images() separately follows the worksheet drawing and
+/// drawing-local image relationships. It projects the current writer-compatible
+/// two-cell picture anchor metadata and audits PNG/JPEG media without decoding
+/// pixels or retaining encoded payloads.
 class WorkbookReader {
 public:
     /// Opens and indexes an existing XLSX package.
@@ -1143,6 +1235,38 @@ public:
         std::string_view sheet_name,
         const WorksheetTableReadCallbacks& callbacks = {},
         WorksheetTableReaderOptions options = {}) const;
+
+    /// Traverses writer-compatible worksheet pictures in drawing source order.
+    ///
+    /// The worksheet must contain at most one direct standard `<drawing>`
+    /// reference. It is resolved through an internal drawing relationship to a
+    /// standard spreadsheet drawing part. Each direct `xdr:twoCellAnchor` must
+    /// contain the narrow picture shape emitted by WorksheetWriter; its embedded
+    /// relationship must resolve to an internal PNG/JPEG media part. Each unique
+    /// media entry is streamed completely to validate its ZIP size/CRC and file
+    /// signature, then only its format and encoded byte size are projected.
+    ///
+    /// Marker indexes/offsets, `editAs`, transform extents, name, and description
+    /// are returned as owning metadata. Reused media targets are scanned once per
+    /// call. `xdr:oneCellAnchor` / `xdr:absoluteAnchor` elements,
+    /// charts/shapes/groups/connectors,
+    /// crop/rotation/position transforms, picture hyperlinks, unsupported media,
+    /// and other unprojected drawing semantics fail explicitly.
+    ///
+    /// This read-only method does not decode pixels, expose media bytes, edit
+    /// drawings, mutate relationships/content types/manifest state, seek,
+    /// materialize a worksheet, or enter Patch/In-memory state. Builds with
+    /// `FASTXLSX_HAS_IMAGES=0` retain the symbol but calls throw FastXlsxError.
+    ///
+    /// @throws FastXlsxError if image support is disabled, the reader is moved
+    /// from, the worksheet is absent, an option is zero, relationship/content-
+    /// type/media audit fails, package reading fails, or worksheet/drawing XML
+    /// is malformed or outside the narrow projection. User callback exceptions
+    /// propagate unchanged.
+    [[nodiscard]] WorksheetImageReadSummary read_worksheet_images(
+        std::string_view sheet_name,
+        const WorksheetImageReadCallbacks& callbacks = {},
+        WorksheetImageReaderOptions options = {}) const;
 
 private:
     struct Impl;

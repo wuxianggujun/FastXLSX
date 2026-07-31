@@ -8,6 +8,7 @@
 #include "worksheet_conditional_format_reader.hpp"
 #include "worksheet_data_validation_reader.hpp"
 #include "worksheet_hyperlink_reader.hpp"
+#include "worksheet_image_reader.hpp"
 #include "worksheet_metadata_reader.hpp"
 #include "worksheet_table_reader.hpp"
 
@@ -1462,6 +1463,31 @@ WorksheetTableReadSummary WorkbookReader::read_worksheet_tables(
     }
     return detail::read_worksheet_tables_from_package(
         impl_->package, sheet->part_name, callbacks, options);
+}
+
+WorksheetImageReadSummary WorkbookReader::read_worksheet_images(
+    std::string_view sheet_name,
+    const WorksheetImageReadCallbacks& callbacks,
+    WorksheetImageReaderOptions options) const
+{
+#if !FASTXLSX_HAS_IMAGES
+    (void)sheet_name;
+    (void)callbacks;
+    (void)options;
+    throw FastXlsxError(
+        "FastXLSX image support is disabled; rebuild with FASTXLSX_ENABLE_IMAGES=ON");
+#else
+    if (!impl_) {
+        throw FastXlsxError("WorkbookReader is moved from");
+    }
+    const Impl::Sheet* sheet = impl_->find_sheet(sheet_name);
+    if (sheet == nullptr) {
+        throw FastXlsxError(
+            "WorkbookReader worksheet not found: " + std::string(sheet_name));
+    }
+    return detail::read_worksheet_images_from_package(
+        impl_->package, sheet->part_name, callbacks, options);
+#endif
 }
 
 } // namespace fastxlsx

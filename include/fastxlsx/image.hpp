@@ -8,11 +8,12 @@
 
 namespace fastxlsx {
 
-/// Supported image container formats for the current image metadata helper.
+/// Supported image container formats for current image APIs.
 ///
-/// API mode: small media metadata helper. This enum does not imply OpenXML
-/// drawing/media part support; it only describes formats accepted by
-/// read_image_info() and read_image_pixels().
+/// API mode: small media metadata/pixel helpers plus the narrow worksheet image
+/// writer and bounded existing-workbook image reader. The enum identifies PNG
+/// and JPEG payloads; it does not imply arbitrary drawing-object support,
+/// automatic format conversion, or complete existing-drawing editing.
 enum class ImageFormat {
     Png,
     Jpeg,

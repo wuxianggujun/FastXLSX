@@ -18,6 +18,8 @@ description: "实现或审查 FastXLSX 最小可写 XLSX。用于 workbook、wor
 
 `Workbook` / `Worksheet` / `Cell` 是 small new-workbook convenience path。它在 `save()` 前缓冲 rows/cells；large export 使用 `WorkbookWriter`。
 
+Basic classic note insertion 当前只属于 Streaming `WorksheetWriter::add_note()`；它生成 comments/VML linked parts，不自动进入 small `Workbook` API。除非 public headers/source/tests 已建立独立契约，不要把 Streaming note 能力推断到 convenience writer。
+
 ## 最小 Package
 
 关注 `[Content_Types].xml`、root/workbook relationships、`workbook.xml`、worksheet、styles/sharedStrings（需要时）、docProps 和 ZIP central directory。

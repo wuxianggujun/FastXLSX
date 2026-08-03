@@ -233,6 +233,10 @@ add_fastxlsx_streaming_writer_target(
     test_streaming_writer_images.cpp
 )
 add_fastxlsx_streaming_writer_target(
+    fastxlsx_streaming_writer_comments_tests
+    test_streaming_writer_comments.cpp
+)
+add_fastxlsx_streaming_writer_target(
     fastxlsx_streaming_writer_shared_strings_tests
     test_streaming_writer_shared_strings.cpp
 )
@@ -244,6 +248,7 @@ add_custom_target(fastxlsx_streaming_writer_tests
         fastxlsx_streaming_writer_conditional_formatting_tests
         fastxlsx_streaming_writer_metadata_tests
         fastxlsx_streaming_writer_images_tests
+        fastxlsx_streaming_writer_comments_tests
         fastxlsx_streaming_writer_shared_strings_tests
 )
 
@@ -268,6 +273,9 @@ add_fastxlsx_streaming_writer_test(
 )
 add_fastxlsx_streaming_writer_test(
     fastxlsx.streaming.images fastxlsx_streaming_writer_images_tests 60
+)
+add_fastxlsx_streaming_writer_test(
+    fastxlsx.streaming.comments fastxlsx_streaming_writer_comments_tests 60
 )
 add_fastxlsx_streaming_writer_test(
     fastxlsx.streaming.shared-strings fastxlsx_streaming_writer_shared_strings_tests 60

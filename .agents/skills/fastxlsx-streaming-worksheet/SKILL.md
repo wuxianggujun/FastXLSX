@@ -11,7 +11,9 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 - `docs/ARCHITECTURE.md`
 - `docs/PERFORMANCE_TARGETS.md`
 - `include/fastxlsx/streaming_writer.hpp`
+- `include/fastxlsx/detail/worksheet_comment_writer.hpp`
 - `src/streaming_writer.cpp`
+- `src/worksheet_comment_writer.cpp`
 - `include/fastxlsx/worksheet_reader.hpp`
 - `src/worksheet_reader.cpp`
 - `src/worksheet_data_validation_reader.cpp`
@@ -32,11 +34,13 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 
 ## 热路径
 
-Row-order input -> cell validation/encoding -> 256 KiB bounded body batching -> file-backed/chunked package entry。禁止完整 worksheet DOM、dense matrix 和跨 row 无界 state；成功 close 必须释放临时文件与构建期缓存，失败保留 retry 状态。
+Row-order input -> cell validation/encoding -> 256 KiB bounded body batching -> file-backed/chunked package entry。禁止完整 worksheet DOM、dense matrix 和跨 row 无界 state；独立 metadata state 只能随 feature record/copied bytes 有界增长。成功 close 必须释放临时文件与构建期缓存，失败保留 retry 状态。
 
 ## 关键能力
 
 Cell references、dimension tracking、XML escape、finite numbers、inline/shared strings、styles 和 row/worksheet metadata。Feature side effect 必须保持 worksheet XML 顺序、relationships 和 content types 正确。
+
+`add_note()` 只为 new workbook 保留 one-based coordinate、simple non-empty author/text 与 duplicate-cell index，不读取或创建目标 cell。Close 按 worksheet 生成 deduplicated author table、simple comments XML、hidden VML shapes、独立 VML/comments relationships 和 content types；relationship id 必须与 external hyperlink、spreadsheet drawing、table 组合稳定。Rich/threaded comments、visible/custom shapes、VML payload API 与 existing-workbook edit 不属于该路径。
 
 ## Bounded Read
 
@@ -70,6 +74,7 @@ Existing-file large worksheet rewrite 属于 C5，不应通过 `WorksheetEditor`
 
 ## 验证
 
+- Classic-note writer 另测 coordinate/empty/duplicate/lifecycle、unwritten target、author dedup/source order、UTF-8/XML escaping/whitespace、comments/VML/content types、跨 feature relationship/suffix ordering、本库 reader stored/DEFLATE round-trip、成功 close 后 note state release，以及 OpenPyXL/Excel reopen。
 - Table companion 另测 stored/production DEFLATE、source order、owning basic projection、callback retry、absent/foreign extension、XML/nesting/table/id/target/name/column/range guardrail、relationship type/mode/target/part/content type、table shape/filter boundary/style audit、totals/formula/full-filter rejection 与 package no-side-effect。
 - Image companion 另测 stored/production DEFLATE、source order、owning anchor/metadata、unique media reuse、entity decode、callback retry、absent drawing、XML/nesting/image/id/target/name/description/numeric/media guardrail、worksheet/drawing relationship type/mode/target/part/content type、PNG/JPEG signature/CRC、unsupported anchor/object/transform/hyperlink rejection、no-images runtime 与 package no-side-effect。
 - Comment companion 另测 stored/production DEFLATE、source order、owning ref/author/simple text、entity decode/self-closing values、callback retry、absent comments、十二类 guardrail、comments/VML relationship/target/part/content-type audit、threaded/rich/phonetic/extension/invalid ref/authorId/shapeId rejection 与 package no-side-effect；VML payload 不解析。

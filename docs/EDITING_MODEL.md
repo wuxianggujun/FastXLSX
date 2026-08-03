@@ -5,13 +5,14 @@ FastXLSX 将三条路径分开，避免便利 API 破坏 Streaming 热路径或 
 ## Streaming
 
 ```text
-caller rows -> CellView encoding -> worksheet stream -> package writer -> new XLSX
+caller rows/metadata -> CellView + feature encoding -> worksheet/linked parts -> package writer -> new XLSX
 ```
 
 - 新建 workbook。
 - 顺序 row/cell 输出。
+- `add_note()` 只保留与 note count 和 copied author/text bytes 相关的构建状态；`close()` 生成 worksheet-local comments/VML parts、relationships 和 content types，目标 cell 可以不存在且不会被隐式创建。
 - 大型 worksheet 不进入 DOM/dense matrix。
-- close/save 阶段完成 package assembly。
+- close/save 阶段完成 package assembly；成功后释放 note 构建状态，失败保留以支持 retry。
 
 ## Streaming Read
 

@@ -4,7 +4,7 @@ FastXLSX 是一个 C++20 XLSX 创建与编辑库，优先支持 MSVC 2026。项�
 
 当前版本为 **v0.1.0 Preview**。Public API/ABI 尚未承诺稳定，`0.x` 升级后应重新编译 consumer；首版支持边界以 [当前能力](docs/CURRENT_CAPABILITIES.md) 和 [Changelog](CHANGELOG.md) 为准。
 
-- **Streaming**：`WorkbookWriter` / `WorksheetWriter` 面向按行创建大型新 workbook；`WorkbookReader` 面向已有 workbook 的 forward-only bounded row/cell、worksheet metadata、data-validation、hyperlink、conditional-formatting、linked-table、drawing/image、classic comments/notes、sharedStrings 与 styles companion traversal。
+- **Streaming**：`WorkbookWriter` / `WorksheetWriter` 面向按行创建大型新 workbook，并支持 basic classic note insertion；`WorkbookReader` 面向已有 workbook 的 forward-only bounded row/cell、worksheet metadata、data-validation、hyperlink、conditional-formatting、linked-table、drawing/image、classic comments/notes、sharedStrings 与 styles companion traversal。
 - **Patch**：`WorkbookEditor`，面向已有 workbook 的 part-level rewrite；未修改和未知 part 默认保留。
 - **In-memory**：`WorksheetEditor`，面向小型 worksheet 的受限稀疏随机编辑。
 
@@ -42,11 +42,12 @@ int main()
         fastxlsx::CellView::text("Name"),
         fastxlsx::CellView::number(1.0),
     });
+    sheet.add_note(1, 1, "FastXLSX", "Input label");
     workbook.close();
 }
 ```
 
-Streaming 按 worksheet/row 顺序写入，不提供历史行随机修改。大规模有序导出优先使用该路径；worksheet XML 使用 256 KiB 有界 body batching 降低小写入调用，成功 `close()` 后立即释放临时文件与构建期缓存。
+Streaming 按 worksheet/row 顺序写入，不提供历史行随机修改。`add_note()` 可为已写或尚未写入的 cell 记录 simple non-empty author/text，生成 hidden classic note，而不会创建或修改 cell；同一 worksheet cell 只能记录一条。大规模有序导出优先使用该路径；worksheet XML 使用 256 KiB 有界 body batching 降低小写入调用，成功 `close()` 后立即释放临时文件与构建期缓存。
 
 字符串策略会直接影响吞吐、内存和文件大小：默认 `InlineString` 不维护 workbook 级唯一字符串表，适合字符串基数未知或接近全唯一的大型导出；只有调用方已知文本高度重复时，才应评估 `SharedString`。Streaming 不提供 `Auto` 策略，因为在单遍写入中准确判断未来字符串基数需要无界缓存、回看或重写，会破坏当前低内存边界。
 
@@ -151,7 +152,7 @@ auto sheet = editor.worksheet("Data", options);
 - `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、`RelationshipGraph` 是 internal。
 - 公式支持文本、审计、窄重写和请求重算；不求值、不生成 cached value、不完整重建 `calcChain.xml`。
 - `read_worksheet_images()` 只读投影已有 writer-compatible picture anchor；`WorksheetWriter::add_image()` 只做 new-workbook insertion；`replace_image()` 只替换已有 PNG/JPEG media bytes。三者都不是完整 drawing/anchor/relationship 编辑。
-- `read_worksheet_comments()` 只读投影已有 classic comments/notes；它不解析 legacy VML payload、不投影 visibility/shape geometry，也不创建或编辑 comments、VML、threaded comments 或 persons parts。
+- `read_worksheet_comments()` 只读投影已有 classic comments/notes；`WorksheetWriter::add_note()` 只为 new-workbook Streaming 创建 simple author/text、hidden VML shape 和必要 package relationships/content types。两者都不形成 rich/threaded comments、persons、visibility/shape customization 或 existing-workbook comments/VML editing。
 - `set_document_properties()` 只重写 core/app docProps；不创建或编辑 custom properties。
 - `add_worksheet()` 只向 existing workbook 追加空白 worksheet，并事务式更新 workbook catalog、workbook relationships、content types 和新 worksheet part；同一 editor 可继续用 Patch API 填充或重命名，但要在 `save_as()` 后重新打开，才能通过 In-memory `worksheet()` materialize。它不克隆 worksheet、styles、tables、drawings 或其他 linked objects。
 - `remove_worksheet()` 只删除关系闭合的 existing-workbook worksheet；它同步 workbook catalog、workbook relationship、content type、manifest 和 worksheet entry，并在最后可见表、active/selected metadata、definedNames、formula、materialized handle、queued payload 或 linked relationship 风险存在时 fail。它不做公式/definedName/linked-object repair。

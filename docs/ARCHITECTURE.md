@@ -24,7 +24,7 @@ In-memory  -> 小文件稀疏随机编辑，再 handoff 给 Patch
 
 ### OpenXML 语义层
 
-- workbook、worksheet、styles、sharedStrings、formula、metadata、image 和 document properties 语义。
+- workbook、worksheet、styles、sharedStrings、formula、metadata、image、classic notes 和 document properties 语义。
 - 负责 Excel/OpenXML 规则、索引和跨 part side effect。
 - 不能外包给 ZIP/XML 库，也不能把 internal helper 直接暴露为 public API。
 
@@ -51,11 +51,15 @@ In-memory  -> 小文件稀疏随机编辑，再 handoff 给 Patch
   -> hot-path XML encoding
   -> bounded worksheet body batching
   -> worksheet temporary/file-backed entry
+用户 bounded worksheet metadata input
+  -> feature validation + retained feature state
+worksheet body + feature state
+  -> worksheet suffix / relationships / linked parts
   -> workbook/package metadata
   -> ZIP package close
 ```
 
-Worksheet body batching 以 256 KiB 为当前上限，减少逐 row 文件写调用而不累积完整 worksheet。同步 `close()` 成功后立即关闭并删除 worksheet/image 临时文件，清空 row/body buffer、sharedStrings 与 styles；写包失败保留构建状态以便 retry。
+Worksheet body batching 以 256 KiB 为当前上限，减少逐 row 文件写调用而不累积完整 worksheet。`add_note()` 只按 note count 保留 one-based coordinate、copied simple author/text 与 duplicate-cell index；`close()` 以 worksheet 为单位生成 deduplicated author table、comments part、hidden legacy VML shapes、worksheet-local relationships 和 content types，不创建目标 cell，也不复用 spreadsheet drawing/image relationship。同步 `close()` 成功后立即关闭并删除 worksheet/image 临时文件，清空 row/body buffer、classic-note construction state、sharedStrings 与 styles；写包失败保留构建状态以便 retry。
 
 大型 worksheet 不进入完整 DOM，也不构建 dense cell matrix。
 

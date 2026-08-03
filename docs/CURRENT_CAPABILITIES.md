@@ -8,11 +8,12 @@
 
 - `WorkbookWriter`、`WorksheetWriter`、`CellView`。
 - 按 worksheet/row 顺序输出，适合大型有序导出。
-- 支持当前 public headers 中的数字、文本、布尔、公式、显式 blank cell 和稀疏行写入，以及 string strategy、style registry、Excel 1900 date/time serial helper、number-format preset、worksheet metadata、table、conditional formatting 和 PNG/JPEG insertion 窄切片。
+- 支持当前 public headers 中的数字、文本、布尔、公式、显式 blank cell 和稀疏行写入，以及 string strategy、style registry、Excel 1900 date/time serial helper、number-format preset、worksheet metadata、table、conditional formatting、PNG/JPEG insertion 和 basic classic note insertion 窄切片。
 - Date/time helper 只生成 numeric cell 所需的 1900 date-system serial；调用方仍需显式注册并附加 number-format style，不支持 1904 date system，也不推断时区。
+- `WorksheetWriter::add_note()` 以 one-based row/column 为新 workbook 记录 simple non-empty author/text；同一 worksheet cell 只允许一条 note，目标 cell 可以尚未写入且调用不会创建或修改 cell。`close()` 按 worksheet 生成 comments author table、simple `<text><t>`、hidden legacy VML shapes、worksheet-local VML/comments relationships 与 content types；author 按首次出现顺序去重，state 随 note count 和 copied author/text bytes 增长，但不保留 cell matrix。Rich/threaded comments、visibility/shape customization、existing-workbook comment edit 与 VML payload API 不支持。
 - 不支持历史行随机修改；不得引入 worksheet DOM 或 dense matrix。
 - `StringStrategy::InlineString` 是默认低内存策略；`SharedString` 会保留 workbook 级唯一字符串表，仅适合调用方已知文本高度重复的 workload。当前不提供需要回看、重写或无界缓存的自动策略。
-- Worksheet body 使用 256 KiB 有界 batching 写入 file-backed entry；成功 `WorkbookWriter::close()` 后立即删除 worksheet/image 临时文件并释放 row/body buffer、sharedStrings 与 style registry，写包失败则保留状态以支持 retry。
+- Worksheet body 使用 256 KiB 有界 batching 写入 file-backed entry；成功 `WorkbookWriter::close()` 后立即删除 worksheet/image 临时文件并释放 row/body buffer、classic-note construction state、sharedStrings 与 style registry，写包失败则保留状态以支持 retry。
 
 ### Small new workbook
 
@@ -155,6 +156,7 @@
 
 - worksheet lifecycle 的最小 add/remove 切片已完成；`remove_worksheet()` 的 unsupported semantics 默认 fail，不扩展为 worksheet clone。
 - `add_internal_hyperlink()`、`add_external_hyperlink()`、`add_data_validation()`、worksheet-root auto-filter set/clear、merged-cell add/remove 与 primary-view freeze-pane set/clear 已完成并进入 public Patch 能力。
+- New-workbook Streaming basic classic note insertion 已完成；它只创建 simple author/text、hidden VML shape 和所需 package side effects，不形成 rich/threaded comments、shape customization 或 existing-workbook semantic edit。
 - Public bounded-memory worksheet row/cell reader，以及 worksheet-root metadata、data-validation、hyperlink、conditional-formatting、linked-table basics、writer-compatible drawing/image basics、classic comments/notes basics、strict simple sharedStrings item、narrow rich sharedStrings run、styles/cellXfs 与 narrow font/fill component traversal companion 已完成；十二条读取路径保持 opaque worksheet index/object 与十一个显式 companion traversal 分离，不构建完整 worksheet/table/drawing/comments/registry 或隐式接入 `WorksheetEditor`。
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。

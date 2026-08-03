@@ -8,8 +8,8 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 ## 必读文件
 
 - `docs/CURRENT_CAPABILITIES.md`、`docs/ARCHITECTURE.md`、`docs/EDITING_MODEL.md`
-- `include/fastxlsx/streaming_writer.hpp`、`include/fastxlsx/worksheet_reader.hpp`、`include/fastxlsx/workbook_editor.hpp`
-- `src/streaming_writer.cpp`、`src/worksheet_metadata_reader.cpp`、`src/worksheet_data_validation_reader.cpp`、`src/worksheet_hyperlink_reader.cpp`、`src/worksheet_conditional_format_reader.cpp`、`src/worksheet_table_reader.cpp`、`src/worksheet_image_reader.cpp`、`src/worksheet_comment_reader.cpp`、`src/workbook_editor*.cpp`、`src/package_editor.cpp`
+- `include/fastxlsx/streaming_writer.hpp`、`include/fastxlsx/detail/worksheet_comment_writer.hpp`、`include/fastxlsx/worksheet_reader.hpp`、`include/fastxlsx/workbook_editor.hpp`
+- `src/streaming_writer.cpp`、`src/worksheet_comment_writer.cpp`、`src/worksheet_metadata_reader.cpp`、`src/worksheet_data_validation_reader.cpp`、`src/worksheet_hyperlink_reader.cpp`、`src/worksheet_conditional_format_reader.cpp`、`src/worksheet_table_reader.cpp`、`src/worksheet_image_reader.cpp`、`src/worksheet_comment_reader.cpp`、`src/workbook_editor*.cpp`、`src/package_editor.cpp`
 - 对应 metadata、relationship、preservation 和 failure-recovery tests
 
 ## 功能边界
@@ -20,6 +20,7 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 
 - 只保留与规则数、range 数或 relationship 数相关的有界状态；不得持有 row/cell matrix 或阻塞 row-order hot path。
 - 将 serializer/helper/test 与 `streaming_writer.cpp` 协调层分离，并验证跨 feature suffix ordering、relationship id 和 package side effects。
+- `WorksheetWriter::add_note()` 是 new-workbook-only classic-note 窄切片：校验 one-based Excel coordinate、non-empty simple author/text 和 per-cell uniqueness；目标 cell 可以不存在且不得隐式创建。独立 serializer 按 first-use author 顺序生成 comments XML 与 hidden legacy VML，协调 worksheet `<legacyDrawing>`、VML/comments relationships、comments override 和 VML default content type。VML relationship 与 spreadsheet drawing/image relationship 分离；成功 close 释放 note strings/duplicate index，package failure 保留 retry。
 - Large formula/object semantic sync 不属于 new-workbook metadata。
 
 ## Streaming Read
@@ -56,6 +57,7 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 - Auto-filter 另测 complete nested-criteria replacement、clear absent no-op、table-local filter preservation、rename/added worksheet 与 optional-range diagnostic。
 - Merged-cell 另测 missing/append/self-closing/remove-container、exact removal/absent no-op、count/ref/child/schema/overlap audit、cell payload/table preservation，以及 `calcPr`、`calcChain` part、workbook relationship 和 content type 的 exact preservation。
 - Freeze-pane 另测 missing/self-closing view metadata、other workbook views、single-/dual-axis active pane、zero clear/absent no-op、QName、selection preserve/fail、unsupported pane state/pivot/schema audit、final split diagnostic，以及 cells/table/relationships/content types/`calcPr`/`calcChain` exact preservation。
+- Classic-note writer 另测 coordinate/empty/duplicate/closed/detached validation、unwritten/max target、author dedup/source order、UTF-8/XML escaping/`xml:space`、simple comments、hidden VML coordinate、compact part numbering、content types、external hyperlink + spreadsheet drawing + VML/comments + table relationship ordering、worksheet suffix ordering、本库 reader stored/DEFLATE round-trip、successful-close state release、OpenPyXL 与 Excel reopen。
 - Metadata read 另测 primary/other view、frozen/root-filter/merged source order、owning values、callback retry、stored/DEFLATE、XML/nesting/reference/view/merge guardrail、QName/schema/count/overlap/unsupported pane rejection和 package no-side-effect。
 - Data-validation read 另测 owning multi-range/rule、entity decode、formula shape、absent/empty container、callback retry、stored/DEFLATE、XML/nesting/validation/range/sqref/formula/text guardrail、count/direct-child/QName/schema/unsupported metadata rejection、foreign extension disambiguation和 package no-side-effect。
 - Hyperlink read 另测 owning internal/external projection、entity decode、cell/range source order、internal no-`.rels`、absent/empty container、callback retry、stored/DEFLATE、XML/nesting/ref/relationship-id/target/text guardrail、relationship missing/type/TargetMode/target rejection、namespace scope/duplicate semantic id/QName/schema/direct-child/unsupported metadata、duplicate/overlap、foreign extension disambiguation和 package no-side-effect。

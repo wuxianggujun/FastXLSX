@@ -1072,6 +1072,27 @@ public:
         std::uint32_t row, std::uint32_t column, std::string location,
         HyperlinkOptions options = {});
 
+    /// Records one hidden classic note on a worksheet cell.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. Each call
+    /// copies the simple author and text into worksheet state. close() emits one
+    /// worksheet-local classic comments part, an author table deduplicated in
+    /// first-use order, a minimal legacy VML drawing containing hidden note
+    /// shapes, two worksheet relationships, and the required content types.
+    /// State grows with note count and copied author/text bytes; row streaming
+    /// remains forward-only and does not retain a worksheet cell matrix.
+    ///
+    /// The note may target a cell whose value has not been written. This method
+    /// does not create or style that cell, does not expose rich text, threaded
+    /// comments, visibility or shape customization, and does not edit existing
+    /// XLSX files. A worksheet cell may have at most one note.
+    ///
+    /// @throws FastXlsxError if the cell reference is outside Excel worksheet
+    /// limits, author or text is empty, the cell already has a note, the writer
+    /// is not attached, or the workbook is closed.
+    void add_note(
+        std::uint32_t row, std::uint32_t column, std::string author, std::string text);
+
     /// Records a worksheet table range for a new workbook.
     ///
     /// API mode: Streaming worksheet metadata for new workbooks. The table is

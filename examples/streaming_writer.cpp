@@ -39,6 +39,7 @@ int main()
         fastxlsx::CellView::text(" reviewed "),
         fastxlsx::CellView::formula("SUM(D2:D3)"),
     });
+    sheet.add_note(2, 1, "FastXLSX", "Quarterly sales input");
 
     workbook.close();
 

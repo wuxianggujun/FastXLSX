@@ -33,7 +33,7 @@ description: "规划或实现 FastXLSX 图片读取/插入、stb 图片解码、
 
 Existing drawing/anchor/relationship mutation、`xdr:oneCellAnchor` / `xdr:absoluteAnchor` element projection、chart/shape/group/connector、crop/rotation/position transform、picture hyperlink、任意 media type conversion 和完整图片保真对象模型。
 
-Classic worksheet note 的 `<legacyDrawing>` 指向 VML part，不是 `read_worksheet_images()` 的 spreadsheet drawing/image relationship。Comments reader 只审计该 VML relationship/part 存在性，不得将 VML payload、note visibility 或 shape metadata 路由到 image reader。
+`WorksheetWriter::add_note()` 创建的 `<legacyDrawing>` 指向独立 VML part，不是 `add_image()` / `read_worksheet_images()` 的 spreadsheet drawing/image relationship；两类 relationship id 需要在 worksheet 上稳定组合。Comments reader 只审计该 VML relationship/part 存在性，不得将 VML payload、note visibility 或 shape metadata 路由到 image reader。
 
 ## 验证
 

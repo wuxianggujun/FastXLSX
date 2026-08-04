@@ -100,6 +100,16 @@ struct WorksheetInternalHyperlinkRewritePlan {
     std::uint64_t source_offset = 0;
 };
 
+struct WorksheetLegacyDrawingRewritePlan {
+    enum class Action {
+        InsertBefore,
+        PreserveExisting,
+    };
+
+    Action action = Action::InsertBefore;
+    std::uint64_t source_offset = 0;
+};
+
 /// Inspects one worksheet stream and selects an exact insertion boundary.
 ///
 /// The scan rejects a hyperlink whose target cell overlaps an existing
@@ -128,6 +138,24 @@ void write_worksheet_external_hyperlink_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetExternalHyperlinkRewrite& hyperlink,
     const WorksheetInternalHyperlinkRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Audits worksheet suffix ordering and either selects a schema-safe insertion
+/// boundary for one note VML reference or verifies the generated reference from
+/// an earlier call in the same Patch session. Source-owned legacyDrawing
+/// metadata is never accepted as generated state.
+[[nodiscard]] WorksheetLegacyDrawingRewritePlan
+plan_worksheet_legacy_drawing_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view relationship_id,
+    bool allow_existing_generated_reference);
+
+/// Streams a worksheet to a staged file while inserting or preserving the
+/// legacyDrawing reference selected by plan_worksheet_legacy_drawing_rewrite().
+void write_worksheet_legacy_drawing_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view relationship_id,
+    const WorksheetLegacyDrawingRewritePlan& plan,
     const std::filesystem::path& output_path);
 
 /// Selects a schema-safe append/insert boundary for one data-validation rule.

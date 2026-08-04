@@ -8,9 +8,11 @@
 
 #include <fastxlsx/detail/cell_store.hpp>
 #include <fastxlsx/detail/materialized_worksheet_session.hpp>
+#include <fastxlsx/detail/worksheet_comment_writer.hpp>
 #include <fastxlsx/workbook_editor.hpp>
 
 #include <cstddef>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <string>
@@ -92,6 +94,8 @@ struct WorkbookEditor::Impl {
     };
     using PendingMergedCellEdits =
         std::map<std::string, PendingMergedCellEditCounts, std::less<>>;
+    using PendingClassicNotes =
+        std::map<std::string, std::vector<detail::ClassicNote>, std::less<>>;
 
     Impl(detail::PackageEditor editor, WorkbookEditorOptions options)
         : editor(std::move(editor))
@@ -111,6 +115,7 @@ struct WorkbookEditor::Impl {
     PendingTargetedCellReplacements pending_targeted_cell_replacements;
     std::map<std::string, std::size_t, std::less<>> pending_internal_hyperlink_counts;
     std::map<std::string, std::size_t, std::less<>> pending_external_hyperlink_counts;
+    PendingClassicNotes pending_classic_notes;
     std::map<std::string, std::size_t, std::less<>> pending_data_validation_counts;
     PendingAutoFilterEdits pending_auto_filter_edits;
     PendingFreezePaneEdits pending_freeze_pane_edits;
@@ -341,6 +346,36 @@ struct WorkbookEditor::Impl {
         swap(pending_external_hyperlink_counts, *updated);
     }
 
+    [[nodiscard]] std::optional<PendingClassicNotes>
+    stage_pending_classic_notes_move(
+        std::string_view old_name, std::string_view new_name) const
+    {
+        const auto source = pending_classic_notes.find(old_name);
+        if (source == pending_classic_notes.end()) {
+            return std::nullopt;
+        }
+        PendingClassicNotes updated = pending_classic_notes;
+        auto updated_source = updated.find(old_name);
+        std::vector<detail::ClassicNote> moved = std::move(updated_source->second);
+        updated.erase(updated_source);
+        auto& destination = updated[std::string(new_name)];
+        destination.insert(destination.end(),
+            std::make_move_iterator(moved.begin()),
+            std::make_move_iterator(moved.end()));
+        return updated;
+    }
+
+    void commit_pending_classic_notes_move(
+        std::optional<PendingClassicNotes>& updated) noexcept
+    {
+        if (!updated.has_value()) {
+            return;
+        }
+        static_assert(std::is_nothrow_swappable_v<PendingClassicNotes>);
+        using std::swap;
+        swap(pending_classic_notes, *updated);
+    }
+
     [[nodiscard]] std::optional<std::map<std::string, std::size_t, std::less<>>>
     stage_pending_data_validation_counts_move(
         std::string_view old_name, std::string_view new_name) const
@@ -493,6 +528,9 @@ struct WorkbookEditor::Impl {
                 pending_external_hyperlink_counts.find(current_name);
             const bool external_hyperlinks_added =
                 pending_external_hyperlinks != pending_external_hyperlink_counts.end();
+            const auto pending_notes = pending_classic_notes.find(current_name);
+            const bool classic_notes_added =
+                pending_notes != pending_classic_notes.end();
             const auto pending_data_validations =
                 pending_data_validation_counts.find(current_name);
             const bool data_validations_added =
@@ -514,6 +552,7 @@ struct WorkbookEditor::Impl {
             if (!catalog_entry.added && !catalog_entry.renamed && !sheet_data_replaced
                 && !targeted_cells_replaced && !internal_hyperlinks_added
                 && !external_hyperlinks_added
+                && !classic_notes_added
                 && !data_validations_added
                 && !auto_filter_changed
                 && !freeze_panes_changed
@@ -534,6 +573,9 @@ struct WorkbookEditor::Impl {
             }
             if (external_hyperlinks_added) {
                 summary.external_hyperlink_count = pending_external_hyperlinks->second;
+            }
+            if (classic_notes_added) {
+                summary.classic_note_count = pending_notes->second.size();
             }
             if (data_validations_added) {
                 summary.data_validation_count = pending_data_validations->second;

@@ -254,6 +254,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// Zero when no external hyperlink edit is queued.
     std::size_t external_hyperlink_count = 0;
 
+    /// Number of simple classic notes queued for generated comments/VML parts
+    /// on this planned worksheet. Zero when no classic note edit is queued.
+    std::size_t classic_note_count = 0;
+
     /// Number of worksheet-local data-validation rules appended for this
     /// planned worksheet. Zero when no data-validation edit is queued.
     std::size_t data_validation_count = 0;
@@ -2711,8 +2715,9 @@ public:
     /// Returns the most recent failed public edit diagnostic, if any.
     ///
     /// This optional message is a coarse public facade diagnostic for failed
-    /// replace_sheet_data(), replace_cells(), add_internal_hyperlink(),
-    /// rename_sheet(), or WorksheetEditor mutation calls.
+    /// replace_sheet_data(), replace_cells(), worksheet metadata mutations such
+    /// as add_internal_hyperlink() / add_note(), rename_sheet(), or
+    /// WorksheetEditor mutation calls.
     /// A later failed public edit replaces the previous message; a successful
     /// public edit clears it. Inspection / pending diagnostic methods and
     /// save_as() do not update it, and a moved-from editor returns std::nullopt.
@@ -2723,14 +2728,13 @@ public:
     /// Returns coarse worksheet-level summaries for pending public edits.
     ///
     /// The returned vector follows source workbook sheet-catalog order and only
-    /// includes worksheets with a queued public rename_sheet(),
-    /// replace_sheet_data(), add_internal_hyperlink() effect, and/or dirty
-    /// materialized WorksheetEditor session waiting for save_as() auto-flush.
+    /// includes worksheets with a queued public catalog, worksheet payload, or
+    /// worksheet metadata mutation and/or a dirty materialized WorksheetEditor
+    /// session waiting for save_as() auto-flush.
     /// Each summary reports the source name, current planned name, whether the
     /// sheet was renamed, whether a final whole-<sheetData> replacement is
-    /// queued, the number of worksheet-local internal hyperlinks queued for
-    /// that planned name, and whether a dirty materialized session currently
-    /// exists. As a
+    /// queued, feature-specific metadata counts including classic_note_count,
+    /// and whether a dirty materialized session currently exists. As a
     /// current planned-state view, a rename-only chain that returns a sheet to
     /// its source name is omitted from this vector even though
     /// pending_change_count() still counts the successful public edit calls.
@@ -3145,6 +3149,42 @@ public:
         WorksheetCellReference cell,
         std::string target,
         HyperlinkOptions options = {});
+
+    /// Adds one simple classic note to an existing workbook worksheet.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The first
+    /// successful call for a worksheet generates one simple comments part and
+    /// one hidden legacy VML drawing, inserts `<legacyDrawing>` in schema order,
+    /// adds two worksheet-owned relationships, and updates content types. Later
+    /// calls in the same WorkbookEditor session regenerate only those
+    /// FastXLSX-generated parts while preserving note order and first-use author
+    /// deduplication. The target cell may be absent and is not created or styled.
+    /// Pending memory grows with the queued note count and copied author/text
+    /// bytes. Each successful call advances pending/unsaved public edit counts
+    /// and classic_note_count; a failed call publishes no package or public
+    /// state, while a failed save retains the staged notes for retry.
+    ///
+    /// This first slice requires the source/current worksheet to have no
+    /// source-owned classic comments, threaded comments, or VML relationship.
+    /// Such state is rejected rather than parsed, replaced, merged, or repaired.
+    /// Other worksheet relationships and unknown package entries are preserved.
+    /// Rich text, visible/custom note shapes, update/delete, threaded comments,
+    /// persons parts, cell/formula synchronization, and general VML editing are
+    /// outside this API.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param cell One-based worksheet coordinate receiving the note.
+    /// @param author Non-empty simple author copied into pending Patch state.
+    /// @param text Non-empty simple note text copied into pending Patch state.
+    /// @throws FastXlsxError if input is invalid, the cell already has a queued
+    /// note, existing comments/VML semantics are unsupported, worksheet schema
+    /// order cannot be proven, or transactional staging fails. On failure no
+    /// package or public diagnostic state is published and retry remains valid.
+    void add_note(
+        std::string_view sheet_name,
+        WorksheetCellReference cell,
+        std::string author,
+        std::string text);
 
     /// Appends one worksheet-local data-validation rule for one range.
     ///

@@ -4,6 +4,7 @@
 #include "package_writer.hpp"
 
 #include <fastxlsx/detail/formula_reference_audit.hpp>
+#include <fastxlsx/detail/worksheet_comment_writer.hpp>
 #include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/document_properties.hpp>
 #include <fastxlsx/workbook.hpp>
@@ -570,6 +571,12 @@ public:
     void add_external_hyperlink_by_name(std::string_view sheet_name,
         std::uint32_t row, std::uint32_t column, std::string target,
         std::string display = {}, std::string tooltip = {});
+    // Internal first-slice classic note insertion. Source-owned classic or
+    // threaded comments and VML relationships are rejected. Repeated calls may
+    // replace only the generated comments/VML parts created earlier in this
+    // PackageEditor session.
+    void set_basic_classic_notes_by_name(
+        std::string_view sheet_name, std::span<const ClassicNote> notes);
     // Internal Patch helper for one worksheet-local data-validation rule. The
     // worksheet XML replacement is staged without relationship/content-type
     // mutation or formula/range synchronization.
@@ -733,6 +740,13 @@ public:
         PackageWriterOptions options = {PackageWriterBackend::StoredZipBootstrap}) const;
 
 private:
+    struct ClassicNotePackageUpdate {
+        PartName comments_part;
+        PartName vml_part;
+        std::string comments_xml;
+        std::string vml_xml;
+    };
+
     explicit PackageEditor(PackageReader reader);
     void replace_worksheet_cells_impl(PartName worksheet_part,
         std::span<const WorksheetCellReplacement> replacements,
@@ -774,7 +788,8 @@ private:
         PartWriteMode target_write_mode = PartWriteMode::StreamRewrite,
         std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats = std::nullopt,
         std::optional<SinglePassWorksheetTransformStats> single_pass_stats = std::nullopt,
-        std::optional<Relationship> relationship_addition = std::nullopt);
+        std::vector<Relationship> relationship_additions = {},
+        std::optional<ClassicNotePackageUpdate> classic_note_update = std::nullopt);
 
     PackageReader reader_;
     PackageManifest manifest_;

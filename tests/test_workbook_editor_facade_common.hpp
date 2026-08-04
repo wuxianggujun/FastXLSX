@@ -181,6 +181,7 @@ bool workbook_editor_edit_summaries_equal(
             || left.sheet_data_replaced != right.sheet_data_replaced
             || left.internal_hyperlink_count != right.internal_hyperlink_count
             || left.external_hyperlink_count != right.external_hyperlink_count
+            || left.classic_note_count != right.classic_note_count
             || left.data_validation_count != right.data_validation_count
             || left.auto_filter_changed != right.auto_filter_changed
             || left.auto_filter_range.has_value() != right.auto_filter_range.has_value()

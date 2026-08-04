@@ -24,6 +24,7 @@ constexpr int auto_filter_schema_rank = 5;
 constexpr int merged_cells_schema_rank = 9;
 constexpr int data_validations_schema_rank = 12;
 constexpr int hyperlink_schema_rank = 13;
+constexpr int legacy_drawing_schema_rank = 25;
 constexpr std::uint32_t max_freeze_pane_row_split = 1048575U;
 constexpr std::uint32_t max_freeze_pane_column_split = 16383U;
 
@@ -1064,6 +1065,124 @@ WorksheetInternalHyperlinkRewritePlan plan_worksheet_external_hyperlink_rewrite(
     }
     return plan_worksheet_hyperlink_rewrite(
         read_next_chunk, hyperlink.cell_reference);
+}
+
+WorksheetLegacyDrawingRewritePlan plan_worksheet_legacy_drawing_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view relationship_id,
+    bool allow_existing_generated_reference)
+{
+    if (relationship_id.empty()) {
+        throw FastXlsxError("classic note VML relationship id cannot be empty");
+    }
+
+    bool saw_sheet_data_end = false;
+    bool saw_worksheet_end = false;
+    bool saw_legacy_drawing = false;
+    int last_suffix_rank = 0;
+    std::vector<std::string> metadata_stack;
+    std::optional<std::uint64_t> first_after_legacy_drawing_offset;
+    std::uint64_t worksheet_end_offset = 0;
+    std::uint64_t existing_legacy_drawing_offset = 0;
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::SheetDataEnd) {
+                saw_sheet_data_end = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                if (!event.self_closing) {
+                    saw_worksheet_end = true;
+                    worksheet_end_offset = event.raw_xml_offset;
+                }
+                return;
+            }
+            if (event.kind != WorksheetEventKind::Metadata) {
+                return;
+            }
+
+            const bool closing = is_closing_tag(event.raw_xml);
+            if (closing) {
+                if (metadata_stack.empty() || metadata_stack.back() != event.element_name) {
+                    throw FastXlsxError(
+                        "worksheet classic note metadata contains mismatched element nesting");
+                }
+                metadata_stack.pop_back();
+                return;
+            }
+
+            const bool top_level = metadata_stack.empty();
+            if (top_level && saw_sheet_data_end) {
+                const std::optional<int> rank =
+                    worksheet_suffix_schema_rank(event.element_name);
+                if (!rank.has_value()) {
+                    throw FastXlsxError(
+                        "worksheet contains top-level suffix metadata whose position relative "
+                        "to legacyDrawing is unsupported");
+                }
+                if (*rank < last_suffix_rank) {
+                    throw FastXlsxError(
+                        "worksheet top-level suffix metadata is not in schema order");
+                }
+                last_suffix_rank = *rank;
+                if (*rank > legacy_drawing_schema_rank
+                    && !first_after_legacy_drawing_offset.has_value()) {
+                    first_after_legacy_drawing_offset = event.raw_xml_offset;
+                }
+                if (event.element_name == "legacyDrawing") {
+                    if (saw_legacy_drawing) {
+                        throw FastXlsxError(
+                            "worksheet contains duplicate legacyDrawing metadata");
+                    }
+                    saw_legacy_drawing = true;
+                    existing_legacy_drawing_offset = event.raw_xml_offset;
+                    if (!event.self_closing) {
+                        throw FastXlsxError(
+                            "worksheet legacyDrawing must be self-closing");
+                    }
+                    const std::optional<std::string_view> existing_id =
+                        attribute_value(event.raw_xml, "r:id");
+                    if (!existing_id.has_value() || *existing_id != relationship_id) {
+                        throw FastXlsxError(
+                            "worksheet legacyDrawing does not reference the generated note VML relationship");
+                    }
+                }
+            } else if (event.element_name == "legacyDrawing") {
+                throw FastXlsxError(
+                    "worksheet legacyDrawing metadata appears before sheetData or is nested");
+            }
+
+            if (!event.self_closing) {
+                metadata_stack.emplace_back(event.element_name);
+            }
+        });
+
+    if (!metadata_stack.empty()) {
+        throw FastXlsxError("worksheet classic note metadata ended inside an open element");
+    }
+    if (!saw_sheet_data_end || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "worksheet classic note edit requires sheetData and a closing worksheet root");
+    }
+    if (saw_legacy_drawing) {
+        if (!allow_existing_generated_reference) {
+            throw FastXlsxError(
+                "existing worksheet legacyDrawing metadata is outside the basic classic note insertion slice");
+        }
+        return WorksheetLegacyDrawingRewritePlan {
+            WorksheetLegacyDrawingRewritePlan::Action::PreserveExisting,
+            existing_legacy_drawing_offset,
+        };
+    }
+    if (allow_existing_generated_reference) {
+        throw FastXlsxError(
+            "generated classic note package state is missing worksheet legacyDrawing metadata");
+    }
+    return WorksheetLegacyDrawingRewritePlan {
+        WorksheetLegacyDrawingRewritePlan::Action::InsertBefore,
+        first_after_legacy_drawing_offset.value_or(worksheet_end_offset),
+    };
 }
 
 WorksheetDataValidationRewritePlan plan_worksheet_data_validation_rewrite(
@@ -2384,6 +2503,54 @@ void write_worksheet_external_hyperlink_rewrite(
 {
     write_worksheet_hyperlink_rewrite(read_next_chunk,
         external_hyperlink_xml(hyperlink), plan, output_path, true);
+}
+
+void write_worksheet_legacy_drawing_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view relationship_id,
+    const WorksheetLegacyDrawingRewritePlan& plan,
+    const std::filesystem::path& output_path)
+{
+    std::ofstream output(output_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError(
+            "failed to create staged worksheet classic note metadata file");
+    }
+
+    bool applied = plan.action
+        == WorksheetLegacyDrawingRewritePlan::Action::PreserveExisting;
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (is_synthetic_self_closing_end(event)) {
+                return;
+            }
+            if (!applied && event.raw_xml_offset == plan.source_offset) {
+                write_bytes(output, "<legacyDrawing r:id=\"");
+                std::string escaped_relationship_id;
+                append_escaped_xml_attribute(
+                    escaped_relationship_id, relationship_id);
+                write_bytes(output, escaped_relationship_id);
+                write_bytes(output, "\"/>");
+                applied = true;
+            }
+            if (plan.action == WorksheetLegacyDrawingRewritePlan::Action::InsertBefore
+                && event.kind == WorksheetEventKind::WorksheetStart) {
+                write_bytes(output,
+                    worksheet_root_with_relationship_namespace(event.raw_xml));
+            } else {
+                write_bytes(output, event.raw_xml);
+            }
+        });
+
+    if (!applied) {
+        throw FastXlsxError(
+            "worksheet classic note rewrite did not reach its planned insertion boundary");
+    }
+    output.flush();
+    if (!output) {
+        throw FastXlsxError(
+            "failed to finalize staged worksheet classic note metadata file");
+    }
 }
 
 } // namespace fastxlsx::detail

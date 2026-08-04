@@ -691,6 +691,48 @@ void WorkbookEditor::add_external_hyperlink(
     }
 }
 
+void WorkbookEditor::add_note(
+    std::string_view sheet_name,
+    WorksheetCellReference cell,
+    std::string author,
+    std::string text)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+
+        WorkbookEditor::Impl::PendingClassicNotes updated_notes =
+            impl_->pending_classic_notes;
+        std::vector<detail::ClassicNote>& worksheet_notes =
+            updated_notes[sheet_name_key];
+        worksheet_notes.push_back(detail::ClassicNote {
+            cell.row, cell.column, std::move(author), std::move(text)});
+        impl_->editor.set_basic_classic_notes_by_name(
+            sheet_name_key, worksheet_notes);
+
+        static_assert(std::is_nothrow_swappable_v<
+            WorkbookEditor::Impl::PendingClassicNotes>);
+        using std::swap;
+        swap(impl_->pending_classic_notes, updated_notes);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::add_note() failed for '" + sheet_name_key
+            + "' at row " + std::to_string(cell.row)
+            + ", column " + std::to_string(cell.column) + ": " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
 void WorkbookEditor::add_data_validation(
     std::string_view sheet_name, CellRange range, DataValidationRule rule)
 {
@@ -1090,6 +1132,7 @@ void WorkbookEditor::remove_worksheet(std::string_view name)
             || !impl_->pending_targeted_cell_replacement_worksheet_names().empty()
             || !impl_->pending_internal_hyperlink_counts.empty()
             || !impl_->pending_external_hyperlink_counts.empty()
+            || !impl_->pending_classic_notes.empty()
             || !impl_->pending_data_validation_counts.empty()
             || !impl_->pending_auto_filter_edits.empty()
             || !impl_->pending_freeze_pane_edits.empty()
@@ -1171,6 +1214,10 @@ void WorkbookEditor::rename_sheet(
             updated_external_hyperlink_counts =
                 impl_->stage_pending_external_hyperlink_counts_move(
                     old_name_key, new_name_key);
+        std::optional<WorkbookEditor::Impl::PendingClassicNotes>
+            updated_classic_notes =
+                impl_->stage_pending_classic_notes_move(
+                    old_name_key, new_name_key);
         std::optional<std::map<std::string, std::size_t, std::less<>>>
             updated_data_validation_counts =
                 impl_->stage_pending_data_validation_counts_move(
@@ -1215,6 +1262,7 @@ void WorkbookEditor::rename_sheet(
             updated_internal_hyperlink_counts);
         impl_->commit_pending_external_hyperlink_counts_move(
             updated_external_hyperlink_counts);
+        impl_->commit_pending_classic_notes_move(updated_classic_notes);
         impl_->commit_pending_data_validation_counts_move(
             updated_data_validation_counts);
         impl_->commit_pending_auto_filter_edits_move(updated_auto_filter_edits);

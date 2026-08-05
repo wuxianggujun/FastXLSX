@@ -15,6 +15,8 @@
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/image.hpp>
 
+#include <algorithm>
+
 #include <cstddef>
 #include <map>
 #include <optional>
@@ -710,12 +712,13 @@ void WorkbookEditor::add_note(
 
         WorkbookEditor::Impl::PendingClassicNotes updated_notes =
             impl_->pending_classic_notes;
-        std::vector<detail::ClassicNote>& worksheet_notes =
+        WorkbookEditor::Impl::PendingClassicNoteEdit& worksheet_edit =
             updated_notes[sheet_name_key];
-        worksheet_notes.push_back(detail::ClassicNote {
-            cell.row, cell.column, std::move(author), std::move(text)});
-        impl_->editor.set_basic_classic_notes_by_name(
-            sheet_name_key, worksheet_notes);
+        worksheet_edit.notes.push_back(
+            detail::ClassicNote {cell.row, cell.column, std::move(author), std::move(text)});
+        ++worksheet_edit.addition_count;
+        impl_->editor.set_basic_classic_notes_by_name(sheet_name_key, worksheet_edit.notes,
+            detail::ClassicNoteSourceEditPolicy::RejectSourceOwned);
 
         static_assert(std::is_nothrow_swappable_v<
             WorkbookEditor::Impl::PendingClassicNotes>);
@@ -728,6 +731,112 @@ void WorkbookEditor::add_note(
             "WorkbookEditor::add_note() failed for '" + sheet_name_key
             + "' at row " + std::to_string(cell.row)
             + ", column " + std::to_string(cell.column) + ": " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::update_note(
+    std::string_view sheet_name, WorksheetCellReference cell, std::string author, std::string text)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        (void)detail::cell_reference(cell.row, cell.column);
+        if (author.empty()) {
+            throw FastXlsxError("classic note author cannot be empty");
+        }
+        if (text.empty()) {
+            throw FastXlsxError("classic note text cannot be empty");
+        }
+
+        WorkbookEditor::Impl::PendingClassicNotes updated_notes = impl_->pending_classic_notes;
+        auto [pending_note, inserted] = updated_notes.try_emplace(sheet_name_key);
+        if (inserted) {
+            pending_note->second.notes =
+                impl_->editor.read_canonical_source_classic_notes_by_name(sheet_name_key);
+        }
+        auto note = std::find_if(pending_note->second.notes.begin(),
+            pending_note->second.notes.end(), [cell](const detail::ClassicNote& candidate) {
+                return candidate.row == cell.row && candidate.column == cell.column;
+            });
+        if (note == pending_note->second.notes.end()) {
+            throw FastXlsxError("worksheet has no classic note at the target cell");
+        }
+        if (note->author == author && note->text == text) {
+            impl_->clear_last_edit_error();
+            return;
+        }
+
+        note->author = std::move(author);
+        note->text = std::move(text);
+        ++pending_note->second.update_count;
+        impl_->editor.set_basic_classic_notes_by_name(sheet_name_key, pending_note->second.notes,
+            detail::ClassicNoteSourceEditPolicy::AllowCanonicalSourceOwned);
+
+        static_assert(std::is_nothrow_swappable_v<WorkbookEditor::Impl::PendingClassicNotes>);
+        using std::swap;
+        swap(impl_->pending_classic_notes, updated_notes);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error("WorkbookEditor::update_note() failed for '" + sheet_name_key
+            + "' at row " + std::to_string(cell.row) + ", column " + std::to_string(cell.column)
+            + ": " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::remove_note(std::string_view sheet_name, WorksheetCellReference cell)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        (void)detail::cell_reference(cell.row, cell.column);
+
+        WorkbookEditor::Impl::PendingClassicNotes updated_notes = impl_->pending_classic_notes;
+        auto [pending_note, inserted] = updated_notes.try_emplace(sheet_name_key);
+        if (inserted) {
+            pending_note->second.notes =
+                impl_->editor.read_canonical_source_classic_notes_by_name(sheet_name_key);
+        }
+        const auto note = std::find_if(pending_note->second.notes.begin(),
+            pending_note->second.notes.end(), [cell](const detail::ClassicNote& candidate) {
+                return candidate.row == cell.row && candidate.column == cell.column;
+            });
+        if (note == pending_note->second.notes.end()) {
+            throw FastXlsxError("worksheet has no classic note at the target cell");
+        }
+
+        pending_note->second.notes.erase(note);
+        ++pending_note->second.removal_count;
+        impl_->editor.set_basic_classic_notes_by_name(sheet_name_key, pending_note->second.notes,
+            detail::ClassicNoteSourceEditPolicy::AllowCanonicalSourceOwned);
+
+        static_assert(std::is_nothrow_swappable_v<WorkbookEditor::Impl::PendingClassicNotes>);
+        using std::swap;
+        swap(impl_->pending_classic_notes, updated_notes);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error("WorkbookEditor::remove_note() failed for '" + sheet_name_key
+            + "' at row " + std::to_string(cell.row) + ", column " + std::to_string(cell.column)
+            + ": " + error.what());
         impl_->record_last_edit_error(public_error);
         throw public_error;
     }

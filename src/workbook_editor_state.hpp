@@ -94,8 +94,14 @@ struct WorkbookEditor::Impl {
     };
     using PendingMergedCellEdits =
         std::map<std::string, PendingMergedCellEditCounts, std::less<>>;
+    struct PendingClassicNoteEdit {
+        std::vector<detail::ClassicNote> notes;
+        std::size_t addition_count = 0;
+        std::size_t update_count = 0;
+        std::size_t removal_count = 0;
+    };
     using PendingClassicNotes =
-        std::map<std::string, std::vector<detail::ClassicNote>, std::less<>>;
+        std::map<std::string, PendingClassicNoteEdit, std::less<>>;
 
     Impl(detail::PackageEditor editor, WorkbookEditorOptions options)
         : editor(std::move(editor))
@@ -356,12 +362,15 @@ struct WorkbookEditor::Impl {
         }
         PendingClassicNotes updated = pending_classic_notes;
         auto updated_source = updated.find(old_name);
-        std::vector<detail::ClassicNote> moved = std::move(updated_source->second);
+        PendingClassicNoteEdit moved = std::move(updated_source->second);
         updated.erase(updated_source);
         auto& destination = updated[std::string(new_name)];
-        destination.insert(destination.end(),
-            std::make_move_iterator(moved.begin()),
-            std::make_move_iterator(moved.end()));
+        destination.notes.insert(destination.notes.end(),
+            std::make_move_iterator(moved.notes.begin()),
+            std::make_move_iterator(moved.notes.end()));
+        destination.addition_count += moved.addition_count;
+        destination.update_count += moved.update_count;
+        destination.removal_count += moved.removal_count;
         return updated;
     }
 
@@ -575,7 +584,10 @@ struct WorkbookEditor::Impl {
                 summary.external_hyperlink_count = pending_external_hyperlinks->second;
             }
             if (classic_notes_added) {
-                summary.classic_note_count = pending_notes->second.size();
+                summary.classic_note_count = pending_notes->second.notes.size();
+                summary.classic_note_addition_count = pending_notes->second.addition_count;
+                summary.classic_note_update_count = pending_notes->second.update_count;
+                summary.classic_note_removal_count = pending_notes->second.removal_count;
             }
             if (data_validations_added) {
                 summary.data_validation_count = pending_data_validations->second;

@@ -1070,7 +1070,8 @@ WorksheetInternalHyperlinkRewritePlan plan_worksheet_external_hyperlink_rewrite(
 WorksheetLegacyDrawingRewritePlan plan_worksheet_legacy_drawing_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view relationship_id,
-    bool allow_existing_generated_reference)
+    bool allow_existing_reference,
+    bool remove_existing_reference)
 {
     if (relationship_id.empty()) {
         throw FastXlsxError("classic note VML relationship id cannot be empty");
@@ -1166,18 +1167,19 @@ WorksheetLegacyDrawingRewritePlan plan_worksheet_legacy_drawing_rewrite(
             "worksheet classic note edit requires sheetData and a closing worksheet root");
     }
     if (saw_legacy_drawing) {
-        if (!allow_existing_generated_reference) {
+        if (!allow_existing_reference) {
             throw FastXlsxError(
-                "existing worksheet legacyDrawing metadata is outside the basic classic note insertion slice");
+                "classic note insertion cannot reuse existing worksheet legacyDrawing metadata");
         }
         return WorksheetLegacyDrawingRewritePlan {
-            WorksheetLegacyDrawingRewritePlan::Action::PreserveExisting,
+            remove_existing_reference ? WorksheetLegacyDrawingRewritePlan::Action::RemoveExisting
+                                      : WorksheetLegacyDrawingRewritePlan::Action::PreserveExisting,
             existing_legacy_drawing_offset,
         };
     }
-    if (allow_existing_generated_reference) {
-        throw FastXlsxError(
-            "generated classic note package state is missing worksheet legacyDrawing metadata");
+    if (allow_existing_reference) {
+        throw FastXlsxError("editable classic note package state is missing "
+                            "worksheet legacyDrawing metadata");
     }
     return WorksheetLegacyDrawingRewritePlan {
         WorksheetLegacyDrawingRewritePlan::Action::InsertBefore,
@@ -2522,6 +2524,11 @@ void write_worksheet_legacy_drawing_rewrite(
     scan_worksheet_events_from_chunk_source(read_next_chunk,
         [&](const WorksheetEvent& event) {
             if (is_synthetic_self_closing_end(event)) {
+                return;
+            }
+            if (!applied && plan.action == WorksheetLegacyDrawingRewritePlan::Action::RemoveExisting
+                && event.raw_xml_offset == plan.source_offset) {
+                applied = true;
                 return;
             }
             if (!applied && event.raw_xml_offset == plan.source_offset) {

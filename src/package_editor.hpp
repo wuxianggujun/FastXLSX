@@ -24,6 +24,11 @@ namespace fastxlsx::detail {
 enum class WorksheetFreezePaneRewriteOperation;
 enum class WorksheetMergedCellRewriteOperation;
 
+enum class ClassicNoteSourceEditPolicy {
+    RejectSourceOwned,
+    AllowCanonicalSourceOwned,
+};
+
 // Current internal sheetData patch helper uses chunk-source input and
 // file-backed staged output, but keeps the replacement payload guard until a
 // true streaming worksheet transformer exists. Source/planned worksheet input is
@@ -571,12 +576,17 @@ public:
     void add_external_hyperlink_by_name(std::string_view sheet_name,
         std::uint32_t row, std::uint32_t column, std::string target,
         std::string display = {}, std::string tooltip = {});
-    // Internal first-slice classic note insertion. Source-owned classic or
-    // threaded comments and VML relationships are rejected. Repeated calls may
-    // replace only the generated comments/VML parts created earlier in this
-    // PackageEditor session.
-    void set_basic_classic_notes_by_name(
-        std::string_view sheet_name, std::span<const ClassicNote> notes);
+    // Reads source-owned writer-canonical notes for public update/remove staging.
+    // Comments and VML payloads must exactly match the FastXLSX serializers.
+    [[nodiscard]] std::vector<ClassicNote> read_canonical_source_classic_notes_by_name(
+        std::string_view sheet_name) const;
+    // Internal classic note replacement. In insertion mode source-owned classic
+    // notes remain rejected. Explicit source-edit mode accepts only a pair of
+    // source comments/VML payloads proven byte-canonical by the writer
+    // serializers.
+    void set_basic_classic_notes_by_name(std::string_view sheet_name,
+        std::span<const ClassicNote> notes,
+        ClassicNoteSourceEditPolicy source_edit_policy);
     // Internal Patch helper for one worksheet-local data-validation rule. The
     // worksheet XML replacement is staged without relationship/content-type
     // mutation or formula/range synchronization.
@@ -741,10 +751,18 @@ public:
 
 private:
     struct ClassicNotePackageUpdate {
+        enum class Action {
+            Upsert,
+            Remove,
+        };
+
+        Action action = Action::Upsert;
         PartName comments_part;
         PartName vml_part;
         std::string comments_xml;
         std::string vml_xml;
+        std::string comments_relationship_id;
+        std::string vml_relationship_id;
     };
 
     explicit PackageEditor(PackageReader reader);

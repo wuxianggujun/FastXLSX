@@ -104,6 +104,7 @@ struct WorksheetLegacyDrawingRewritePlan {
     enum class Action {
         InsertBefore,
         PreserveExisting,
+        RemoveExisting,
     };
 
     Action action = Action::InsertBefore;
@@ -141,17 +142,18 @@ void write_worksheet_external_hyperlink_rewrite(
     const std::filesystem::path& output_path);
 
 /// Audits worksheet suffix ordering and either selects a schema-safe insertion
-/// boundary for one note VML reference or verifies the generated reference from
-/// an earlier call in the same Patch session. Source-owned legacyDrawing
-/// metadata is never accepted as generated state.
+/// boundary for one note VML reference, verifies an editable existing
+/// reference, or selects that reference for removal.
 [[nodiscard]] WorksheetLegacyDrawingRewritePlan
 plan_worksheet_legacy_drawing_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view relationship_id,
-    bool allow_existing_generated_reference);
+    bool allow_existing_reference,
+    bool remove_existing_reference);
 
-/// Streams a worksheet to a staged file while inserting or preserving the
-/// legacyDrawing reference selected by plan_worksheet_legacy_drawing_rewrite().
+/// Streams a worksheet to a staged file while inserting, preserving, or
+/// removing the legacyDrawing reference selected by
+/// plan_worksheet_legacy_drawing_rewrite().
 void write_worksheet_legacy_drawing_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view relationship_id,

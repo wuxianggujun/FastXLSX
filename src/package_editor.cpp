@@ -1,5 +1,7 @@
 ﻿#include "package_editor.hpp"
 
+#include "worksheet_comment_reader.hpp"
+
 #include <fastxlsx/detail/formula_reference_audit.hpp>
 #include <fastxlsx/detail/worksheet_metadata_rewriter.hpp>
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
@@ -3420,14 +3422,26 @@ struct ClassicNotePartTargets {
     PartName vml_part;
 };
 
-PartName generated_relationship_target_part(
+enum class ClassicNotePartOwnership {
+    SourceOwned,
+    SessionGenerated,
+};
+
+struct ClassicNotePartState {
+    PartName comments_part;
+    PartName vml_part;
+    std::string comments_relationship_id;
+    std::string vml_relationship_id;
+    ClassicNotePartOwnership ownership = ClassicNotePartOwnership::SourceOwned;
+};
+
+PartName classic_note_relationship_target_part(
     const PartName& owner_part, const Relationship& relationship)
 {
     if (relationship.target_mode != Relationship::TargetMode::Internal
         || relationship.target.empty()
         || relationship.target.find_first_of("?#") != std::string::npos) {
-        throw FastXlsxError(
-            "generated classic note relationship target is not a plain internal part");
+        throw FastXlsxError("classic note relationship target is not a plain internal part");
     }
     if (relationship.target.front() == '/') {
         return PartName(relationship.target);
@@ -3435,8 +3449,7 @@ PartName generated_relationship_target_part(
     const std::string& owner = owner_part.value();
     const std::size_t slash = owner.find_last_of('/');
     if (slash == std::string::npos) {
-        throw FastXlsxError(
-            "generated classic note relationship owner has no package directory");
+        throw FastXlsxError("classic note relationship owner has no package directory");
     }
     return PartName(owner.substr(0, slash) + "/" + relationship.target);
 }
@@ -3524,9 +3537,29 @@ ClassicNotePartTargets next_classic_note_part_targets(
     }
 }
 
-std::optional<ClassicNotePartTargets> current_generated_classic_note_parts(
-    const PackageManifest& manifest,
-    const std::vector<PackagePartReplacement>& replacements,
+void require_exclusive_classic_note_part_ownership(const PackageManifest& manifest,
+    const PartName& worksheet_part, const PartName& note_part,
+    std::string_view expected_relationship_id)
+{
+    const EditPlan removal_audit = PartRewritePlanner(manifest).plan_part_removal(
+        note_part, "classic note source ownership audit");
+    const EditPlanRemovedPart* audited_part = removal_audit.find_removed_part(note_part);
+    if (audited_part == nullptr || audited_part->inbound_relationships.size() != 1) {
+        throw FastXlsxError(
+            "classic note comments/VML part ownership is not exclusive to its worksheet");
+    }
+
+    const RemovedPartInboundRelationshipAudit& inbound =
+        audited_part->inbound_relationships.front();
+    if (inbound.owner_part != worksheet_part.value()
+        || inbound.relationship_id != expected_relationship_id) {
+        throw FastXlsxError(
+            "classic note comments/VML part is referenced outside its worksheet relationship");
+    }
+}
+
+std::optional<ClassicNotePartState> current_classic_note_parts(const PackageReader& reader,
+    const PackageManifest& manifest, const std::vector<PackagePartReplacement>& replacements,
     const PartName& worksheet_part)
 {
     const RelationshipSet* relationships = manifest.relationships_for(worksheet_part);
@@ -3539,7 +3572,7 @@ std::optional<ClassicNotePartTargets> current_generated_classic_note_parts(
     for (const Relationship& relationship : relationships->relationships()) {
         if (relationship.type == relationship_type_threaded_comment) {
             throw FastXlsxError(
-                "existing threaded comments are outside the basic classic note insertion slice");
+                "existing threaded comments cannot participate in basic classic note mutation");
         }
         if (relationship.type == relationship_type_comments) {
             if (comments_relationship != nullptr) {
@@ -3564,18 +3597,23 @@ std::optional<ClassicNotePartTargets> current_generated_classic_note_parts(
             "existing comments/VML relationship state is incomplete and cannot be edited");
     }
 
-    const PartName comments_part = generated_relationship_target_part(
-        worksheet_part, *comments_relationship);
-    const PartName vml_part = generated_relationship_target_part(
-        worksheet_part, *vml_relationship);
+    const PartName comments_part =
+        classic_note_relationship_target_part(worksheet_part, *comments_relationship);
+    const PartName vml_part =
+        classic_note_relationship_target_part(worksheet_part, *vml_relationship);
     const PackagePart* comments_manifest_part = manifest.find_part(comments_part);
     const PackagePart* vml_manifest_part = manifest.find_part(vml_part);
-    if (comments_manifest_part == nullptr || vml_manifest_part == nullptr
-        || !comments_manifest_part->generated || !vml_manifest_part->generated
-        || find_replacement(replacements, comments_part.zip_path()) == nullptr
-        || find_replacement(replacements, vml_part.zip_path()) == nullptr) {
-        throw FastXlsxError(
-            "source-owned classic comments or VML metadata is outside the basic insertion slice");
+    if (comments_manifest_part == nullptr || vml_manifest_part == nullptr) {
+        throw FastXlsxError("classic comments or VML relationship targets an unknown package part");
+    }
+    const bool comments_generated = comments_manifest_part->generated;
+    const bool vml_generated = vml_manifest_part->generated;
+    const bool comments_replaced =
+        find_replacement(replacements, comments_part.zip_path()) != nullptr;
+    const bool vml_replaced = find_replacement(replacements, vml_part.zip_path()) != nullptr;
+    if (comments_generated != vml_generated || comments_replaced != vml_replaced
+        || comments_generated != comments_replaced) {
+        throw FastXlsxError("classic note comments/VML ownership state is inconsistent");
     }
     const std::string* comments_type =
         manifest.content_types().content_type_for(comments_part);
@@ -3583,10 +3621,90 @@ std::optional<ClassicNotePartTargets> current_generated_classic_note_parts(
         manifest.content_types().content_type_for(vml_part);
     if (comments_type == nullptr || *comments_type != content_type_comments
         || vml_type == nullptr || *vml_type != content_type_vml) {
-        throw FastXlsxError(
-            "generated classic note parts have inconsistent content types");
+        throw FastXlsxError("classic note parts have inconsistent content types");
     }
-    return ClassicNotePartTargets {comments_part, vml_part};
+    if (!comments_generated
+        && (reader.find_entry(comments_part.zip_path()) == nullptr
+            || reader.find_entry(vml_part.zip_path()) == nullptr)) {
+        throw FastXlsxError("source-owned classic note part has no source package entry");
+    }
+
+    require_exclusive_classic_note_part_ownership(manifest, worksheet_part,
+        comments_part, comments_relationship->id);
+    require_exclusive_classic_note_part_ownership(
+        manifest, worksheet_part, vml_part, vml_relationship->id);
+
+    return ClassicNotePartState {
+        comments_part,
+        vml_part,
+        comments_relationship->id,
+        vml_relationship->id,
+        comments_generated ? ClassicNotePartOwnership::SessionGenerated
+                           : ClassicNotePartOwnership::SourceOwned,
+    };
+}
+
+std::string read_small_source_classic_note_entry(
+    const PackageReader& reader, const PartName& part_name, std::string_view purpose)
+{
+    const PackageReaderEntry* entry = reader.find_entry(part_name.zip_path());
+    if (entry == nullptr) {
+        throw FastXlsxError(
+            "source-owned classic note " + std::string(purpose) + " part has no package entry");
+    }
+    if (entry->uncompressed_size
+        > static_cast<std::uint64_t>(package_editor_metadata_xml_materialization_byte_limit)) {
+        throw FastXlsxError("source-owned classic note " + std::string(purpose)
+            + " part exceeds the small metadata edit limit");
+    }
+    return reader.read_entry(part_name.zip_path());
+}
+
+std::vector<ClassicNote> read_canonical_source_classic_notes(
+    const PackageReader& reader, const PartName& worksheet_part, const ClassicNotePartState& state)
+{
+    if (state.ownership != ClassicNotePartOwnership::SourceOwned) {
+        throw FastXlsxError("classic note source projection requires source-owned "
+                            "comments/VML parts");
+    }
+
+    const RelationshipSet* source_relationships = reader.relationships_for(worksheet_part);
+    const Relationship* source_comments = source_relationships == nullptr
+        ? nullptr
+        : source_relationships->find_by_id(state.comments_relationship_id);
+    const Relationship* source_vml = source_relationships == nullptr
+        ? nullptr
+        : source_relationships->find_by_id(state.vml_relationship_id);
+    if (source_comments == nullptr || source_vml == nullptr
+        || source_comments->type != relationship_type_comments
+        || source_vml->type != relationship_type_vml_drawing
+        || classic_note_relationship_target_part(worksheet_part, *source_comments)
+            != state.comments_part
+        || classic_note_relationship_target_part(worksheet_part, *source_vml) != state.vml_part) {
+        throw FastXlsxError("source classic note relationships do not match current package state");
+    }
+
+    std::vector<ClassicNote> notes;
+    WorksheetCommentReadCallbacks callbacks;
+    callbacks.on_comment = [&notes](const WorksheetCommentView& note) {
+        notes.push_back(ClassicNote {note.row, note.column, note.author, note.text});
+    };
+    const WorksheetCommentReadSummary summary =
+        read_worksheet_comments_from_package(reader, worksheet_part, callbacks);
+    if (notes.empty() || summary.comment_count != notes.size() || !summary.has_legacy_drawing) {
+        throw FastXlsxError("source classic note projection is incomplete");
+    }
+
+    const std::string comments_xml =
+        read_small_source_classic_note_entry(reader, state.comments_part, "comments");
+    const std::string vml_xml = read_small_source_classic_note_entry(reader, state.vml_part, "VML");
+    if (comments_xml != serialize_classic_comments(notes)) {
+        throw FastXlsxError("source classic comments payload is not FastXLSX writer-canonical");
+    }
+    if (vml_xml != serialize_classic_note_vml(notes)) {
+        throw FastXlsxError("source classic note VML payload is not FastXLSX writer-canonical");
+    }
+    return notes;
 }
 
 const PackagePart* source_part_for_entry_name(
@@ -8302,19 +8420,58 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
         }
     }
 
-    const bool rewrite_worksheet_relationships = !relationship_additions.empty();
+    const bool remove_classic_notes = classic_note_update.has_value()
+        && classic_note_update->action == ClassicNotePackageUpdate::Action::Remove;
+    const bool rewrite_worksheet_relationships =
+        !relationship_additions.empty() || remove_classic_notes;
     const bool rewrite_classic_note_content_types = classic_note_update.has_value();
     for (Relationship& relationship : relationship_additions) {
         updated_manifest.add_relationship(
             target_worksheet_part, std::move(relationship));
     }
-    if (classic_note_update.has_value()) {
+    if (classic_note_update.has_value() && !remove_classic_notes) {
         updated_manifest.content_types().add_default(
             "vml", std::string(content_type_vml));
         updated_manifest.add_part(classic_note_update->comments_part,
             std::string(content_type_comments)).mark_generated();
         updated_manifest.add_part(
             classic_note_update->vml_part, {}).mark_generated();
+    } else if (remove_classic_notes) {
+        RelationshipSet* worksheet_relationships =
+            updated_manifest.relationships_for(target_worksheet_part);
+        if (worksheet_relationships == nullptr
+            || worksheet_relationships->remove_by_id(classic_note_update->comments_relationship_id)
+                != 1
+            || worksheet_relationships->remove_by_id(classic_note_update->vml_relationship_id)
+                != 1) {
+            throw FastXlsxError(
+                "classic note removal could not remove its worksheet relationships");
+        }
+
+        const std::string comments_reason =
+            "classic comments part removed after deleting the final note";
+        const std::string vml_reason =
+            "classic note VML part removed after deleting the final note";
+        if (!updated_manifest.remove_part(classic_note_update->comments_part)
+            || !updated_manifest.remove_part(classic_note_update->vml_part)) {
+            throw FastXlsxError("classic note removal could not remove its comments/VML parts");
+        }
+        updated_edit_plan.remove_part(classic_note_update->comments_part, comments_reason);
+        updated_edit_plan.remove_part(classic_note_update->vml_part, vml_reason);
+        stage_part_removal_entries(updated_edit_plan, updated_replacements,
+            updated_entry_replacements, updated_omitted_entries, reader_,
+            classic_note_update->comments_part);
+        stage_part_removal_entries(updated_edit_plan, updated_replacements,
+            updated_entry_replacements, updated_omitted_entries, reader_,
+            classic_note_update->vml_part);
+
+        const bool has_remaining_vml_part = std::any_of(updated_manifest.parts().begin(),
+            updated_manifest.parts().end(), [](const PackagePart& part) {
+                return part.name.extension() == "vml";
+            });
+        if (!has_remaining_vml_part) {
+            (void)updated_manifest.content_types().remove_default("vml");
+        }
     }
 
     const EditPlan worksheet_plan =
@@ -8404,10 +8561,11 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     if (rewrite_content_types_for_calc_chain || rewrite_classic_note_content_types) {
         upsert_entry_replacement(reader_, updated_entry_replacements, "[Content_Types].xml",
             serialize_content_types(updated_manifest.content_types()));
-        updated_edit_plan.set_package_entry(
-            "[Content_Types].xml", PartWriteMode::LocalDomRewrite,
+        updated_edit_plan.set_package_entry("[Content_Types].xml", PartWriteMode::LocalDomRewrite,
             rewrite_classic_note_content_types
-                ? "content types updated for generated classic note comments/VML parts"
+                ? (remove_classic_notes
+                          ? "content types updated for final classic note removal"
+                          : "content types updated for generated classic note comments/VML parts")
                 : "content types updated for worksheet calcChain removal",
             PackageEntryAuditKind::ContentTypes);
     }
@@ -8437,19 +8595,22 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
         upsert_entry_replacement(reader_, updated_entry_replacements,
             worksheet_relationship_entry, serialize_relationships(*worksheet_relationships));
         remove_omitted_entry(updated_omitted_entries, worksheet_relationship_entry);
-        updated_edit_plan.set_package_entry(
-            worksheet_relationship_entry, PartWriteMode::LocalDomRewrite,
+        updated_edit_plan.set_package_entry(worksheet_relationship_entry,
+            PartWriteMode::LocalDomRewrite,
             classic_note_update.has_value()
-                ? "worksheet relationships updated for generated classic note parts"
+                ? (remove_classic_notes
+                          ? "worksheet relationships updated for "
+                            "final classic note removal"
+                          : "worksheet relationships updated for generated classic note parts")
                 : "worksheet relationships updated for external hyperlink edit",
             PackageEntryAuditKind::SourceRelationships, target_worksheet_part.value());
     }
 
-    if (classic_note_update.has_value()) {
+    if (classic_note_update.has_value() && !remove_classic_notes) {
         const std::string comments_reason =
-            "generated simple classic comments part for existing-workbook insertion";
+            "generated simple classic comments part for existing-workbook note mutation";
         const std::string vml_reason =
-            "generated hidden classic note VML part for existing-workbook insertion";
+            "generated hidden classic note VML part for existing-workbook note mutation";
         require_materialized_part_replacement_payload_size(
             classic_note_update->comments_part,
             classic_note_update->comments_xml.size(),
@@ -8790,10 +8951,28 @@ void PackageEditor::add_external_hyperlink_by_name(
     rewritten_source_file.release();
 }
 
-void PackageEditor::set_basic_classic_notes_by_name(
-    std::string_view sheet_name, std::span<const ClassicNote> notes)
+std::vector<ClassicNote> PackageEditor::read_canonical_source_classic_notes_by_name(
+    std::string_view sheet_name) const
 {
-    if (notes.empty()) {
+    const PartName worksheet_part =
+        resolve_worksheet_part_by_name_for_patch(reader_, manifest_, replacements_, sheet_name);
+    const std::optional<ClassicNotePartState> state =
+        current_classic_note_parts(reader_, manifest_, replacements_, worksheet_part);
+    if (!state.has_value()) {
+        throw FastXlsxError("worksheet has no classic note to edit");
+    }
+    if (state->ownership != ClassicNotePartOwnership::SourceOwned) {
+        throw FastXlsxError("classic note source projection cannot read session-generated parts");
+    }
+    return read_canonical_source_classic_notes(reader_, worksheet_part, *state);
+}
+
+void PackageEditor::set_basic_classic_notes_by_name(std::string_view sheet_name,
+    std::span<const ClassicNote> notes, ClassicNoteSourceEditPolicy source_edit_policy)
+{
+    const bool removing_all_notes = notes.empty();
+    if (removing_all_notes
+        && source_edit_policy == ClassicNoteSourceEditPolicy::RejectSourceOwned) {
         throw FastXlsxError("classic note list cannot be empty");
     }
 
@@ -8815,23 +8994,37 @@ void PackageEditor::set_basic_classic_notes_by_name(
         }
     }
 
-    std::string comments_xml = serialize_classic_comments(notes);
-    std::string vml_xml = serialize_classic_note_vml(notes);
-    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
-        reader_, manifest_, replacements_, sheet_name);
+    std::string comments_xml;
+    std::string vml_xml;
+    if (!removing_all_notes) {
+        comments_xml = serialize_classic_comments(notes);
+        vml_xml = serialize_classic_note_vml(notes);
+    }
+    const PartName worksheet_part =
+        resolve_worksheet_part_by_name_for_patch(reader_, manifest_, replacements_, sheet_name);
     const CurrentWorksheetInputSource input_source =
         require_current_worksheet_input_source(
             reader_, replacements_, entry_replacements_, worksheet_part,
             "classic note worksheet edit");
 
-    const std::optional<ClassicNotePartTargets> generated_parts =
-        current_generated_classic_note_parts(
-            manifest_, replacements_, worksheet_part);
-    const bool updating_generated_notes = generated_parts.has_value();
-    const ClassicNotePartTargets part_targets = generated_parts.has_value()
-        ? *generated_parts
-        : next_classic_note_part_targets(
-              reader_, manifest_, replacements_, omitted_entries_);
+    const std::optional<ClassicNotePartState> current_parts =
+        current_classic_note_parts(reader_, manifest_, replacements_, worksheet_part);
+    const bool editing_existing_notes = current_parts.has_value();
+    if (current_parts.has_value()
+        && current_parts->ownership == ClassicNotePartOwnership::SourceOwned) {
+        if (source_edit_policy != ClassicNoteSourceEditPolicy::AllowCanonicalSourceOwned) {
+            throw FastXlsxError("source-owned classic comments or VML metadata requires "
+                                "the canonical source-edit policy");
+        }
+        (void)read_canonical_source_classic_notes(reader_, worksheet_part, *current_parts);
+    }
+    if (!current_parts.has_value() && removing_all_notes) {
+        throw FastXlsxError("worksheet has no classic note to remove");
+    }
+
+    const ClassicNotePartTargets part_targets = current_parts.has_value()
+        ? ClassicNotePartTargets {current_parts->comments_part, current_parts->vml_part}
+        : next_classic_note_part_targets(reader_, manifest_, replacements_, omitted_entries_);
 
     RelationshipSet prospective_relationships;
     if (const RelationshipSet* existing = manifest_.relationships_for(worksheet_part)) {
@@ -8839,24 +9032,16 @@ void PackageEditor::set_basic_classic_notes_by_name(
     }
     std::vector<Relationship> relationship_additions;
     std::string vml_relationship_id;
-    if (updating_generated_notes) {
-        for (const Relationship& relationship :
-             prospective_relationships.relationships()) {
-            if (relationship.type == relationship_type_vml_drawing) {
-                vml_relationship_id = relationship.id;
-            }
-        }
-        if (vml_relationship_id.empty()) {
-            throw FastXlsxError(
-                "generated classic note state is missing its VML relationship id");
-        }
+    std::string comments_relationship_id;
+    if (editing_existing_notes) {
+        vml_relationship_id = current_parts->vml_relationship_id;
+        comments_relationship_id = current_parts->comments_relationship_id;
     } else {
         vml_relationship_id = next_relationship_id(prospective_relationships);
         Relationship vml_relationship {
             vml_relationship_id,
             std::string(relationship_type_vml_drawing),
-            relative_part_relationship_target(
-                worksheet_part, part_targets.vml_part),
+            relative_part_relationship_target(worksheet_part, part_targets.vml_part),
             Relationship::TargetMode::Internal,
         };
         prospective_relationships.add(vml_relationship);
@@ -8865,21 +9050,28 @@ void PackageEditor::set_basic_classic_notes_by_name(
         Relationship comments_relationship {
             next_relationship_id(prospective_relationships),
             std::string(relationship_type_comments),
-            relative_part_relationship_target(
-                worksheet_part, part_targets.comments_part),
+            relative_part_relationship_target(worksheet_part, part_targets.comments_part),
             Relationship::TargetMode::Internal,
         };
+        comments_relationship_id = comments_relationship.id;
         prospective_relationships.add(comments_relationship);
         relationship_additions.push_back(std::move(comments_relationship));
+    }
+    if (removing_all_notes) {
+        if (prospective_relationships.remove_by_id(comments_relationship_id) != 1
+            || prospective_relationships.remove_by_id(vml_relationship_id) != 1) {
+            throw FastXlsxError("classic note removal could not stage relationship removal");
+        }
     }
 
     CurrentWorksheetInputChunkReader planning_reader(
         reader_, worksheet_part, input_source,
         "current worksheet input for classic note planning");
-    const WorksheetLegacyDrawingRewritePlan rewrite_plan =
-        plan_worksheet_legacy_drawing_rewrite(
-            [&](std::string& chunk) { return planning_reader(chunk); },
-            vml_relationship_id, updating_generated_notes);
+    const WorksheetLegacyDrawingRewritePlan rewrite_plan = plan_worksheet_legacy_drawing_rewrite(
+        [&](std::string& chunk) {
+            return planning_reader(chunk);
+        },
+        vml_relationship_id, editing_existing_notes, removing_all_notes);
 
     ScopedPackageEditorTempFile rewritten_source_file;
     CurrentWorksheetInputChunkReader output_reader(
@@ -8899,14 +9091,31 @@ void PackageEditor::set_basic_classic_notes_by_name(
             worksheet_part, staged_source, &prospective_relationships);
 
     std::vector<std::string> commit_notes;
-    commit_notes.emplace_back(
-        "basic classic note insertion generates simple comments and hidden VML parts; "
-        "source-owned classic/threaded comments and VML relationships remain unsupported");
+    if (removing_all_notes) {
+        commit_notes.emplace_back(
+            "final basic classic note removal deletes the worksheet legacyDrawing "
+            "reference, "
+            "comments/VML relationships and owned parts transactionally");
+    } else if (current_parts.has_value()
+        && current_parts->ownership == ClassicNotePartOwnership::SourceOwned) {
+        commit_notes.emplace_back("writer-canonical source classic notes were audited exactly and "
+                                  "converted to "
+                                  "session-owned generated comments/VML replacements");
+    } else {
+        commit_notes.emplace_back(
+            "basic classic note edit generates simple comments and hidden VML "
+            "parts; "
+            "threaded comments and non-canonical source VML remain unsupported");
+    }
     ClassicNotePackageUpdate package_update {
+        removing_all_notes ? ClassicNotePackageUpdate::Action::Remove
+                           : ClassicNotePackageUpdate::Action::Upsert,
         part_targets.comments_part,
         part_targets.vml_part,
         std::move(comments_xml),
         std::move(vml_xml),
+        std::move(comments_relationship_id),
+        std::move(vml_relationship_id),
     };
     replace_worksheet_part_prevalidated_chunks(
         worksheet_part,

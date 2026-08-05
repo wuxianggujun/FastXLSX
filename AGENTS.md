@@ -26,7 +26,7 @@ FastXLSX 是 C++20 / MSVC 2026 优先的 XLSX 创建与编辑库，公开 Stream
 - 公式不求值、不生成 cached value、不完整重建 calcChain。
 - `read_worksheet_images()` 只读投影 writer-compatible two-cell picture anchor 并审计 PNG/JPEG media；`replace_image()` 只替换已有 media bytes；`add_image()` 是 new-workbook insertion，三者均不是完整 drawing 编辑。
 - `read_worksheet_comments()` 只读投影 classic comments/notes 的 single-cell ref、resolved author 与 simple text；optional legacy VML 只审计 relationship/part presence，不解析 payload，也不形成 comments/VML/threaded-comments 编辑能力。
-- `WorkbookEditor::add_note()` 只为没有 source-owned classic/threaded comments 或任何 VML relationship 的 planned worksheet 生成本会话拥有的 simple comments/hidden VML parts；同会话可追加并重新生成，目标 cell 不要求存在。它不解析/合并已有 VML，不提供 update/delete、rich text、shape customization、persons 或通用 comments/VML 编辑。
+- `WorkbookEditor::add_note()` 只为没有 source-owned classic/threaded comments 或任何 VML relationship 的 planned worksheet 生成本会话拥有的 simple comments/hidden VML parts；`update_note()` / `remove_note()` 只接管 bounded comments projection 与 comments/VML serializers exact 匹配、且归一化 relationship target 后没有其他 worksheet、part 或 package-root 入边的 writer-canonical source pair。入边审计必须识别 percent-encoded path 与带 query/fragment 的 URI alias。最后一条删除同步清理 `<legacyDrawing>`、relationships、parts 与不再使用的 content types；目标 cell 不要求存在且不修改。Rich/threaded comments、unknown/Excel-rewritten VML、shape customization、persons 与通用 comments/VML 编辑不支持。
 - `FASTXLSX_ENABLE_IMAGES=OFF` 不需要 stb，public image symbol 调用抛错，`FASTXLSX_HAS_IMAGES=0` 传播给 consumer。
 
 ## 架构约束
@@ -63,7 +63,11 @@ Patch CRC internal A/B：`windows-nmake-release-patch-crc-minizip-profile` 与 `
 
 ## 验证
 
-- 代码：focused test → production CTest → 相关 profile → install/consumer smoke。
+- 验证前先按改动规模定级，默认执行最小充分验证，不把每个小切片自动升级为全量测试。
+- 文档/skill-only 变更只运行 skill validator、Markdown links、UTF-8/LF、deleted-doc/high-risk wording 与 `git diff --check`；没有代码或构建契约变化时不编译、不运行 CTest。
+- 小功能、单一窄 public API、局部 bugfix 或保守 guard 补强：只构建直接受影响的 library/test target，运行对应 focused test 与证明共享不变量所必需的少量邻接测试。只有实际涉及特定 profile、install/export 或 Office/OpenPyXML 输出边界时才追加对应 smoke；默认不运行 production 全量 CTest。
+- 只有大功能完成收口、active queue 明确标记 release/milestone gate、构建/测试基础设施发生大范围变化，或用户明确要求时，才运行全量 production build + CTest；stored/no-images/profile/install 仍按实际边界选择，不机械全跑。
+- Focused 结果暴露跨模块回归时先扩到相关 target；只有风险已经升级为全局时才升级全量。文档必须准确记录实际运行范围，不把分段或未完成的测试写成一次全量通过。
 - Patch：failure-before-state-change、retry、reopen、unknown part、relationship/content type/calc side effects，以及跨状态 mutation 的提交前故障注入。
 - In-memory：typed strict diagnostics、explicit lossy、generic policy mismatch、guardrail、no-state-pollution、two-phase save handoff、post-stage failure retry、move/handle lifecycle。
 - Streaming：row order、无 DOM/dense matrix、package side effects。

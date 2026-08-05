@@ -182,6 +182,9 @@ bool workbook_editor_edit_summaries_equal(
             || left.internal_hyperlink_count != right.internal_hyperlink_count
             || left.external_hyperlink_count != right.external_hyperlink_count
             || left.classic_note_count != right.classic_note_count
+            || left.classic_note_addition_count != right.classic_note_addition_count
+            || left.classic_note_update_count != right.classic_note_update_count
+            || left.classic_note_removal_count != right.classic_note_removal_count
             || left.data_validation_count != right.data_validation_count
             || left.auto_filter_changed != right.auto_filter_changed
             || left.auto_filter_range.has_value() != right.auto_filter_range.has_value()

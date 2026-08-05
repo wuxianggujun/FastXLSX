@@ -1,18 +1,45 @@
 # 测试流程
 
-## 顺序
+## 分级策略
 
-1. 运行与改动最接近的 focused target/test。
-2. 运行 production preset CTest。
-3. 依赖/profile 变更时运行 stored、no-images 和 install/consumer smoke。
-4. OpenXML 输出变更再做 ZIP/XML/Office smoke。
+验证前先定级，默认选择能证明本次改动正确的最小集合。小功能不因为位于 public header、Patch 或 package 代码中就自动升级为全量测试。
+
+### T0 文档与 skill
+
+- 适用：只修改 Markdown、Doxygen wording、agent guide 或 project skill，且不改变代码/构建契约。
+- 运行：相关 `quick_validate.py`、Markdown links、UTF-8/LF、deleted-doc/high-risk wording、`git diff --check`。
+- 不运行：编译、CTest、profile 和 install consumer。
+
+### T1 小功能与窄修复
+
+- 适用：单一窄 public API、小型 feature slice、局部 bugfix、guardrail/diagnostic/test 补强。
+- 先只构建 `fastxlsx` 与直接受影响的 test target，运行精确 focused CTest；共享 serializer/helper/transaction 被修改时，再追加证明该共享不变量所需的少量邻接 target。
+- 只有改动实际触及相应边界时才追加 targeted stored/no-images/profile、install consumer、OpenPyXL 或 Excel smoke。Public/install smoke 不等于必须运行全量 CTest。
+- 默认禁止运行 production 全量 CTest。Focused 结果若暴露跨模块回归，先扩到相关 target；只有风险事实已经扩大为全局时才升级到 T2。
+
+### T2 大功能与里程碑
+
+- 只适用于 active queue 明确标记的大功能收口、release/milestone gate、构建/测试基础设施的大范围变化，或用户明确要求全量验证。
+- 运行 production 全量 build + CTest，再按功能实际覆盖追加 stored/no-images/profile/install/consumer 与 ZIP/XML/Office smoke。
+- Windows 新链接 executable 的首次运行若仅出现 60 秒冷启动 timeout，记录首轮结果并只串行复跑 timeout target；除非 release gate 明确要求一次 clean full run，否则不为小切片再次重跑整套。
+
+所有层级都必须记录真实命令范围与结果；不得把 focused、分段复跑、被中止的全量测试写成一次 `N/N` 全量通过。
 
 ## 命令
 
+T1 focused 示例：
+
+```powershell
+cmake --build --preset windows-nmake-release --target <affected-target> -j 1
+ctest --test-dir build\windows-nmake-release -R "^<focused-test>$" --output-on-failure -j 1
+```
+
+T2 full gate：
+
 ```powershell
 cmake --preset windows-nmake-release
-cmake --build --preset windows-nmake-release
-ctest --preset windows-nmake-release
+cmake --build --preset windows-nmake-release -j 1
+ctest --preset windows-nmake-release -j 1
 ```
 
 普通 CTest timeout 为 60 秒，`noTestsAction=error`；public-state 测试已全部拆为 standalone targets，不再保留专用 120 秒 legacy shard。Benchmark 不进入默认 CTest。
@@ -24,7 +51,7 @@ ctest --preset windows-nmake-release
 - In-memory：guardrail、strict rejection category/context、`worksheet()`/`try_worksheet()` typed propagation、explicit lossy opt-in、generic policy mismatch、malformed-source precedence、no-state-pollution、`last_edit_error()` preservation、dirty flush/recovery。
 - Streaming：row order、无 DOM/dense matrix、strings/styles/media/metadata package side effects、body buffer 上限、成功 close 后 temporary resource count 与 feature construction state 为零。
 - Streaming classic notes：one-based coordinate/Excel bounds、non-empty author/text、duplicate-cell rejection、unwritten target cell、author first-use dedup/source order、UTF-8/XML escaping/`xml:space`、simple comments XML、hidden legacy VML coordinates、compact per-worksheet part numbering、comments/VML content types，以及 external hyperlink/spreadsheet drawing/VML/comments/table relationship id 与 worksheet suffix schema ordering。覆盖 stored/production DEFLATE、本库 comments reader round-trip、close 后 construction-state release、失败不污染/retry、OpenPyXL 与本机 Excel reopen；不把成功 reopen 扩大为 rich/threaded/visibility/shape 或 existing-workbook edit 支持。
-- Patch classic notes：one-based coordinate/Excel bounds、non-empty author/text、duplicate-cell rejection、missing target cell、same-session regeneration、author first-use dedup、UTF-8/XML escaping/`xml:space`、hidden VML、compact paired part numbering、relationship id/content types 与 suffix ordering。另测 source-owned classic/threaded comments 和任何 VML relationship 拒绝、unknown entry/unrelated relationship/cell preservation、planned rename/added worksheet、worksheet removal guard、failure hook before commit、failed save retry、stored/production DEFLATE bounded-reader reopen、OpenPyXL/Excel reopen；不得扩大为 existing-object merge/update/delete、rich text、shape customization 或通用 VML 编辑。
+- Patch classic notes：one-based coordinate/Excel bounds、non-empty author/text、duplicate/missing target、same-session add/update/remove regeneration、identical update no-op、final/add/update/remove diagnostics、author first-use dedup、UTF-8/XML escaping/`xml:space`、hidden VML、compact paired part numbering、relationship id/content types 与 suffix ordering。Add 另测 source-owned classic/threaded comments 和任何 VML relationship 拒绝；update/remove 另测 comments/VML serializer exact audit、rich/threaded/unknown VML rejection、其他 worksheet/part/package-root 入边拒绝，并覆盖 percent-encoded path 与 query/fragment URI alias，最后一条 `<legacyDrawing>`/relationships/parts/content-types 清理和其他 VML preservation。共同覆盖 unknown entry/unrelated relationship/cell preservation、planned rename/added worksheet、worksheet removal guard、failure-before-state-change、failed save retry、stored/production DEFLATE bounded-reader reopen、OpenPyXL/Excel reopen；不得扩大为任意 source merge、rich text、shape customization 或通用 VML 编辑。
 - Streaming read：stored + production DEFLATE、row/cell callback order、typed number/boolean/text/error/shared index、formula/cached split、style index、borrowed view 复制、callback exception 原样传播和 entry retry；覆盖 XML window/active-cell text guardrail、missing/duplicate/out-of-order coordinate、shared/style relationship、rich/formula metadata rejection 与 malformed XML diagnostics。
 - Bounded simple sharedStrings：stored + production DEFLATE、simple/empty/entity decode、zero-based source order、borrowed copy、跨 package chunk token、callback exception retry、XML window/item-text guardrail、relationship target/content type，以及 rich/phonetic/extension/extra metadata 和 malformed XML rejection。
 - Bounded sharedStrings runs：stored + production DEFLATE、item start/run/item end 顺序、simple 单 run compatibility、rich run boundary、borrowed text copy、owning bold/italic/direct-ARGB、三类 callback exception retry、跨 package chunk token、XML window/item/run/runs-per-item/nesting guardrail、relationship target/content type，以及 mixed shape、phonetic/extension、非默认 font/theme/tint、unsupported property 和 malformed QName/boundary rejection。

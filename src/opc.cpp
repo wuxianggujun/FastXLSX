@@ -819,6 +819,30 @@ const ContentTypeOverride& ContentTypesManifest::add_override(
     return overrides_.back();
 }
 
+bool ContentTypesManifest::remove_default(std::string_view extension) noexcept
+{
+    while (!extension.empty() && extension.front() == '.') {
+        extension.remove_prefix(1);
+    }
+
+    const auto matches_extension = [extension](const ContentTypeDefault& value) {
+        if (value.extension.size() != extension.size()) {
+            return false;
+        }
+
+        for (std::size_t index = 0; index < extension.size(); ++index) {
+            if (value.extension[index] != to_ascii_lower(extension[index])) {
+                return false;
+            }
+        }
+        return true;
+    };
+    const auto old_size = defaults_.size();
+    defaults_.erase(
+        std::remove_if(defaults_.begin(), defaults_.end(), matches_extension), defaults_.end());
+    return old_size != defaults_.size();
+}
+
 bool ContentTypesManifest::remove_override(const PartName& part_name) noexcept
 {
     const auto old_size = overrides_.size();
@@ -895,6 +919,11 @@ const ContentTypeOverride& ContentTypeRegistry::add_override(
     PartName part_name, std::string content_type)
 {
     return manifest_.add_override(std::move(part_name), std::move(content_type));
+}
+
+bool ContentTypeRegistry::remove_default(std::string_view extension) noexcept
+{
+    return manifest_.remove_default(extension);
 }
 
 const std::string* ContentTypeRegistry::content_type_for(

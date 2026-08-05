@@ -254,9 +254,18 @@ struct WorkbookEditorWorksheetEditSummary {
     /// Zero when no external hyperlink edit is queued.
     std::size_t external_hyperlink_count = 0;
 
-    /// Number of simple classic notes queued for generated comments/VML parts
-    /// on this planned worksheet. Zero when no classic note edit is queued.
+    /// Final number of simple classic notes retained by queued note edits on
+    /// this planned worksheet. This may be zero after removing the final note.
     std::size_t classic_note_count = 0;
+
+    /// Number of successful classic note additions queued for this worksheet.
+    std::size_t classic_note_addition_count = 0;
+
+    /// Number of successful classic note updates queued for this worksheet.
+    std::size_t classic_note_update_count = 0;
+
+    /// Number of successful classic note removals queued for this worksheet.
+    std::size_t classic_note_removal_count = 0;
 
     /// Number of worksheet-local data-validation rules appended for this
     /// planned worksheet. Zero when no data-validation edit is queued.
@@ -3164,13 +3173,14 @@ public:
     /// and classic_note_count; a failed call publishes no package or public
     /// state, while a failed save retains the staged notes for retry.
     ///
-    /// This first slice requires the source/current worksheet to have no
+    /// Addition requires the source/current worksheet to have no
     /// source-owned classic comments, threaded comments, or VML relationship.
     /// Such state is rejected rather than parsed, replaced, merged, or repaired.
     /// Other worksheet relationships and unknown package entries are preserved.
-    /// Rich text, visible/custom note shapes, update/delete, threaded comments,
-    /// persons parts, cell/formula synchronization, and general VML editing are
-    /// outside this API.
+    /// Use update_note() or remove_note() to take ownership of writer-canonical
+    /// source notes before combining further same-session note edits. Rich text,
+    /// visible/custom shapes, threaded comments, persons parts, cell/formula
+    /// synchronization, and general VML editing remain outside this API.
     ///
     /// @param sheet_name Existing current-planned worksheet name.
     /// @param cell One-based worksheet coordinate receiving the note.
@@ -3185,6 +3195,59 @@ public:
         WorksheetCellReference cell,
         std::string author,
         std::string text);
+
+    /// Updates one simple classic note by its one-based worksheet coordinate.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. A first
+    /// source edit is accepted only when the bounded comments projection succeeds
+    /// and both source comments XML and legacy VML bytes exactly match the
+    /// current FastXLSX serializers. After percent-decoding, removing a target
+    /// query/fragment, and normalizing the target part name, the comments/VML
+    /// parts must not be referenced by another worksheet, package part, or
+    /// package-root relationship. This exact audit proves writer-compatible
+    /// note order, author/text representation, shape
+    /// numbering, VML ClientData coordinates, and exclusive worksheet ownership
+    /// before the parts become session-owned generated replacements. Threaded
+    /// comments, rich text, unknown or Excel-rewritten VML, additional VML
+    /// relationships, shared parts, and custom shapes fail before state
+    /// publication. The target cell is not created or styled.
+    ///
+    /// A missing target fails. Repeating the exact current author/text is a clean
+    /// no-op: it clears last_edit_error() but does not advance pending/unsaved
+    /// counts or publish a note diagnostic. Successful edits retain source order,
+    /// regenerate the paired comments/VML parts transactionally, and remain
+    /// retryable after save failure.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param cell One-based coordinate of the existing simple note.
+    /// @param author Replacement non-empty simple author.
+    /// @param text Replacement non-empty simple note text.
+    /// @throws FastXlsxError if the note is absent, input/source semantics are
+    /// unsupported, or transactional staging fails. Failure publishes no package
+    /// or public state.
+    void update_note(std::string_view sheet_name, WorksheetCellReference cell, std::string author,
+        std::string text);
+
+    /// Removes one simple classic note by its one-based worksheet coordinate.
+    ///
+    /// API mode and canonical source audit match update_note(). A missing target
+    /// fails. Removing a non-final note regenerates the paired generated parts in
+    /// retained source order. Removing the final note also removes the worksheet
+    /// `<legacyDrawing>`, its comments/VML relationships and parts, the comments
+    /// content-type override, and the VML default when no other VML part remains.
+    /// All worksheet XML, relationships, parts, content types, manifest, package
+    /// plan, temporary ownership, and public diagnostics are staged and committed
+    /// together; failure retains the prior state for retry.
+    ///
+    /// This API does not delete or alter the target cell, value, style, formula,
+    /// unrelated relationships, unknown parts, or calculation metadata.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param cell One-based coordinate of the existing simple note.
+    /// @throws FastXlsxError if the note is absent, input/source semantics are
+    /// unsupported, or transactional staging fails. Failure publishes no package
+    /// or public state.
+    void remove_note(std::string_view sheet_name, WorksheetCellReference cell);
 
     /// Appends one worksheet-local data-validation rule for one range.
     ///

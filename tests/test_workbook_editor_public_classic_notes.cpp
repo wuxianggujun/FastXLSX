@@ -118,6 +118,27 @@ std::filesystem::path write_source_owned_note_source(std::string_view name)
     return path;
 }
 
+std::filesystem::path write_canonical_note_edit_source(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    auto data = writer.add_worksheet("Data");
+    data.append_row({fastxlsx::CellView::text("source payload")});
+    data.add_external_hyperlink(1, 1, "https://example.invalid/note-edit");
+    data.add_note(1, 1, "Alice", "First source note");
+    data.add_note(2, 2, "Bob", "Second source note");
+    data.add_note(3, 3, "Alice", "Third source note");
+    auto untouched = writer.add_worksheet("Untouched");
+    untouched.append_row({fastxlsx::CellView::text("preserve me")});
+    writer.close();
+
+    auto entries = fastxlsx::test::read_zip_entries(path);
+    fastxlsx::test::insert_zip_entry(
+        entries, "custom/source-note-edit.bin", "preserve source note unknown entry");
+    fastxlsx::test::write_stored_zip_entries(path, entries);
+    return path;
+}
+
 std::filesystem::path write_threaded_comment_relationship_source(std::string_view name)
 {
     const std::filesystem::path path = write_two_sheet_source(name);
@@ -439,6 +460,266 @@ void test_rejects_source_owned_comment_threaded_and_vml_state()
         "source-owned VML rejection should preserve clean editor state");
 }
 
+void test_updates_removes_and_composes_canonical_source_notes()
+{
+    const std::filesystem::path source =
+        write_canonical_note_edit_source("fastxlsx-workbook-editor-classic-note-source-edit.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-classic-note-source-edit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.update_note("Data", {2, 2}, "Updated & Author", " updated <text> ");
+    editor.remove_note("Data", {1, 1});
+    editor.add_note("Data", {4, 4}, "Patch", "Added after source takeover");
+    editor.update_note("Data", {4, 4}, "Patch 2", "Updated added note");
+    editor.rename_sheet("Data", "Renamed Data");
+
+    const auto summaries = editor.pending_worksheet_edits();
+    const auto* summary = find_summary(summaries, "Renamed Data");
+    check(summary != nullptr && summary->renamed && summary->classic_note_count == 3
+            && summary->classic_note_addition_count == 1 && summary->classic_note_update_count == 2
+            && summary->classic_note_removal_count == 1,
+        "source note diagnostics should retain final/add/update/remove counts "
+        "across rename");
+    check(editor.pending_change_count() == 5 && editor.unsaved_change_count() == 5,
+        "source note mutations plus rename should advance public watermarks");
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.at("custom/source-note-edit.bin") == "preserve source note unknown entry",
+        "source note edit should preserve unknown package entries");
+    check(entries.at("xl/worksheets/sheet2.xml") == source_entries.at("xl/worksheets/sheet2.xml"),
+        "source note edit should preserve unrelated worksheet payloads");
+    check_contains(entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
+        "https://example.invalid/note-edit",
+        "source note edit should preserve unrelated worksheet relationships");
+
+    const std::string& comments = entries.at("xl/comments1.xml");
+    check_not_contains(
+        comments, R"(ref="A1")", "source note removal should remove the target comment");
+    check_contains(comments,
+        R"(<comment ref="B2" authorId="0"><text><t xml:space="preserve"> updated &lt;text&gt; </t></text></comment>)",
+        "source note update should replace and escape author/text in retained "
+        "order");
+    check_contains(comments,
+        R"(<comment ref="C3" authorId="1"><text><t>Third source note</t></text></comment>)",
+        "source note edit should retain later source notes");
+    check_contains(comments,
+        R"(<comment ref="D4" authorId="2"><text><t>Updated added note</t></text></comment>)",
+        "same-session add/update should compose after source ownership transfer");
+    check_contains(comments,
+        "<authors><author>Updated &amp; "
+        "Author</author><author>Alice</author><author>Patch 2</author></authors>",
+        "source note regeneration should rebuild authors in final first-use "
+        "order");
+
+    const std::string& vml = entries.at("xl/drawings/vmlDrawing1.vml");
+    check(count_occurrences(vml, "<v:shape id=") == 3,
+        "source note regeneration should retain one VML shape per final note");
+    check_contains(vml, "<x:Row>1</x:Row><x:Column>1</x:Column>",
+        "updated source note should retain its VML coordinate");
+    check_contains(vml, "<x:Row>3</x:Row><x:Column>3</x:Column>",
+        "same-session added note should receive a canonical VML coordinate");
+
+    fastxlsx::WorksheetCommentReadSummary read_summary;
+    const auto notes = read_notes(output, "Renamed Data", read_summary);
+    check(notes.size() == 3 && notes[0].row == 2 && notes[0].column == 2
+            && notes[0].author == "Updated & Author" && notes[0].text == " updated <text> "
+            && notes[1].row == 3 && notes[2].row == 4,
+        "source note edits should reopen in final retained order");
+}
+
+void test_update_noop_missing_targets_and_canonical_rejection()
+{
+    const std::filesystem::path source =
+        write_source_owned_note_source("fastxlsx-workbook-editor-classic-note-source-noop.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(threw_fastxlsx_error([&] {
+        editor.remove_note("Data", {2, 2});
+    }),
+        "classic note removal should reject a missing target");
+    check(editor.last_edit_error().has_value() && !editor.has_pending_changes(),
+        "missing source note removal should preserve clean state and record an "
+        "error");
+    editor.update_note("Data", {1, 1}, "Source", "Owned by the source package");
+    check(!editor.has_pending_changes() && !editor.has_unsaved_changes()
+            && !editor.last_edit_error().has_value(),
+        "identical source note update should be a clean no-op and clear the "
+        "error");
+    check(threw_fastxlsx_error([&] {
+        editor.update_note("Data", {2, 2}, "Missing", "Missing");
+    }),
+        "classic note update should reject a missing target");
+    check(threw_fastxlsx_error([&] {
+        editor.update_note("Data", {1, 1}, "", "Invalid");
+    }),
+        "classic note update should reject an empty author");
+    check(!editor.has_pending_changes(), "invalid source note updates should not publish state");
+
+    auto comments_entries = fastxlsx::test::read_zip_entries(source);
+    replace_first_or_throw(comments_entries.at("xl/comments1.xml"), "</comments>", " </comments>");
+    const std::filesystem::path noncanonical_comments =
+        artifact("fastxlsx-workbook-editor-classic-note-noncanonical-comments.xlsx");
+    fastxlsx::test::write_stored_zip_entries(noncanonical_comments, comments_entries);
+    fastxlsx::WorkbookEditor comments_editor =
+        fastxlsx::WorkbookEditor::open(noncanonical_comments);
+    check(threw_fastxlsx_error([&] {
+        comments_editor.update_note("Data", {1, 1}, "Source", "Changed");
+    }),
+        "source note update should reject non-canonical comments bytes");
+    check(!comments_editor.has_pending_changes(),
+        "non-canonical comments rejection should preserve clean state");
+
+    auto vml_entries = fastxlsx::test::read_zip_entries(source);
+    replace_first_or_throw(
+        vml_entries.at("xl/drawings/vmlDrawing1.vml"), "visibility:hidden", "visibility:visible");
+    const std::filesystem::path noncanonical_vml =
+        artifact("fastxlsx-workbook-editor-classic-note-noncanonical-vml.xlsx");
+    fastxlsx::test::write_stored_zip_entries(noncanonical_vml, vml_entries);
+    fastxlsx::WorkbookEditor vml_editor = fastxlsx::WorkbookEditor::open(noncanonical_vml);
+    check(threw_fastxlsx_error([&] {
+        vml_editor.remove_note("Data", {1, 1});
+    }),
+        "source note removal should reject non-canonical VML bytes");
+    check(!vml_editor.has_pending_changes(),
+        "non-canonical VML rejection should preserve clean state");
+
+    const std::filesystem::path shared_source =
+        artifact("fastxlsx-workbook-editor-classic-note-shared-parts.xlsx");
+    fastxlsx::WorkbookWriter shared_writer = fastxlsx::WorkbookWriter::create(shared_source);
+    auto shared_data = shared_writer.add_worksheet("Data");
+    shared_data.add_note(1, 1, "Data", "Target note");
+    auto shared_other = shared_writer.add_worksheet("Other");
+    shared_other.add_note(1, 1, "Other", "Shared target");
+    shared_writer.close();
+    auto shared_entries = fastxlsx::test::read_zip_entries(shared_source);
+    replace_first_or_throw(shared_entries.at("xl/worksheets/_rels/sheet2.xml.rels"),
+        "../comments2.xml", "../%63omments1.xml#shared");
+    replace_first_or_throw(shared_entries.at("xl/worksheets/_rels/sheet2.xml.rels"),
+        "../drawings/vmlDrawing2.vml", "../drawings/%76mlDrawing1.vml?shared=1");
+    fastxlsx::test::write_stored_zip_entries(shared_source, shared_entries);
+    fastxlsx::WorkbookEditor shared_editor = fastxlsx::WorkbookEditor::open(shared_source);
+    check(threw_fastxlsx_error([&] {
+        shared_editor.update_note("Data", {1, 1}, "Data", "Rejected shared edit");
+    }),
+        "source note update should reject URI-aliased comments/VML parts shared by another worksheet");
+    check(!shared_editor.has_pending_changes(),
+        "shared classic note part rejection should preserve clean state");
+
+    auto root_shared_entries = fastxlsx::test::read_zip_entries(source);
+    replace_first_or_throw(root_shared_entries.at("_rels/.rels"), "</Relationships>",
+        R"(<Relationship Id="rIdSharedClassicNote" Type="urn:fastxlsx:test:shared-classic-note" Target="xl/%63omments1.xml#shared"/></Relationships>)");
+    const std::filesystem::path root_shared_source =
+        artifact("fastxlsx-workbook-editor-classic-note-root-shared-part.xlsx");
+    fastxlsx::test::write_stored_zip_entries(root_shared_source, root_shared_entries);
+    fastxlsx::WorkbookEditor root_shared_editor =
+        fastxlsx::WorkbookEditor::open(root_shared_source);
+    check(threw_fastxlsx_error([&] {
+        root_shared_editor.remove_note("Data", {1, 1});
+    }),
+        "source note removal should reject URI-aliased comments/VML parts referenced by the package root");
+    check(!root_shared_editor.has_pending_changes(),
+        "package-root classic note part rejection should preserve clean state");
+}
+
+void test_final_note_removal_cleanup_and_retry()
+{
+    const std::filesystem::path source =
+        write_source_owned_note_source("fastxlsx-workbook-editor-classic-note-final-remove.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-classic-note-final-remove-output.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    {
+        ScopedWorksheetReplacementStagedHook hook(fail_after_classic_note_staging);
+        check(threw_fastxlsx_error([&] {
+            editor.remove_note("Data", {1, 1});
+        }),
+            "injected final note removal failure should escape");
+    }
+    check(!editor.has_pending_changes() && !editor.has_unsaved_changes(),
+        "failed final note removal should preserve clean package/public state");
+
+    editor.remove_note("Data", {1, 1});
+    const auto summaries = editor.pending_worksheet_edits();
+    check(summaries.size() == 1 && summaries.front().classic_note_count == 0
+            && summaries.front().classic_note_addition_count == 0
+            && summaries.front().classic_note_update_count == 0
+            && summaries.front().classic_note_removal_count == 1,
+        "final note removal should retain a zero-final-count diagnostic");
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(!entries.contains("xl/comments1.xml") && !entries.contains("xl/drawings/vmlDrawing1.vml"),
+        "final note removal should omit owned comments/VML parts");
+    check_not_contains(entries.at("xl/worksheets/sheet1.xml"), "<legacyDrawing",
+        "final note removal should remove worksheet legacyDrawing metadata");
+    check_not_contains(entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
+        std::string(comments_relationship_type),
+        "final note removal should remove the comments relationship");
+    check_not_contains(entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
+        std::string(vml_relationship_type),
+        "final note removal should remove the VML relationship");
+    check_not_contains(entries.at("[Content_Types].xml"), std::string(comments_content_type),
+        "final note removal should remove the comments content type");
+    check_not_contains(entries.at("[Content_Types].xml"), std::string(vml_content_type),
+        "final note removal should remove an otherwise-unused VML default");
+
+    fastxlsx::WorksheetCommentReadSummary empty_summary;
+    check(read_notes(output, "Data", empty_summary).empty() && empty_summary.comment_count == 0
+            && !empty_summary.has_legacy_drawing,
+        "final note removal output should reopen without classic notes");
+
+    editor.add_note("Data", {2, 2}, "Again", "Added after final removal");
+    editor.update_note("Data", {2, 2}, "Again", "Updated after final removal");
+    const std::filesystem::path composed_output =
+        artifact("fastxlsx-workbook-editor-classic-note-final-remove-compose-output.xlsx");
+    editor.save_as(composed_output);
+    fastxlsx::WorksheetCommentReadSummary composed_summary;
+    const auto composed_notes = read_notes(composed_output, "Data", composed_summary);
+    check(
+        composed_notes.size() == 1 && composed_notes.front().text == "Updated after final removal",
+        "same-session add/update should work after removing the final source "
+        "note");
+    const auto composed_edits = editor.pending_worksheet_edits();
+    check(composed_edits.front().classic_note_count == 1
+            && composed_edits.front().classic_note_addition_count == 1
+            && composed_edits.front().classic_note_update_count == 1
+            && composed_edits.front().classic_note_removal_count == 1,
+        "post-removal composition should retain cumulative note diagnostics");
+}
+
+void test_final_note_removal_preserves_other_vml_parts()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-classic-note-other-vml-source.xlsx");
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+    auto data = writer.add_worksheet("Data");
+    data.add_note(1, 1, "Data", "Remove me");
+    auto other = writer.add_worksheet("Other");
+    other.add_note(2, 2, "Other", "Preserve me");
+    writer.close();
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.remove_note("Data", {1, 1});
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-classic-note-other-vml-output.xlsx");
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(!entries.contains("xl/comments1.xml") && !entries.contains("xl/drawings/vmlDrawing1.vml")
+            && entries.contains("xl/comments2.xml")
+            && entries.contains("xl/drawings/vmlDrawing2.vml"),
+        "final note removal should omit only the target worksheet note parts");
+    check_contains(entries.at("[Content_Types].xml"), std::string(vml_content_type),
+        "final note removal should retain the VML default for another VML part");
+    fastxlsx::WorksheetCommentReadSummary summary;
+    const auto notes = read_notes(output, "Other", summary);
+    check(notes.size() == 1 && notes.front().text == "Preserve me",
+        "final note removal should preserve another worksheet classic note");
+}
+
 void test_part_numbering_rename_and_added_worksheet()
 {
     const std::filesystem::path source = artifact(
@@ -525,6 +806,16 @@ void test_production_deflate_round_trip()
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data"),
         "DEFLATE Patch classic note output should reopen through WorkbookEditor");
+    reopened.update_note("Data", {4, 2}, "Deflate", "Updated canonical source note");
+    const std::filesystem::path updated_output =
+        artifact("fastxlsx-workbook-editor-classic-note-deflate-source-edit-output.xlsx");
+    reopened.save_as(updated_output, options);
+    fastxlsx::WorksheetCommentReadSummary updated_summary;
+    const auto updated_notes = read_notes(updated_output, "Data", updated_summary);
+    check(
+        updated_notes.size() == 1 && updated_notes.front().text == "Updated canonical source note",
+        "DEFLATE canonical source note should support transactional update and "
+        "reopen");
 #endif
 }
 
@@ -537,6 +828,10 @@ int main()
         test_validation_transaction_failure_and_retry();
         test_same_session_relationship_replacement_composition();
         test_rejects_source_owned_comment_threaded_and_vml_state();
+        test_updates_removes_and_composes_canonical_source_notes();
+        test_update_noop_missing_targets_and_canonical_rejection();
+        test_final_note_removal_cleanup_and_retry();
+        test_final_note_removal_preserves_other_vml_parts();
         test_part_numbering_rename_and_added_worksheet();
         test_production_deflate_round_trip();
     } catch (const std::exception& error) {

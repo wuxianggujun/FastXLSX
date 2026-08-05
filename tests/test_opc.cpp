@@ -208,6 +208,15 @@ void test_content_type_registry_helper()
     }
     check(override_conflict_failed,
         "content type registry should reject conflicting overrides");
+
+    check(registry.remove_default(".PnG"),
+        "content type registry should remove defaults case-insensitively");
+    check(registry.default_for("png") == nullptr
+            && registry.content_type_for(fastxlsx::detail::PartName("/xl/media/image1.png"))
+                == nullptr,
+        "removed content type default should no longer resolve");
+    check(!registry.remove_default("png"),
+        "removing an absent content type default should be a clean no-op");
 }
 
 void test_relationship_set()

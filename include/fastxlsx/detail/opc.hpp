@@ -354,6 +354,7 @@ class ContentTypesManifest {
 public:
     const ContentTypeDefault& add_default(std::string extension, std::string content_type);
     const ContentTypeOverride& add_override(PartName part_name, std::string content_type);
+    [[nodiscard]] bool remove_default(std::string_view extension) noexcept;
     [[nodiscard]] bool remove_override(const PartName& part_name) noexcept;
 
     [[nodiscard]] const std::string* content_type_for(const PartName& part_name) const noexcept;
@@ -375,6 +376,7 @@ class ContentTypeRegistry {
 public:
     const ContentTypeDefault& add_default(std::string extension, std::string content_type);
     const ContentTypeOverride& add_override(PartName part_name, std::string content_type);
+    [[nodiscard]] bool remove_default(std::string_view extension) noexcept;
 
     [[nodiscard]] const std::string* content_type_for(const PartName& part_name) const noexcept;
     [[nodiscard]] const ContentTypeDefault* default_for(std::string_view extension) const noexcept;

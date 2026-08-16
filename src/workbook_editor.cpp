@@ -957,6 +957,226 @@ void WorkbookEditor::remove_note(std::string_view sheet_name, WorksheetCellRefer
     }
 }
 
+void WorkbookEditor::add_conditional_color_scale(
+    std::string_view sheet_name, CellRange range, TwoColorScaleRule rule)
+{
+    add_conditional_color_scale(
+        sheet_name, std::span<const CellRange>(&range, 1), std::move(rule));
+}
+
+void WorkbookEditor::add_conditional_color_scale(
+    std::string_view sheet_name, CellRange range, ThreeColorScaleRule rule)
+{
+    add_conditional_color_scale(
+        sheet_name, std::span<const CellRange>(&range, 1), std::move(rule));
+}
+
+void WorkbookEditor::add_conditional_color_scale(
+    std::string_view sheet_name, std::span<const CellRange> ranges,
+    TwoColorScaleRule rule)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    const std::size_t range_count = ranges.size();
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        if (ranges.empty()) {
+            throw FastXlsxError("conditional formatting range list cannot be empty");
+        }
+
+        auto updated_counts = impl_->pending_conditional_format_counts;
+        ++updated_counts[sheet_name_key];
+        impl_->editor.add_conditional_color_scale_by_name(
+            sheet_name_key, std::vector<CellRange>(ranges.begin(), ranges.end()),
+            std::move(rule));
+
+        using std::swap;
+        swap(impl_->pending_conditional_format_counts, updated_counts);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::add_conditional_color_scale() failed for '"
+            + sheet_name_key + "' with " + std::to_string(range_count)
+            + " ranges: " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::add_conditional_color_scale(
+    std::string_view sheet_name, std::span<const CellRange> ranges,
+    ThreeColorScaleRule rule)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    const std::size_t range_count = ranges.size();
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        if (ranges.empty()) {
+            throw FastXlsxError("conditional formatting range list cannot be empty");
+        }
+
+        auto updated_counts = impl_->pending_conditional_format_counts;
+        ++updated_counts[sheet_name_key];
+        impl_->editor.add_conditional_color_scale_by_name(
+            sheet_name_key, std::vector<CellRange>(ranges.begin(), ranges.end()),
+            std::move(rule));
+
+        using std::swap;
+        swap(impl_->pending_conditional_format_counts, updated_counts);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::add_conditional_color_scale() failed for '"
+            + sheet_name_key + "' with " + std::to_string(range_count)
+            + " ranges: " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::add_conditional_color_scale(
+    std::string_view sheet_name, std::initializer_list<CellRange> ranges,
+    TwoColorScaleRule rule)
+{
+    add_conditional_color_scale(
+        sheet_name, std::span<const CellRange>(ranges.begin(), ranges.size()),
+        std::move(rule));
+}
+
+void WorkbookEditor::add_conditional_color_scale(
+    std::string_view sheet_name, std::initializer_list<CellRange> ranges,
+    ThreeColorScaleRule rule)
+{
+    add_conditional_color_scale(
+        sheet_name, std::span<const CellRange>(ranges.begin(), ranges.size()),
+        std::move(rule));
+}
+
+void WorkbookEditor::add_conditional_data_bar(
+    std::string_view sheet_name, CellRange range, DataBarRule rule)
+{
+    add_conditional_data_bar(
+        sheet_name, std::span<const CellRange>(&range, 1), std::move(rule));
+}
+
+void WorkbookEditor::add_conditional_data_bar(
+    std::string_view sheet_name, std::span<const CellRange> ranges,
+    DataBarRule rule)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    const std::size_t range_count = ranges.size();
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        if (ranges.empty()) {
+            throw FastXlsxError("conditional formatting range list cannot be empty");
+        }
+
+        auto updated_counts = impl_->pending_conditional_format_counts;
+        ++updated_counts[sheet_name_key];
+        impl_->editor.add_conditional_data_bar_by_name(
+            sheet_name_key, std::vector<CellRange>(ranges.begin(), ranges.end()),
+            std::move(rule));
+
+        using std::swap;
+        swap(impl_->pending_conditional_format_counts, updated_counts);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::add_conditional_data_bar() failed for '"
+            + sheet_name_key + "' with " + std::to_string(range_count)
+            + " ranges: " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::add_conditional_data_bar(
+    std::string_view sheet_name, std::initializer_list<CellRange> ranges,
+    DataBarRule rule)
+{
+    add_conditional_data_bar(
+        sheet_name, std::span<const CellRange>(ranges.begin(), ranges.size()),
+        std::move(rule));
+}
+
+void WorkbookEditor::add_conditional_icon_set(
+    std::string_view sheet_name, CellRange range, IconSetRule rule)
+{
+    add_conditional_icon_set(
+        sheet_name, std::span<const CellRange>(&range, 1), std::move(rule));
+}
+
+void WorkbookEditor::add_conditional_icon_set(
+    std::string_view sheet_name, std::span<const CellRange> ranges,
+    IconSetRule rule)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    const std::size_t range_count = ranges.size();
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        if (ranges.empty()) {
+            throw FastXlsxError("conditional formatting range list cannot be empty");
+        }
+
+        auto updated_counts = impl_->pending_conditional_format_counts;
+        ++updated_counts[sheet_name_key];
+        impl_->editor.add_conditional_icon_set_by_name(
+            sheet_name_key, std::vector<CellRange>(ranges.begin(), ranges.end()),
+            std::move(rule));
+
+        using std::swap;
+        swap(impl_->pending_conditional_format_counts, updated_counts);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::add_conditional_icon_set() failed for '"
+            + sheet_name_key + "' with " + std::to_string(range_count)
+            + " ranges: " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::add_conditional_icon_set(
+    std::string_view sheet_name, std::initializer_list<CellRange> ranges,
+    IconSetRule rule)
+{
+    add_conditional_icon_set(
+        sheet_name, std::span<const CellRange>(ranges.begin(), ranges.size()),
+        std::move(rule));
+}
+
 void WorkbookEditor::add_data_validation(
     std::string_view sheet_name, CellRange range, DataValidationRule rule)
 {
@@ -1574,6 +1794,7 @@ void WorkbookEditor::remove_worksheet(std::string_view name)
             || !impl_->pending_external_hyperlink_counts.empty()
             || !impl_->pending_classic_notes.empty()
             || !impl_->pending_data_validation_counts.empty()
+            || !impl_->pending_conditional_format_counts.empty()
             || !impl_->pending_basic_table_edits.empty()
             || !impl_->pending_auto_filter_edits.empty()
             || !impl_->pending_freeze_pane_edits.empty()
@@ -1663,6 +1884,10 @@ void WorkbookEditor::rename_sheet(
             updated_data_validation_counts =
                 impl_->stage_pending_data_validation_counts_move(
                     old_name_key, new_name_key);
+        std::optional<std::map<std::string, std::size_t, std::less<>>>
+            updated_conditional_format_counts =
+                impl_->stage_pending_conditional_format_counts_move(
+                    old_name_key, new_name_key);
         std::optional<WorkbookEditor::Impl::PendingBasicTableEdits>
             updated_basic_table_edits =
                 impl_->stage_pending_basic_table_edits_move(
@@ -1710,6 +1935,8 @@ void WorkbookEditor::rename_sheet(
         impl_->commit_pending_classic_notes_move(updated_classic_notes);
         impl_->commit_pending_data_validation_counts_move(
             updated_data_validation_counts);
+        impl_->commit_pending_conditional_format_counts_move(
+            updated_conditional_format_counts);
         impl_->commit_pending_basic_table_edits_move(
             updated_basic_table_edits);
         impl_->commit_pending_auto_filter_edits_move(updated_auto_filter_edits);

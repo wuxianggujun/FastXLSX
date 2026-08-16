@@ -330,10 +330,10 @@ struct WorkbookWriterOptions {
 
 /// Value kind for a conditional-formatting color-scale endpoint.
 ///
-/// API mode: Streaming worksheet metadata. Minimum and Maximum are serialized
-/// without `val`; Number, Percent, and Percentile require finite numeric values.
-/// This enum only supports the current color-scale slice and does not represent
-/// formula-based conditional formatting or dxf-backed formatting rules.
+/// API mode: Shared Streaming/Patch conditional-format metadata. Minimum and
+/// Maximum are serialized without `val`; Number, Percent, and Percentile require
+/// finite numeric values. This enum only supports the current color-scale slice
+/// and does not represent formula-based or dxf-backed formatting rules.
 enum class ColorScaleValueType {
     Minimum,
     Maximum,
@@ -344,10 +344,10 @@ enum class ColorScaleValueType {
 
 /// Value kind for a conditional-formatting data-bar endpoint.
 ///
-/// API mode: Streaming worksheet metadata. Minimum and Maximum are serialized
-/// without `val`; Number, Percent, and Percentile require finite numeric values.
-/// This enum only supports the current basic data-bar slice and does not
-/// represent formula-based conditional formatting or dxf-backed rules.
+/// API mode: Shared Streaming/Patch conditional-format metadata. Minimum and
+/// Maximum are serialized without `val`; Number, Percent, and Percentile require
+/// finite numeric values. This enum only supports the current basic data-bar
+/// slice and does not represent formula-based or dxf-backed rules.
 enum class DataBarValueType {
     Minimum,
     Maximum,
@@ -358,18 +358,20 @@ enum class DataBarValueType {
 
 /// Icon set style for the current narrow conditional-formatting icon-set slice.
 ///
-/// API mode: Streaming worksheet metadata. This enum currently exposes only the
-/// stable built-in `3Arrows` OpenXML token. It does not represent custom icons,
-/// icon-set extensions, dxf-backed formatting, or complete Excel UI parity.
+/// API mode: Shared Streaming/Patch conditional-format metadata. This enum
+/// currently exposes only the stable built-in `3Arrows` OpenXML token. It does
+/// not represent custom icons, extensions, dxf-backed formatting, or complete
+/// Excel UI parity.
 enum class IconSetStyle {
     ThreeArrows,
 };
 
 /// Value kind for conditional-formatting icon-set thresholds.
 ///
-/// API mode: Streaming worksheet metadata. Icon-set thresholds are serialized as
-/// finite numeric `<cfvo>` values. This first slice intentionally excludes
-/// formula thresholds, minimum/maximum endpoints, custom icons, and extLst data.
+/// API mode: Shared Streaming/Patch conditional-format metadata. Icon-set
+/// thresholds are serialized as finite numeric `<cfvo>` values. This first slice
+/// excludes formula thresholds, minimum/maximum endpoints, custom icons, and
+/// extLst data.
 enum class IconSetValueType {
     Number,
     Percent,
@@ -378,10 +380,10 @@ enum class IconSetValueType {
 
 /// One point of a conditional-formatting color scale.
 ///
-/// API mode: Streaming worksheet metadata. The point is copied into worksheet
-/// state when added. FastXLSX writes it as one `<cfvo>` plus one inline
-/// `<color rgb="..."/>` in worksheet XML; it does not create styles.xml, dxfs,
-/// worksheet relationships, or content type entries.
+/// API mode: Shared Streaming/Patch conditional-format metadata. The point is
+/// copied into operation-owned worksheet state when added. FastXLSX writes it as
+/// one `<cfvo>` plus one inline `<color rgb="..."/>` in worksheet XML; it does
+/// not create styles.xml, dxfs, worksheet relationships, or content type entries.
 struct ColorScalePoint {
     /// OpenXML `cfvo` type for this endpoint.
     ColorScaleValueType type = ColorScaleValueType::Minimum;
@@ -396,12 +398,11 @@ struct ColorScalePoint {
 
 /// A narrow two-color conditional-formatting color scale.
 ///
-/// API mode: Streaming worksheet metadata for new workbooks. The rule is copied
-/// into WorksheetWriter state and serialized as worksheet-local
-/// `<conditionalFormatting>` XML during close(). Priorities are assigned by
-/// call order per worksheet. This does not evaluate cell values, inspect prior
-/// rows, create styles.xml/dxfs, edit existing XLSX files, or promise full Excel
-/// conditional-formatting UI parity.
+/// API mode: Shared owning rule for Streaming write, bounded read, and Patch add.
+/// WorksheetWriter assigns priority by call order and emits worksheet-local XML
+/// during close(); WorkbookEditor appends the same narrow rule to an existing
+/// worksheet using its audited next priority. Neither path evaluates cells,
+/// creates styles.xml/dxfs, or promises full Excel UI parity.
 struct TwoColorScaleRule {
     /// Lower endpoint, defaulting to OpenXML `type="min"`.
     ColorScalePoint lower;
@@ -412,12 +413,11 @@ struct TwoColorScaleRule {
 
 /// A narrow three-color conditional-formatting color scale.
 ///
-/// API mode: Streaming worksheet metadata for new workbooks. The rule is copied
-/// into WorksheetWriter state and serialized as worksheet-local
-/// `<conditionalFormatting>` XML during close(). Priorities are assigned by
-/// call order per worksheet. This does not evaluate cell values, inspect prior
-/// rows, create styles.xml/dxfs, edit existing XLSX files, or promise full Excel
-/// conditional-formatting UI parity.
+/// API mode: Shared owning rule for Streaming write, bounded read, and Patch add.
+/// WorksheetWriter assigns priority by call order and emits worksheet-local XML
+/// during close(); WorkbookEditor appends the same narrow rule to an existing
+/// worksheet using its audited next priority. Neither path evaluates cells,
+/// creates styles.xml/dxfs, or promises full Excel UI parity.
 struct ThreeColorScaleRule {
     /// Lower endpoint, defaulting to OpenXML `type="min"`.
     ColorScalePoint lower;
@@ -435,10 +435,10 @@ struct ThreeColorScaleRule {
 
 /// One endpoint of a basic conditional-formatting data bar.
 ///
-/// API mode: Streaming worksheet metadata. The endpoint is copied into
-/// worksheet state when added. FastXLSX writes it as one `<cfvo>` in worksheet
-/// XML; it does not create styles.xml, dxfs, worksheet relationships, or content
-/// type entries.
+/// API mode: Shared Streaming/Patch conditional-format metadata. The endpoint is
+/// copied into operation-owned worksheet state when added. FastXLSX writes it as
+/// one `<cfvo>` in worksheet XML; it does not create styles.xml, dxfs, worksheet
+/// relationships, or content type entries.
 struct DataBarEndpoint {
     /// OpenXML `cfvo` type for this endpoint.
     DataBarValueType type = DataBarValueType::Minimum;
@@ -450,12 +450,10 @@ struct DataBarEndpoint {
 
 /// A narrow basic conditional-formatting data bar.
 ///
-/// API mode: Streaming worksheet metadata for new workbooks. The rule is copied
-/// into WorksheetWriter state and serialized as worksheet-local
-/// `<conditionalFormatting>` XML during close(). Priorities are assigned by
-/// call order per worksheet, shared with color-scale and icon-set rules. This does not
-/// evaluate cell values, create styles.xml/dxfs, edit existing XLSX files, or
-/// promise full Excel conditional-formatting UI parity.
+/// API mode: Shared owning rule for Streaming write, bounded read, and Patch add.
+/// Priority allocation is worksheet-local and shared with color-scale and
+/// icon-set rules. FastXLSX does not evaluate cell values, create styles.xml/dxfs,
+/// or promise full Excel conditional-formatting UI parity.
 struct DataBarRule {
     /// Lower endpoint, defaulting to OpenXML `type="min"`.
     DataBarEndpoint lower;
@@ -473,14 +471,11 @@ struct DataBarRule {
 
 /// A narrow built-in conditional-formatting icon set.
 ///
-/// API mode: Streaming worksheet metadata for new workbooks. The rule is copied
-/// into WorksheetWriter state and serialized as worksheet-local
-/// `<conditionalFormatting>` XML during close(). Priorities are assigned by
-/// call order per worksheet, shared with color-scale and data-bar rules. This
-/// first slice writes only built-in 3-arrow icon sets with three finite numeric
-/// thresholds; it does not evaluate cell values, create styles.xml/dxfs, use
-/// custom icons, write extLst, edit existing XLSX files, or promise full Excel
-/// conditional-formatting UI parity.
+/// API mode: Shared owning rule for Streaming write, bounded read, and Patch add.
+/// Priority allocation is worksheet-local and shared with color-scale and
+/// data-bar rules. This slice writes only built-in 3-arrow icon sets with three
+/// finite numeric thresholds; it does not evaluate cells, create styles.xml/dxfs,
+/// use custom icons, write extLst, or promise full Excel UI parity.
 struct IconSetRule {
     /// Built-in icon set style. The current slice supports only `3Arrows`.
     IconSetStyle style = IconSetStyle::ThreeArrows;

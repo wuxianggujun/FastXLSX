@@ -4,6 +4,7 @@
 #include <fastxlsx/workbook.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <cstdint>
 #include <fstream>
@@ -23,10 +24,13 @@ namespace {
 
 constexpr int auto_filter_schema_rank = 5;
 constexpr int merged_cells_schema_rank = 9;
+constexpr int conditional_formatting_schema_rank = 11;
 constexpr int data_validations_schema_rank = 12;
 constexpr int hyperlink_schema_rank = 13;
 constexpr int legacy_drawing_schema_rank = 25;
 constexpr int table_parts_schema_rank = 31;
+constexpr std::string_view spreadsheetml_namespace =
+    "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 constexpr std::string_view relationships_namespace =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 constexpr std::uint32_t max_freeze_pane_row_split = 1048575U;
@@ -781,6 +785,74 @@ std::optional<std::uint64_t> parse_unsigned_decimal(std::string_view value)
     return parsed;
 }
 
+std::optional<std::uint64_t> parse_xml_unsigned_decimal(std::string_view value)
+{
+    if (value.empty()) {
+        return std::nullopt;
+    }
+
+    std::uint64_t parsed = 0;
+    for (std::size_t position = 0; position < value.size();) {
+        char decoded_digit = '\0';
+        if (value[position] >= '0' && value[position] <= '9') {
+            decoded_digit = value[position++];
+        } else {
+            if (value[position] != '&' || position + 3U >= value.size()
+                || value[position + 1U] != '#') {
+                return std::nullopt;
+            }
+            const std::size_t semicolon = value.find(';', position + 2U);
+            if (semicolon == std::string_view::npos) {
+                return std::nullopt;
+            }
+            std::size_t entity_position = position + 2U;
+            std::uint32_t base = 10U;
+            if (entity_position < semicolon && value[entity_position] == 'x') {
+                base = 16U;
+                ++entity_position;
+            }
+            if (entity_position == semicolon) {
+                return std::nullopt;
+            }
+
+            std::uint32_t code_point = 0;
+            for (; entity_position < semicolon; ++entity_position) {
+                const char character = value[entity_position];
+                int digit = -1;
+                if (character >= '0' && character <= '9') {
+                    digit = character - '0';
+                } else if (base == 16U && character >= 'a' && character <= 'f') {
+                    digit = character - 'a' + 10;
+                } else if (base == 16U && character >= 'A' && character <= 'F') {
+                    digit = character - 'A' + 10;
+                }
+                if (digit < 0 || static_cast<std::uint32_t>(digit) >= base
+                    || code_point
+                        > (std::numeric_limits<std::uint32_t>::max()
+                              - static_cast<std::uint32_t>(digit))
+                            / base) {
+                    return std::nullopt;
+                }
+                code_point = code_point * base + static_cast<std::uint32_t>(digit);
+            }
+            if (code_point < static_cast<std::uint32_t>('0')
+                || code_point > static_cast<std::uint32_t>('9')) {
+                return std::nullopt;
+            }
+            decoded_digit = static_cast<char>(code_point);
+            position = semicolon + 1U;
+        }
+
+        const std::uint64_t digit =
+            static_cast<std::uint64_t>(decoded_digit - '0');
+        if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / 10U) {
+            return std::nullopt;
+        }
+        parsed = parsed * 10U + digit;
+    }
+    return parsed;
+}
+
 void audit_existing_frozen_pane(std::string_view raw_tag)
 {
     const std::optional<std::string_view> state = attribute_value(raw_tag, "state");
@@ -1120,6 +1192,340 @@ std::string serialize_data_validation(
     return xml;
 }
 
+namespace {
+
+std::string_view color_scale_value_type_name(ColorScaleValueType type)
+{
+    switch (type) {
+    case ColorScaleValueType::Minimum:
+        return "min";
+    case ColorScaleValueType::Maximum:
+        return "max";
+    case ColorScaleValueType::Number:
+        return "num";
+    case ColorScaleValueType::Percent:
+        return "percent";
+    case ColorScaleValueType::Percentile:
+        return "percentile";
+    }
+    throw FastXlsxError("unknown color scale value type");
+}
+
+std::string_view data_bar_value_type_name(DataBarValueType type)
+{
+    switch (type) {
+    case DataBarValueType::Minimum:
+        return "min";
+    case DataBarValueType::Maximum:
+        return "max";
+    case DataBarValueType::Number:
+        return "num";
+    case DataBarValueType::Percent:
+        return "percent";
+    case DataBarValueType::Percentile:
+        return "percentile";
+    }
+    throw FastXlsxError("unknown data bar value type");
+}
+
+std::string_view icon_set_style_name(IconSetStyle style)
+{
+    switch (style) {
+    case IconSetStyle::ThreeArrows:
+        return "3Arrows";
+    }
+    throw FastXlsxError("unknown icon set style");
+}
+
+std::string_view icon_set_value_type_name(IconSetValueType type)
+{
+    switch (type) {
+    case IconSetValueType::Number:
+        return "num";
+    case IconSetValueType::Percent:
+        return "percent";
+    case IconSetValueType::Percentile:
+        return "percentile";
+    }
+    throw FastXlsxError("unknown icon set value type");
+}
+
+bool color_scale_value_type_requires_value(ColorScaleValueType type)
+{
+    switch (type) {
+    case ColorScaleValueType::Minimum:
+    case ColorScaleValueType::Maximum:
+        return false;
+    case ColorScaleValueType::Number:
+    case ColorScaleValueType::Percent:
+    case ColorScaleValueType::Percentile:
+        return true;
+    }
+    throw FastXlsxError("unknown color scale value type");
+}
+
+bool data_bar_value_type_requires_value(DataBarValueType type)
+{
+    switch (type) {
+    case DataBarValueType::Minimum:
+    case DataBarValueType::Maximum:
+        return false;
+    case DataBarValueType::Number:
+    case DataBarValueType::Percent:
+    case DataBarValueType::Percentile:
+        return true;
+    }
+    throw FastXlsxError("unknown data bar value type");
+}
+
+std::string conditional_format_argb_value(ArgbColor color)
+{
+    constexpr char hex_digits[] = "0123456789ABCDEF";
+    std::string value;
+    value.reserve(8);
+    const auto append_byte = [&value, &hex_digits](std::uint8_t byte) {
+        value.push_back(hex_digits[(byte >> 4U) & 0x0FU]);
+        value.push_back(hex_digits[byte & 0x0FU]);
+    };
+    append_byte(color.alpha);
+    append_byte(color.red);
+    append_byte(color.green);
+    append_byte(color.blue);
+    return value;
+}
+
+void validate_color_scale_point(const ColorScalePoint& point)
+{
+    (void)color_scale_value_type_name(point.type);
+    if (color_scale_value_type_requires_value(point.type)
+        && !std::isfinite(point.value)) {
+        throw FastXlsxError("color scale endpoint values must be finite");
+    }
+}
+
+void validate_data_bar_endpoint(const DataBarEndpoint& endpoint)
+{
+    (void)data_bar_value_type_name(endpoint.type);
+    if (data_bar_value_type_requires_value(endpoint.type)
+        && !std::isfinite(endpoint.value)) {
+        throw FastXlsxError("data bar endpoint values must be finite");
+    }
+}
+
+void append_prefixed_element_start(
+    std::string& xml, std::string_view prefix, std::string_view local_name)
+{
+    xml += '<';
+    xml += prefix;
+    xml += local_name;
+}
+
+void append_prefixed_element_end(
+    std::string& xml, std::string_view prefix, std::string_view local_name)
+{
+    xml += "</";
+    xml += prefix;
+    xml += local_name;
+    xml += '>';
+}
+
+void append_color_scale_point_xml(
+    std::string& xml, const ColorScalePoint& point, std::string_view prefix)
+{
+    append_prefixed_element_start(xml, prefix, "cfvo");
+    xml += " type=\"";
+    xml += color_scale_value_type_name(point.type);
+    if (color_scale_value_type_requires_value(point.type)) {
+        xml += "\" val=\"";
+        append_number(xml, point.value);
+    }
+    xml += "\"/>";
+}
+
+void append_color_scale_color_xml(
+    std::string& xml, const ColorScalePoint& point, std::string_view prefix)
+{
+    append_prefixed_element_start(xml, prefix, "color");
+    xml += " rgb=\"";
+    xml += conditional_format_argb_value(point.color);
+    xml += "\"/>";
+}
+
+void append_data_bar_endpoint_xml(
+    std::string& xml, const DataBarEndpoint& endpoint, std::string_view prefix)
+{
+    append_prefixed_element_start(xml, prefix, "cfvo");
+    xml += " type=\"";
+    xml += data_bar_value_type_name(endpoint.type);
+    if (data_bar_value_type_requires_value(endpoint.type)) {
+        xml += "\" val=\"";
+        append_number(xml, endpoint.value);
+    }
+    xml += "\"/>";
+}
+
+void append_icon_set_threshold_xml(std::string& xml, IconSetValueType value_type,
+    double threshold, std::string_view prefix)
+{
+    append_prefixed_element_start(xml, prefix, "cfvo");
+    xml += " type=\"";
+    xml += icon_set_value_type_name(value_type);
+    xml += "\" val=\"";
+    append_number(xml, threshold);
+    xml += "\"/>";
+}
+
+} // namespace
+
+void validate_conditional_format_rule(const TwoColorScaleRule& rule)
+{
+    if (rule.lower.type == ColorScaleValueType::Maximum) {
+        throw FastXlsxError("lower color scale endpoint cannot use maximum");
+    }
+    if (rule.upper.type == ColorScaleValueType::Minimum) {
+        throw FastXlsxError("upper color scale endpoint cannot use minimum");
+    }
+    validate_color_scale_point(rule.lower);
+    validate_color_scale_point(rule.upper);
+}
+
+void validate_conditional_format_rule(const ThreeColorScaleRule& rule)
+{
+    if (rule.lower.type == ColorScaleValueType::Maximum) {
+        throw FastXlsxError("lower color scale endpoint cannot use maximum");
+    }
+    if (rule.midpoint.type == ColorScaleValueType::Minimum
+        || rule.midpoint.type == ColorScaleValueType::Maximum) {
+        throw FastXlsxError("middle color scale point must use a value-bearing type");
+    }
+    if (rule.upper.type == ColorScaleValueType::Minimum) {
+        throw FastXlsxError("upper color scale endpoint cannot use minimum");
+    }
+    validate_color_scale_point(rule.lower);
+    validate_color_scale_point(rule.midpoint);
+    validate_color_scale_point(rule.upper);
+}
+
+void validate_conditional_format_rule(const DataBarRule& rule)
+{
+    if (rule.lower.type == DataBarValueType::Maximum) {
+        throw FastXlsxError("lower data bar endpoint cannot use maximum");
+    }
+    if (rule.upper.type == DataBarValueType::Minimum) {
+        throw FastXlsxError("upper data bar endpoint cannot use minimum");
+    }
+    validate_data_bar_endpoint(rule.lower);
+    validate_data_bar_endpoint(rule.upper);
+}
+
+void validate_conditional_format_rule(const IconSetRule& rule)
+{
+    (void)icon_set_style_name(rule.style);
+    (void)icon_set_value_type_name(rule.value_type);
+    for (double threshold : rule.thresholds) {
+        if (!std::isfinite(threshold)) {
+            throw FastXlsxError("icon set threshold values must be finite");
+        }
+    }
+    if (!(rule.thresholds[0] < rule.thresholds[1]
+            && rule.thresholds[1] < rule.thresholds[2])) {
+        throw FastXlsxError("icon set threshold values must be strictly ascending");
+    }
+}
+
+void validate_conditional_format_rule(const ConditionalFormatRule& rule)
+{
+    std::visit([](const auto& typed_rule) {
+        validate_conditional_format_rule(typed_rule);
+    }, rule);
+}
+
+std::string serialize_conditional_format(
+    std::span<const CellRange> ranges,
+    const ConditionalFormatRule& rule,
+    std::uint32_t priority,
+    std::string_view element_prefix)
+{
+    validate_conditional_format_rule(rule);
+    if (priority == 0) {
+        throw FastXlsxError("conditional format priority must be positive");
+    }
+    const std::string range_text = sqref(ranges);
+
+    std::string xml;
+    append_prefixed_element_start(xml, element_prefix, "conditionalFormatting");
+    xml += " sqref=\"";
+    xml += range_text;
+    xml += "\">";
+    append_prefixed_element_start(xml, element_prefix, "cfRule");
+    xml += " type=\"";
+    if (std::holds_alternative<TwoColorScaleRule>(rule)
+        || std::holds_alternative<ThreeColorScaleRule>(rule)) {
+        xml += "colorScale";
+    } else if (std::holds_alternative<DataBarRule>(rule)) {
+        xml += "dataBar";
+    } else {
+        xml += "iconSet";
+    }
+    xml += "\" priority=\"";
+    append_unsigned_decimal(xml, priority);
+    xml += "\">";
+
+    if (const auto* two_color = std::get_if<TwoColorScaleRule>(&rule)) {
+        append_prefixed_element_start(xml, element_prefix, "colorScale");
+        xml += '>';
+        append_color_scale_point_xml(xml, two_color->lower, element_prefix);
+        append_color_scale_point_xml(xml, two_color->upper, element_prefix);
+        append_color_scale_color_xml(xml, two_color->lower, element_prefix);
+        append_color_scale_color_xml(xml, two_color->upper, element_prefix);
+        append_prefixed_element_end(xml, element_prefix, "colorScale");
+    } else if (const auto* three_color = std::get_if<ThreeColorScaleRule>(&rule)) {
+        append_prefixed_element_start(xml, element_prefix, "colorScale");
+        xml += '>';
+        append_color_scale_point_xml(xml, three_color->lower, element_prefix);
+        append_color_scale_point_xml(xml, three_color->midpoint, element_prefix);
+        append_color_scale_point_xml(xml, three_color->upper, element_prefix);
+        append_color_scale_color_xml(xml, three_color->lower, element_prefix);
+        append_color_scale_color_xml(xml, three_color->midpoint, element_prefix);
+        append_color_scale_color_xml(xml, three_color->upper, element_prefix);
+        append_prefixed_element_end(xml, element_prefix, "colorScale");
+    } else if (const auto* data_bar = std::get_if<DataBarRule>(&rule)) {
+        append_prefixed_element_start(xml, element_prefix, "dataBar");
+        if (!data_bar->show_value) {
+            xml += " showValue=\"0\"";
+        }
+        xml += '>';
+        append_data_bar_endpoint_xml(xml, data_bar->lower, element_prefix);
+        append_data_bar_endpoint_xml(xml, data_bar->upper, element_prefix);
+        append_prefixed_element_start(xml, element_prefix, "color");
+        xml += " rgb=\"";
+        xml += conditional_format_argb_value(data_bar->color);
+        xml += "\"/>";
+        append_prefixed_element_end(xml, element_prefix, "dataBar");
+    } else {
+        const IconSetRule& icon_set = std::get<IconSetRule>(rule);
+        append_prefixed_element_start(xml, element_prefix, "iconSet");
+        xml += " iconSet=\"";
+        xml += icon_set_style_name(icon_set.style);
+        xml += '"';
+        if (!icon_set.show_value) {
+            xml += " showValue=\"0\"";
+        }
+        if (icon_set.reverse) {
+            xml += " reverse=\"1\"";
+        }
+        xml += '>';
+        for (double threshold : icon_set.thresholds) {
+            append_icon_set_threshold_xml(
+                xml, icon_set.value_type, threshold, element_prefix);
+        }
+        append_prefixed_element_end(xml, element_prefix, "iconSet");
+    }
+    append_prefixed_element_end(xml, element_prefix, "cfRule");
+    append_prefixed_element_end(xml, element_prefix, "conditionalFormatting");
+    return xml;
+}
+
 WorksheetInternalHyperlinkRewritePlan plan_worksheet_hyperlink_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view cell_reference)
@@ -1396,6 +1802,256 @@ WorksheetLegacyDrawingRewritePlan plan_worksheet_legacy_drawing_rewrite(
         WorksheetLegacyDrawingRewritePlan::Action::InsertBefore,
         first_after_legacy_drawing_offset.value_or(worksheet_end_offset),
     };
+}
+
+WorksheetConditionalFormatRewritePlan plan_worksheet_conditional_format_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk)
+{
+    struct MetadataFrame {
+        std::string local_name;
+        std::string prefix;
+        bool conditional_formatting = false;
+        std::size_t direct_rule_count = 0;
+        std::vector<WorksheetNamespaceChange> namespace_changes;
+    };
+
+    bool saw_worksheet_start = false;
+    bool saw_sheet_data_start = false;
+    bool saw_sheet_data_end = false;
+    bool saw_worksheet_end = false;
+    int last_suffix_rank = 0;
+    std::uint64_t worksheet_end_offset = 0;
+    std::optional<std::uint64_t> first_after_conditional_formats_offset;
+    std::string worksheet_prefix;
+    std::optional<std::string> worksheet_namespace_uri;
+    std::unordered_map<std::string, std::string> namespace_bindings;
+    std::unordered_set<std::uint32_t> priorities;
+    std::uint32_t maximum_priority = 0;
+    std::vector<MetadataFrame> frames;
+
+    const auto namespace_uri_for = [&](std::string_view prefix)
+        -> std::optional<std::string_view> {
+        const auto found = namespace_bindings.find(std::string(prefix));
+        if (found == namespace_bindings.end()) {
+            return std::nullopt;
+        }
+        return std::string_view(found->second.data(), found->second.size());
+    };
+    const auto is_worksheet_namespace = [&](std::string_view prefix) {
+        const std::optional<std::string_view> current = namespace_uri_for(prefix);
+        return worksheet_namespace_uri.has_value()
+            ? current.has_value() && *current == *worksheet_namespace_uri
+            : !current.has_value();
+    };
+    const auto read_priority = [&](std::string_view raw_tag) {
+        std::optional<std::uint64_t> parsed_priority;
+        for (const WorksheetXmlAttribute& attribute : worksheet_xml_attributes(raw_tag)) {
+            if (is_namespace_declaration(attribute.name) || attribute.name != "priority") {
+                continue;
+            }
+            if (parsed_priority.has_value()) {
+                throw FastXlsxError(
+                    "worksheet conditional-format cfRule has duplicate priority attributes");
+            }
+            const std::optional<std::uint64_t> value =
+                parse_xml_unsigned_decimal(attribute.value);
+            if (!value.has_value()) {
+                throw FastXlsxError(
+                    "worksheet conditional-format priority is not an unsigned integer");
+            }
+            parsed_priority = *value;
+        }
+        if (!parsed_priority.has_value() || *parsed_priority == 0
+            || *parsed_priority > std::numeric_limits<std::uint32_t>::max()) {
+            throw FastXlsxError(
+                "worksheet conditional-format priority must be a positive 32-bit integer");
+        }
+        const auto priority = static_cast<std::uint32_t>(*parsed_priority);
+        if (!priorities.emplace(priority).second) {
+            throw FastXlsxError(
+                "worksheet conditional-format priorities must be unique");
+        }
+        maximum_priority = std::max(maximum_priority, priority);
+    };
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::WorksheetStart) {
+                if (saw_worksheet_start || event.self_closing) {
+                    throw FastXlsxError(
+                        "conditional-format edit encountered duplicate or empty worksheet root");
+                }
+                const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+                if (qname.local_name != "worksheet") {
+                    throw FastXlsxError(
+                        "conditional-format edit found an invalid worksheet root");
+                }
+                worksheet_prefix = std::string(qname.prefix);
+                (void)apply_worksheet_namespaces(event.raw_xml, namespace_bindings);
+                const std::optional<std::string_view> root_uri =
+                    namespace_uri_for(worksheet_prefix);
+                if (!root_uri.has_value() || *root_uri != spreadsheetml_namespace) {
+                    throw FastXlsxError(
+                        "conditional-format edit requires the SpreadsheetML worksheet namespace");
+                }
+                worksheet_namespace_uri = std::string(*root_uri);
+                saw_worksheet_start = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::SheetDataStart) {
+                if (!saw_worksheet_start || saw_sheet_data_start) {
+                    throw FastXlsxError(
+                        "conditional-format edit encountered an invalid sheetData start");
+                }
+                const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+                const std::vector<WorksheetNamespaceChange> changes =
+                    apply_worksheet_namespaces(event.raw_xml, namespace_bindings);
+                const bool matching_qname = qname.local_name == "sheetData"
+                    && qname.prefix == worksheet_prefix
+                    && is_worksheet_namespace(qname.prefix);
+                restore_worksheet_namespaces(changes, namespace_bindings);
+                if (!matching_qname || is_closing_tag(event.raw_xml)) {
+                    throw FastXlsxError(
+                        "conditional-format edit found a mismatched sheetData QName");
+                }
+                saw_sheet_data_start = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::SheetDataEnd) {
+                const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+                const bool matching_boundary = saw_sheet_data_start
+                    && !saw_sheet_data_end && qname.local_name == "sheetData"
+                    && qname.prefix == worksheet_prefix
+                    && (event.self_closing != is_closing_tag(event.raw_xml));
+                if (!matching_boundary) {
+                    throw FastXlsxError(
+                        "conditional-format edit found a mismatched sheetData boundary");
+                }
+                saw_sheet_data_end = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+                if (!saw_worksheet_start || saw_worksheet_end || event.self_closing
+                    || !is_closing_tag(event.raw_xml)
+                    || qname.local_name != "worksheet"
+                    || qname.prefix != worksheet_prefix) {
+                    throw FastXlsxError(
+                        "conditional-format edit found a mismatched worksheet root QName");
+                }
+                saw_worksheet_end = true;
+                worksheet_end_offset = event.raw_xml_offset;
+                return;
+            }
+
+            const bool directly_inside_conditional_formatting = frames.size() == 1
+                && frames.front().conditional_formatting;
+            if (event.kind != WorksheetEventKind::Metadata) {
+                if (directly_inside_conditional_formatting
+                    && event.kind == WorksheetEventKind::RawText
+                    && !std::all_of(event.raw_xml.begin(), event.raw_xml.end(),
+                        [](char character) { return is_xml_space(character); })) {
+                    throw FastXlsxError(
+                        "worksheet conditionalFormatting contains unsupported direct text");
+                }
+                return;
+            }
+
+            const bool closing = is_closing_tag(event.raw_xml);
+            const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+            if (closing) {
+                if (frames.empty() || frames.back().local_name != qname.local_name
+                    || frames.back().prefix != qname.prefix) {
+                    throw FastXlsxError(
+                        "worksheet conditional-format metadata contains mismatched element nesting");
+                }
+                MetadataFrame frame = std::move(frames.back());
+                frames.pop_back();
+                if (frame.conditional_formatting && frame.direct_rule_count == 0) {
+                    throw FastXlsxError(
+                        "worksheet conditionalFormatting requires at least one direct cfRule");
+                }
+                restore_worksheet_namespaces(frame.namespace_changes, namespace_bindings);
+                return;
+            }
+
+            const std::vector<WorksheetNamespaceChange> changes =
+                apply_worksheet_namespaces(event.raw_xml, namespace_bindings);
+            const bool top_level = frames.empty();
+            const bool worksheet_qname = qname.prefix == worksheet_prefix
+                && is_worksheet_namespace(qname.prefix);
+            bool opens_conditional_formatting = false;
+
+            if (top_level && saw_sheet_data_end) {
+                const std::optional<int> rank =
+                    worksheet_suffix_schema_rank(qname.local_name);
+                if (!rank.has_value() || *rank < last_suffix_rank) {
+                    throw FastXlsxError(
+                        "worksheet suffix metadata is unsupported or not in schema order");
+                }
+                if (!worksheet_qname) {
+                    throw FastXlsxError(
+                        "worksheet conditional-format metadata QName differs from worksheet root");
+                }
+                last_suffix_rank = *rank;
+                if (*rank > conditional_formatting_schema_rank
+                    && !first_after_conditional_formats_offset.has_value()) {
+                    first_after_conditional_formats_offset = event.raw_xml_offset;
+                }
+                if (qname.local_name == "conditionalFormatting") {
+                    if (event.self_closing) {
+                        throw FastXlsxError(
+                            "worksheet conditionalFormatting cannot be self-closing");
+                    }
+                    opens_conditional_formatting = true;
+                }
+            } else if (top_level && qname.local_name == "conditionalFormatting"
+                && worksheet_qname) {
+                throw FastXlsxError(
+                    "worksheet conditionalFormatting appears before sheetData");
+            }
+
+            if (directly_inside_conditional_formatting) {
+                if (qname.local_name != "cfRule" || !worksheet_qname) {
+                    throw FastXlsxError(
+                        "worksheet conditionalFormatting has an unsupported direct child");
+                }
+                read_priority(event.raw_xml);
+                ++frames.front().direct_rule_count;
+            }
+
+            if (!event.self_closing) {
+                frames.push_back(MetadataFrame {
+                    std::string(qname.local_name),
+                    std::string(qname.prefix),
+                    opens_conditional_formatting,
+                    0,
+                    changes});
+            } else {
+                restore_worksheet_namespaces(changes, namespace_bindings);
+            }
+        });
+
+    if (!frames.empty()) {
+        throw FastXlsxError(
+            "worksheet conditional-format metadata ended inside an open element");
+    }
+    if (!saw_worksheet_start || !saw_sheet_data_start || !saw_sheet_data_end
+        || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "conditional-format edit requires a worksheet root, sheetData, and closing worksheet root");
+    }
+    if (maximum_priority == std::numeric_limits<std::uint32_t>::max()) {
+        throw FastXlsxError("worksheet conditional-format priority space is exhausted");
+    }
+    std::string element_prefix = worksheet_prefix;
+    if (!element_prefix.empty()) {
+        element_prefix += ':';
+    }
+    return WorksheetConditionalFormatRewritePlan {
+        first_after_conditional_formats_offset.value_or(worksheet_end_offset),
+        maximum_priority + 1U,
+        std::move(element_prefix)};
 }
 
 WorksheetDataValidationRewritePlan plan_worksheet_data_validation_rewrite(
@@ -2919,6 +3575,46 @@ void write_worksheet_hyperlink_rewrite(
     output.flush();
     if (!output) {
         throw FastXlsxError("failed to finalize staged worksheet hyperlink metadata file");
+    }
+}
+
+void write_worksheet_conditional_format_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view conditional_format_xml,
+    const WorksheetConditionalFormatRewritePlan& plan,
+    const std::filesystem::path& output_path)
+{
+    if (conditional_format_xml.empty()) {
+        throw FastXlsxError("conditional-format rewrite XML cannot be empty");
+    }
+
+    std::ofstream output(output_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError(
+            "failed to create staged worksheet conditional-format metadata file");
+    }
+
+    bool applied = false;
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (is_synthetic_self_closing_end(event)) {
+                return;
+            }
+            if (!applied && event.raw_xml_offset == plan.source_offset) {
+                write_bytes(output, conditional_format_xml);
+                applied = true;
+            }
+            write_bytes(output, event.raw_xml);
+        });
+
+    if (!applied) {
+        throw FastXlsxError(
+            "worksheet conditional-format rewrite did not reach its planned insertion boundary");
+    }
+    output.flush();
+    if (!output) {
+        throw FastXlsxError(
+            "failed to finalize staged worksheet conditional-format metadata file");
     }
 }
 

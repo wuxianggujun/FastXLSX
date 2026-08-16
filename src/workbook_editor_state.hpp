@@ -132,6 +132,7 @@ struct WorkbookEditor::Impl {
     std::map<std::string, std::size_t, std::less<>> pending_external_hyperlink_counts;
     PendingClassicNotes pending_classic_notes;
     std::map<std::string, std::size_t, std::less<>> pending_data_validation_counts;
+    std::map<std::string, std::size_t, std::less<>> pending_conditional_format_counts;
     PendingBasicTableEdits pending_basic_table_edits;
     std::optional<std::vector<detail::BasicWorksheetTableCatalogEntry>>
         source_basic_table_catalog;
@@ -426,6 +427,34 @@ struct WorkbookEditor::Impl {
         swap(pending_data_validation_counts, *updated);
     }
 
+    [[nodiscard]] std::optional<std::map<std::string, std::size_t, std::less<>>>
+    stage_pending_conditional_format_counts_move(
+        std::string_view old_name, std::string_view new_name) const
+    {
+        const auto source = pending_conditional_format_counts.find(old_name);
+        if (source == pending_conditional_format_counts.end()) {
+            return std::nullopt;
+        }
+        auto updated = pending_conditional_format_counts;
+        const auto updated_source = updated.find(old_name);
+        const std::size_t count = updated_source->second;
+        updated.erase(updated_source);
+        updated[std::string(new_name)] += count;
+        return updated;
+    }
+
+    void commit_pending_conditional_format_counts_move(
+        std::optional<std::map<std::string, std::size_t, std::less<>>>& updated) noexcept
+    {
+        if (!updated.has_value()) {
+            return;
+        }
+        static_assert(std::is_nothrow_swappable_v<
+            std::map<std::string, std::size_t, std::less<>>>);
+        using std::swap;
+        swap(pending_conditional_format_counts, *updated);
+    }
+
     [[nodiscard]] const std::vector<detail::BasicWorksheetTableCatalogEntry>&
     source_basic_tables()
     {
@@ -626,6 +655,10 @@ struct WorkbookEditor::Impl {
                 pending_data_validation_counts.find(current_name);
             const bool data_validations_added =
                 pending_data_validations != pending_data_validation_counts.end();
+            const auto pending_conditional_formats =
+                pending_conditional_format_counts.find(current_name);
+            const bool conditional_formats_added =
+                pending_conditional_formats != pending_conditional_format_counts.end();
             const auto pending_basic_tables =
                 pending_basic_table_edits.find(current_name);
             const bool basic_tables_added =
@@ -649,6 +682,7 @@ struct WorkbookEditor::Impl {
                 && !external_hyperlinks_added
                 && !classic_notes_added
                 && !data_validations_added
+                && !conditional_formats_added
                 && !basic_tables_added
                 && !auto_filter_changed
                 && !freeze_panes_changed
@@ -678,6 +712,9 @@ struct WorkbookEditor::Impl {
             }
             if (data_validations_added) {
                 summary.data_validation_count = pending_data_validations->second;
+            }
+            if (conditional_formats_added) {
+                summary.conditional_format_count = pending_conditional_formats->second;
             }
             if (basic_tables_added) {
                 summary.table_count = pending_basic_tables->second.tables.size();

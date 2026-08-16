@@ -9429,6 +9429,87 @@ void PackageEditor::add_data_validation_by_name(
         "existing-workbook data validation metadata edit", std::move(commit_notes));
 }
 
+void PackageEditor::add_conditional_color_scale_by_name(
+    std::string_view sheet_name, std::vector<CellRange> ranges,
+    TwoColorScaleRule rule)
+{
+    add_conditional_format_by_name(
+        sheet_name, std::move(ranges), ConditionalFormatRule {std::move(rule)});
+}
+
+void PackageEditor::add_conditional_color_scale_by_name(
+    std::string_view sheet_name, std::vector<CellRange> ranges,
+    ThreeColorScaleRule rule)
+{
+    add_conditional_format_by_name(
+        sheet_name, std::move(ranges), ConditionalFormatRule {std::move(rule)});
+}
+
+void PackageEditor::add_conditional_data_bar_by_name(
+    std::string_view sheet_name, std::vector<CellRange> ranges,
+    DataBarRule rule)
+{
+    add_conditional_format_by_name(
+        sheet_name, std::move(ranges), ConditionalFormatRule {std::move(rule)});
+}
+
+void PackageEditor::add_conditional_icon_set_by_name(
+    std::string_view sheet_name, std::vector<CellRange> ranges,
+    IconSetRule rule)
+{
+    add_conditional_format_by_name(
+        sheet_name, std::move(ranges), ConditionalFormatRule {std::move(rule)});
+}
+
+void PackageEditor::add_conditional_format_by_name(
+    std::string_view sheet_name, std::vector<CellRange> ranges,
+    ConditionalFormatRule rule)
+{
+    if (ranges.empty()) {
+        throw FastXlsxError("conditional-format range list cannot be empty");
+    }
+    validate_conditional_format_rule(rule);
+    (void)sqref(ranges);
+
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "conditional-format worksheet edit");
+
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for conditional-format planning");
+    const WorksheetConditionalFormatRewritePlan rewrite_plan =
+        plan_worksheet_conditional_format_rewrite(
+            [&](std::string& chunk) { return planning_reader(chunk); });
+    const std::string conditional_format_xml = serialize_conditional_format(
+        ranges, rule, rewrite_plan.priority, rewrite_plan.element_prefix);
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for conditional-format rewrite");
+    write_worksheet_conditional_format_rewrite(
+        [&](std::string& chunk) { return output_reader(chunk); },
+        conditional_format_xml, rewrite_plan, rewritten_source_file.path());
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "existing-workbook conditional-format edit preserves opaque source rule "
+        "payloads and rewrites worksheet-local metadata without relationship, "
+        "content-type, style, or calculation mutation");
+    replace_worksheet_part_from_chunk_source_with_commit_notes(
+        worksheet_part, staged_source, worksheet_metadata_reference_policy(),
+        "existing-workbook conditional-format metadata edit", std::move(commit_notes));
+}
+
 BasicWorksheetTableCatalogEntry PackageEditor::add_basic_table_by_name(
     std::string_view sheet_name,
     CellRange range, TableOptions options, std::uint32_t table_id)

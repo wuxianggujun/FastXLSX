@@ -4,9 +4,11 @@
 #include "package_writer.hpp"
 
 #include <fastxlsx/detail/formula_reference_audit.hpp>
+#include <fastxlsx/detail/worksheet_metadata_serializer.hpp>
 #include <fastxlsx/detail/worksheet_comment_writer.hpp>
 #include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/document_properties.hpp>
+#include <fastxlsx/streaming_writer.hpp>
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/worksheet_metadata.hpp>
 #include <fastxlsx/worksheet_table.hpp>
@@ -608,6 +610,14 @@ public:
     // mutation or formula/range synchronization.
     void add_data_validation_by_name(std::string_view sheet_name,
         std::vector<CellRange> ranges, DataValidationRule rule);
+    void add_conditional_color_scale_by_name(std::string_view sheet_name,
+        std::vector<CellRange> ranges, TwoColorScaleRule rule);
+    void add_conditional_color_scale_by_name(std::string_view sheet_name,
+        std::vector<CellRange> ranges, ThreeColorScaleRule rule);
+    void add_conditional_data_bar_by_name(std::string_view sheet_name,
+        std::vector<CellRange> ranges, DataBarRule rule);
+    void add_conditional_icon_set_by_name(std::string_view sheet_name,
+        std::vector<CellRange> ranges, IconSetRule rule);
     // Adds one writer-compatible table part and its worksheet tableParts/
     // relationship/content-type metadata in one staged package transaction.
     [[nodiscard]] BasicWorksheetTableCatalogEntry add_basic_table_by_name(
@@ -810,6 +820,8 @@ private:
     };
 
     explicit PackageEditor(PackageReader reader);
+    void add_conditional_format_by_name(std::string_view sheet_name,
+        std::vector<CellRange> ranges, ConditionalFormatRule rule);
     void replace_worksheet_cells_impl(PartName worksheet_part,
         std::span<const WorksheetCellReplacement> replacements,
         const ReferencePolicy& policy,

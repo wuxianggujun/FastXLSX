@@ -4,6 +4,7 @@
 /// Minimal public Patch-mode facade for editing an existing XLSX workbook.
 
 #include <fastxlsx/cell_value.hpp>
+#include <fastxlsx/streaming_writer.hpp>
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/worksheet_metadata.hpp>
 #include <fastxlsx/worksheet_table.hpp>
@@ -271,6 +272,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// Number of worksheet-local data-validation rules appended for this
     /// planned worksheet. Zero when no data-validation edit is queued.
     std::size_t data_validation_count = 0;
+
+    /// Number of worksheet-local conditional-formatting rules appended for this
+    /// planned worksheet. Zero when no conditional-formatting edit is queued.
+    std::size_t conditional_format_count = 0;
 
     /// Final number of writer-compatible table parts retained by queued table
     /// lifecycle edits for this planned worksheet.
@@ -3265,6 +3270,156 @@ public:
     /// unsupported, or transactional staging fails. Failure publishes no package
     /// or public state.
     void remove_note(std::string_view sheet_name, WorksheetCellReference cell);
+
+    /// Appends one worksheet-local two-color conditional-formatting color scale.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The rule is
+    /// appended as one schema-ordered `<conditionalFormatting>` element without
+    /// creating relationships, content types, styles.xml entries, or dxfs. The
+    /// range and finite endpoint values use the same narrow validation surface
+    /// as WorksheetWriter. Priority is allocated after existing and earlier
+    /// same-session rules on this worksheet.
+    ///
+    /// Existing worksheet XML, cells, relationships, and unknown package entries
+    /// are preserved through a bounded, file-backed staged rewrite. Existing
+    /// advanced/custom, dxf/formula, and multiple-rule payloads remain opaque and
+    /// byte-preserved after a structural/priority audit; they are not projected,
+    /// updated, or normalized. New rules remain limited to this writer-compatible
+    /// surface and do not shift after structural edits. Failure publishes neither
+    /// package nor public pending state and leaves the editor usable for retry.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name, including a
+    /// planned rename or a worksheet added in the same editor.
+    /// @param range One-based inclusive owning range.
+    /// @param rule Copied writer-compatible two-color scale rule.
+    /// @throws FastXlsxError if the worksheet/range/rule is invalid, existing
+    /// root/QName/nesting/schema/direct-child/priority structure cannot be safely
+    /// appended to, or transactional staging fails.
+    void add_conditional_color_scale(
+        std::string_view sheet_name,
+        CellRange range,
+        TwoColorScaleRule rule);
+
+    /// Appends one worksheet-local three-color conditional-formatting color scale.
+    ///
+    /// This follows the two-color Patch overload's preservation, priority,
+    /// transaction, failure, and non-goals. The lower/midpoint/upper values use
+    /// WorksheetWriter's narrow finite-value validation surface.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param range One-based inclusive owning range.
+    /// @param rule Copied writer-compatible three-color scale rule.
+    /// @throws FastXlsxError if validation, source audit, schema-order proof, or
+    /// transactional staging fails.
+    void add_conditional_color_scale(
+        std::string_view sheet_name,
+        CellRange range,
+        ThreeColorScaleRule rule);
+
+    /// Appends one two-color conditional-formatting rule for multiple ranges.
+    ///
+    /// Ranges are copied and emitted as one space-separated `sqref` attribute.
+    /// The list must be non-empty and is not sorted, merged, deduplicated, or
+    /// overlap-checked. All other boundaries match the single-range overload.
+    void add_conditional_color_scale(
+        std::string_view sheet_name,
+        std::span<const CellRange> ranges,
+        TwoColorScaleRule rule);
+
+    /// Appends one three-color conditional-formatting rule for multiple ranges.
+    ///
+    /// Ranges are copied into one `sqref`; the list must be non-empty and is not
+    /// normalized. All other boundaries match the single-range overload.
+    void add_conditional_color_scale(
+        std::string_view sheet_name,
+        std::span<const CellRange> ranges,
+        ThreeColorScaleRule rule);
+
+    /// Convenience overload for a copied two-color initializer-list range set.
+    void add_conditional_color_scale(
+        std::string_view sheet_name,
+        std::initializer_list<CellRange> ranges,
+        TwoColorScaleRule rule);
+
+    /// Convenience overload for a copied three-color initializer-list range set.
+    void add_conditional_color_scale(
+        std::string_view sheet_name,
+        std::initializer_list<CellRange> ranges,
+        ThreeColorScaleRule rule);
+
+    /// Appends one worksheet-local basic conditional-formatting data bar.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The rule is
+    /// staged as one schema-ordered `<conditionalFormatting>` element and shares
+    /// the worksheet priority sequence with color-scale and icon-set additions.
+    /// Endpoints and inline ARGB color use WorksheetWriter's narrow basic data-bar
+    /// validation. No relationships, content types, styles, dxfs, cells, formulas,
+    /// axes, borders, gradients, negative-bar options, or extLst are created or
+    /// modified. Existing worksheet/package data is preserved; failure publishes
+    /// no package or public pending state.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param range One-based inclusive owning range.
+    /// @param rule Copied writer-compatible basic data-bar rule.
+    /// @throws FastXlsxError if validation, source audit, schema-order proof, or
+    /// transactional staging fails.
+    void add_conditional_data_bar(
+        std::string_view sheet_name,
+        CellRange range,
+        DataBarRule rule);
+
+    /// Appends one basic data-bar rule for multiple ranges.
+    ///
+    /// Ranges are copied into one non-empty, space-separated `sqref` and are not
+    /// normalized. All preservation and failure boundaries match the single-range
+    /// overload.
+    void add_conditional_data_bar(
+        std::string_view sheet_name,
+        std::span<const CellRange> ranges,
+        DataBarRule rule);
+
+    /// Convenience overload for a copied data-bar initializer-list range set.
+    void add_conditional_data_bar(
+        std::string_view sheet_name,
+        std::initializer_list<CellRange> ranges,
+        DataBarRule rule);
+
+    /// Appends one worksheet-local built-in 3-arrow conditional-formatting icon set.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The rule is
+    /// staged as one schema-ordered `<conditionalFormatting>` element and shares
+    /// the worksheet priority sequence with color-scale and data-bar additions.
+    /// It uses WorksheetWriter's narrow built-in `3Arrows`, finite ascending
+    /// threshold surface. No custom icons, extLst, relationships, content types,
+    /// styles, dxfs, cells, formulas, or cached values are created or modified.
+    /// Existing worksheet/package data is preserved; failure publishes no package
+    /// or public pending state.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param range One-based inclusive owning range.
+    /// @param rule Copied writer-compatible basic icon-set rule.
+    /// @throws FastXlsxError if validation, source audit, schema-order proof, or
+    /// transactional staging fails.
+    void add_conditional_icon_set(
+        std::string_view sheet_name,
+        CellRange range,
+        IconSetRule rule);
+
+    /// Appends one built-in 3-arrow icon-set rule for multiple ranges.
+    ///
+    /// Ranges are copied into one non-empty, space-separated `sqref` and are not
+    /// normalized. All preservation and failure boundaries match the single-range
+    /// overload.
+    void add_conditional_icon_set(
+        std::string_view sheet_name,
+        std::span<const CellRange> ranges,
+        IconSetRule rule);
+
+    /// Convenience overload for a copied icon-set initializer-list range set.
+    void add_conditional_icon_set(
+        std::string_view sheet_name,
+        std::initializer_list<CellRange> ranges,
+        IconSetRule rule);
 
     /// Appends one worksheet-local data-validation rule for one range.
     ///

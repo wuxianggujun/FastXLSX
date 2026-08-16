@@ -38,6 +38,12 @@ struct WorksheetDataValidationRewritePlan {
     std::uint64_t new_count = 1;
 };
 
+struct WorksheetConditionalFormatRewritePlan {
+    std::uint64_t source_offset = 0;
+    std::uint32_t priority = 1;
+    std::string element_prefix;
+};
+
 struct WorksheetTablePartRewritePlan {
     enum class Action {
         InsertContainerBefore,
@@ -190,6 +196,21 @@ void write_worksheet_data_validation_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view data_validation_xml,
     const WorksheetDataValidationRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Audits worksheet-root conditionalFormatting containers and all direct cfRule
+/// priorities, then selects the schema-safe boundary for one additional
+/// conditionalFormatting element. Unknown rule payloads are preserved.
+[[nodiscard]] WorksheetConditionalFormatRewritePlan
+plan_worksheet_conditional_format_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk);
+
+/// Streams the source worksheet to a staged file while inserting one complete
+/// serialized conditionalFormatting element at the planned schema boundary.
+void write_worksheet_conditional_format_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view conditional_format_xml,
+    const WorksheetConditionalFormatRewritePlan& plan,
     const std::filesystem::path& output_path);
 
 /// Selects a schema-safe append/insert boundary for one linked table part.

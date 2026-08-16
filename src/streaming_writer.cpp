@@ -3,6 +3,7 @@
 #include <fastxlsx/detail/opc.hpp>
 #include <fastxlsx/detail/worksheet_comment_writer.hpp>
 #include <fastxlsx/detail/worksheet_metadata_serializer.hpp>
+#include <fastxlsx/detail/worksheet_table_serializer.hpp>
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/image.hpp>
 
@@ -282,16 +283,6 @@ std::string_view image_content_type(ImageFormat format)
     throw FastXlsxError("unknown image format");
 }
 
-bool is_ascii_letter(char ch) noexcept
-{
-    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
-}
-
-bool is_ascii_digit(char ch) noexcept
-{
-    return ch >= '0' && ch <= '9';
-}
-
 char ascii_lower(char ch) noexcept
 {
     if (ch >= 'A' && ch <= 'Z') {
@@ -323,139 +314,6 @@ bool ascii_equals_ignore_case(std::string_view lhs, std::string_view rhs) noexce
     }
 
     return true;
-}
-
-bool looks_like_excel_cell_reference(std::string_view value)
-{
-    std::uint32_t column = 0;
-    std::size_t offset = 0;
-    while (offset < value.size() && is_ascii_letter(value[offset])) {
-        column = column * 26 + static_cast<std::uint32_t>(ascii_lower(value[offset]) - 'a' + 1);
-        if (column > max_excel_columns) {
-            return false;
-        }
-        ++offset;
-    }
-
-    if (offset == 0 || offset == value.size()) {
-        return false;
-    }
-
-    std::uint32_t row = 0;
-    for (; offset < value.size(); ++offset) {
-        if (!is_ascii_digit(value[offset])) {
-            return false;
-        }
-        row = row * 10 + static_cast<std::uint32_t>(value[offset] - '0');
-        if (row > max_excel_rows) {
-            return false;
-        }
-    }
-
-    return row > 0 && column > 0;
-}
-
-void validate_table_name(std::string_view name)
-{
-    if (name.empty()) {
-        throw FastXlsxError("table name cannot be empty");
-    }
-    if (!(is_ascii_letter(name.front()) || name.front() == '_')) {
-        throw FastXlsxError("table name must start with an ASCII letter or underscore");
-    }
-    for (const char ch : name) {
-        if (!(is_ascii_letter(ch) || is_ascii_digit(ch) || ch == '_')) {
-            throw FastXlsxError("table name must contain only ASCII letters, digits, and underscores");
-        }
-    }
-    if (looks_like_excel_cell_reference(name)) {
-        throw FastXlsxError("table name cannot look like an Excel cell reference");
-    }
-}
-
-std::uint32_t range_width(CellRange range)
-{
-    return range.last_column - range.first_column + 1;
-}
-
-bool ranges_overlap(CellRange left, CellRange right)
-{
-    return left.first_row <= right.last_row && right.first_row <= left.last_row
-        && left.first_column <= right.last_column && right.first_column <= left.last_column;
-}
-
-std::string_view table_totals_function_name(TableTotalsFunction function)
-{
-    switch (function) {
-    case TableTotalsFunction::Sum:
-        return "sum";
-    case TableTotalsFunction::Count:
-        return "count";
-    case TableTotalsFunction::Average:
-        return "average";
-    case TableTotalsFunction::Maximum:
-        return "max";
-    case TableTotalsFunction::Minimum:
-        return "min";
-    case TableTotalsFunction::Product:
-        return "product";
-    case TableTotalsFunction::CountNumbers:
-        return "countNums";
-    case TableTotalsFunction::StandardDeviation:
-        return "stdDev";
-    case TableTotalsFunction::Variance:
-        return "var";
-    }
-
-    throw FastXlsxError("unknown table totals function");
-}
-
-void validate_table_options(CellRange range, const TableOptions& options)
-{
-    (void)detail::range_reference(range);
-    if (range.last_row == range.first_row) {
-        throw FastXlsxError("table range must include at least one data row after the header");
-    }
-    if (options.show_totals_row && range.last_row <= range.first_row + 1) {
-        throw FastXlsxError(
-            "table range with totals row metadata must include header, data, and totals rows");
-    }
-    validate_table_name(options.name);
-
-    const std::uint32_t width = range_width(range);
-    if (options.column_names.size() != width) {
-        throw FastXlsxError("table column name count must match the table range width");
-    }
-    if (!options.column_totals_functions.empty()
-        && options.column_totals_functions.size() != width) {
-        throw FastXlsxError("table totals function count must match the table range width");
-    }
-    if (!options.column_totals_labels.empty() && options.column_totals_labels.size() != width) {
-        throw FastXlsxError("table totals label count must match the table range width");
-    }
-    if (!options.show_totals_row
-        && (!options.column_totals_functions.empty() || !options.column_totals_labels.empty())) {
-        throw FastXlsxError("table totals metadata requires visible totals row metadata");
-    }
-    if (options.show_totals_row) {
-        const bool has_totals_function =
-            std::any_of(options.column_totals_functions.begin(),
-                options.column_totals_functions.end(),
-                [](const auto& function) { return function.has_value(); });
-        if (!has_totals_function) {
-            throw FastXlsxError("visible table totals rows require at least one totals function");
-        }
-    }
-
-    std::set<std::string> seen_column_names;
-    for (const std::string& column_name : options.column_names) {
-        if (column_name.empty()) {
-            throw FastXlsxError("table column names cannot be empty");
-        }
-        if (!seen_column_names.insert(ascii_lower_copy(column_name)).second) {
-            throw FastXlsxError("table column names must be unique within a table");
-        }
-    }
 }
 
 void validate_color_scale_point(const ColorScalePoint& point)
@@ -1942,64 +1800,8 @@ std::string worksheet_relationship_entry_name(std::size_t worksheet_index)
 
 std::string build_table_xml(const WorksheetTable& table, std::size_t table_index)
 {
-    std::string xml;
-    xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
-    xml += R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id=")";
-    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(table_index + 1));
-    xml += R"(" name=")";
-    detail::append_escaped_xml_attribute(xml, table.options.name);
-    xml += R"(" displayName=")";
-    detail::append_escaped_xml_attribute(xml, table.options.name);
-    xml += R"(" ref=")";
-    xml += detail::range_reference(table.range);
-    if (table.options.show_totals_row) {
-        xml += R"(" totalsRowCount="1">)";
-    } else {
-        xml += R"(" totalsRowShown="0">)";
-    }
-    xml += R"(<autoFilter ref=")";
-    CellRange auto_filter_range = table.range;
-    if (table.options.show_totals_row) {
-        --auto_filter_range.last_row;
-    }
-    xml += detail::range_reference(auto_filter_range);
-    xml += R"("/>)";
-    xml += R"(<tableColumns count=")";
-    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(table.options.column_names.size()));
-    xml += R"(">)";
-    for (std::size_t index = 0; index < table.options.column_names.size(); ++index) {
-        xml += R"(<tableColumn id=")";
-        detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(index + 1));
-        xml += R"(" name=")";
-        detail::append_escaped_xml_attribute(xml, table.options.column_names[index]);
-        if (!table.options.column_totals_labels.empty()
-            && !table.options.column_totals_labels[index].empty()) {
-            xml += R"(" totalsRowLabel=")";
-            detail::append_escaped_xml_attribute(xml, table.options.column_totals_labels[index]);
-        }
-        if (!table.options.column_totals_functions.empty()
-            && table.options.column_totals_functions[index].has_value()) {
-            xml += R"(" totalsRowFunction=")";
-            xml += table_totals_function_name(*table.options.column_totals_functions[index]);
-        }
-        xml += R"("/>)";
-    }
-    xml += "</tableColumns>";
-    if (!table.options.style_name.empty()) {
-        xml += R"(<tableStyleInfo name=")";
-        detail::append_escaped_xml_attribute(xml, table.options.style_name);
-        xml += R"(" showFirstColumn=")";
-        xml += table.options.show_first_column ? "1" : "0";
-        xml += R"(" showLastColumn=")";
-        xml += table.options.show_last_column ? "1" : "0";
-        xml += R"(" showRowStripes=")";
-        xml += table.options.show_row_stripes ? "1" : "0";
-        xml += R"(" showColumnStripes=")";
-        xml += table.options.show_column_stripes ? "1" : "0";
-        xml += R"("/>)";
-    }
-    xml += "</table>";
-    return xml;
+    return detail::serialize_worksheet_table(
+        table.range, table.options, static_cast<std::uint32_t>(table_index + 1U));
 }
 
 std::string drawing_relationship_id(std::size_t image_index)
@@ -2832,9 +2634,9 @@ void WorksheetWriter::add_note(
 void WorksheetWriter::add_table(CellRange range, TableOptions options)
 {
     ensure_mutable_worksheet(state_);
-    validate_table_options(range, options);
+    detail::validate_worksheet_table(range, options);
     for (const WorksheetTable& existing : state_->tables) {
-        if (ranges_overlap(range, existing.range)) {
+        if (detail::worksheet_table_ranges_overlap(range, existing.range)) {
             throw FastXlsxError("table ranges cannot overlap within a worksheet");
         }
     }

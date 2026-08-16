@@ -11,6 +11,7 @@
 
 #include <fastxlsx/detail/cell_store.hpp>
 #include <fastxlsx/detail/worksheet_metadata_rewriter.hpp>
+#include <fastxlsx/detail/worksheet_table_serializer.hpp>
 #include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/image.hpp>
@@ -18,8 +19,10 @@
 #include <algorithm>
 
 #include <cstddef>
+#include <limits>
 #include <map>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -213,6 +216,118 @@ workbook_editor_targeted_cell_replacements_from_materialized_cells(
         message += std::to_string(*diagnostic.shared_string_index);
     }
     return message;
+}
+
+[[nodiscard]] bool workbook_editor_table_ranges_equal(
+    CellRange left, CellRange right) noexcept
+{
+    return left.first_row == right.first_row
+        && left.first_column == right.first_column
+        && left.last_row == right.last_row
+        && left.last_column == right.last_column;
+}
+
+[[nodiscard]] bool workbook_editor_table_options_equal(
+    const TableOptions& left, const TableOptions& right) noexcept
+{
+    return left.name == right.name
+        && left.column_names == right.column_names
+        && left.show_totals_row == right.show_totals_row
+        && left.column_totals_functions == right.column_totals_functions
+        && left.column_totals_labels == right.column_totals_labels
+        && left.style_name == right.style_name
+        && left.show_first_column == right.show_first_column
+        && left.show_last_column == right.show_last_column
+        && left.show_row_stripes == right.show_row_stripes
+        && left.show_column_stripes == right.show_column_stripes;
+}
+
+void validate_workbook_editor_effective_table_catalog(
+    const std::vector<detail::BasicWorksheetTableCatalogEntry>& tables)
+{
+    std::set<std::uint32_t> ids;
+    std::set<detail::PartName> parts;
+    for (std::size_t index = 0; index < tables.size(); ++index) {
+        const detail::BasicWorksheetTableCatalogEntry& table = tables[index];
+        if (table.id == 0 || !ids.insert(table.id).second) {
+            throw FastXlsxError("workbook table ids must be positive and unique");
+        }
+        if (!parts.insert(table.table_part).second) {
+            throw FastXlsxError("workbook table part names must be unique");
+        }
+        for (std::size_t previous_index = 0;
+             previous_index < index; ++previous_index) {
+            const detail::BasicWorksheetTableCatalogEntry& previous =
+                tables[previous_index];
+            const bool duplicate_name =
+                detail::worksheet_table_names_equal(table.name, previous.name)
+                || detail::worksheet_table_names_equal(
+                    table.name, previous.display_name)
+                || detail::worksheet_table_names_equal(
+                    table.display_name, previous.name)
+                || detail::worksheet_table_names_equal(
+                    table.display_name, previous.display_name);
+            if (duplicate_name) {
+                throw FastXlsxError("workbook table names must be unique");
+            }
+            if (table.worksheet_name == previous.worksheet_name
+                && detail::worksheet_table_ranges_overlap(
+                    table.range, previous.range)) {
+                throw FastXlsxError("worksheet table ranges overlap");
+            }
+        }
+    }
+}
+
+[[nodiscard]] std::size_t find_workbook_editor_table(
+    const std::vector<detail::BasicWorksheetTableCatalogEntry>& tables,
+    std::string_view sheet_name, std::string_view table_name)
+{
+    const auto table = std::find_if(tables.begin(), tables.end(),
+        [sheet_name, table_name](
+            const detail::BasicWorksheetTableCatalogEntry& candidate) {
+            return candidate.worksheet_name == sheet_name
+                && (detail::worksheet_table_names_equal(
+                        candidate.name, table_name)
+                    || detail::worksheet_table_names_equal(
+                        candidate.display_name, table_name));
+        });
+    if (table == tables.end()) {
+        throw FastXlsxError(
+            "worksheet has no writer-compatible table with the requested name");
+    }
+    return static_cast<std::size_t>(std::distance(tables.begin(), table));
+}
+
+template <typename PendingTableEdits>
+auto& stage_workbook_editor_table_worksheet_state(
+    PendingTableEdits& updated_edits,
+    std::string_view sheet_name,
+    const std::vector<detail::BasicWorksheetTableCatalogEntry>& effective_tables)
+{
+    auto [edit, inserted] = updated_edits.try_emplace(std::string(sheet_name));
+    if (inserted) {
+        for (const detail::BasicWorksheetTableCatalogEntry& table :
+             effective_tables) {
+            if (table.worksheet_name == sheet_name) {
+                edit->second.tables.push_back(table);
+            }
+        }
+    }
+    return edit->second;
+}
+
+template <typename PendingTableEdit>
+[[nodiscard]] auto find_workbook_editor_staged_table(
+    PendingTableEdit& edit,
+    const detail::BasicWorksheetTableCatalogEntry& identity)
+{
+    return std::find_if(edit.tables.begin(), edit.tables.end(),
+        [&identity](const detail::BasicWorksheetTableCatalogEntry& candidate) {
+            return candidate.id == identity.id
+                && candidate.relationship_id == identity.relationship_id
+                && candidate.table_part == identity.table_part;
+        });
 }
 
 } // namespace
@@ -897,6 +1012,222 @@ void WorkbookEditor::add_data_validation(
         std::move(rule));
 }
 
+void WorkbookEditor::add_table(
+    std::string_view sheet_name, CellRange range, TableOptions options)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    const std::string table_name_key = options.name;
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        detail::validate_worksheet_table(range, options);
+
+        const std::vector<detail::BasicWorksheetTableCatalogEntry> effective_tables =
+            impl_->effective_basic_tables();
+        validate_workbook_editor_effective_table_catalog(effective_tables);
+        for (const detail::BasicWorksheetTableCatalogEntry& table : effective_tables) {
+            if (detail::worksheet_table_names_equal(options.name, table.name)
+                || detail::worksheet_table_names_equal(
+                    options.name, table.display_name)) {
+                throw FastXlsxError(
+                    "table name must be unique within the workbook");
+            }
+            if (table.worksheet_name == sheet_name_key
+                && detail::worksheet_table_ranges_overlap(range, table.range)) {
+                throw FastXlsxError(
+                    "table range overlaps an existing worksheet table");
+            }
+        }
+
+        std::set<std::uint32_t> used_ids = impl_->reserved_basic_table_ids;
+        for (const detail::BasicWorksheetTableCatalogEntry& source :
+             impl_->source_basic_tables()) {
+            used_ids.insert(source.id);
+        }
+
+        std::uint32_t table_id = 1;
+        while (used_ids.contains(table_id)) {
+            if (table_id == std::numeric_limits<std::uint32_t>::max()) {
+                throw FastXlsxError("worksheet table id space is exhausted");
+            }
+            ++table_id;
+        }
+
+        WorkbookEditor::Impl::PendingBasicTableEdits updated_edits =
+            impl_->pending_basic_table_edits;
+        WorkbookEditor::Impl::PendingBasicTableEdit& worksheet_edit =
+            stage_workbook_editor_table_worksheet_state(
+                updated_edits, sheet_name_key, effective_tables);
+        worksheet_edit.tables.reserve(worksheet_edit.tables.size() + 1U);
+        std::set<std::uint32_t> updated_reserved_ids =
+            impl_->reserved_basic_table_ids;
+        updated_reserved_ids.insert(table_id);
+
+        detail::BasicWorksheetTableCatalogEntry added_table =
+            impl_->editor.add_basic_table_by_name(
+                sheet_name_key, range, std::move(options), table_id);
+
+        static_assert(std::is_nothrow_move_constructible_v<
+            detail::BasicWorksheetTableCatalogEntry>);
+        worksheet_edit.tables.push_back(std::move(added_table));
+        ++worksheet_edit.addition_count;
+        static_assert(std::is_nothrow_swappable_v<
+            WorkbookEditor::Impl::PendingBasicTableEdits>);
+        static_assert(std::is_nothrow_swappable_v<std::set<std::uint32_t>>);
+        using std::swap;
+        swap(impl_->pending_basic_table_edits, updated_edits);
+        swap(impl_->reserved_basic_table_ids, updated_reserved_ids);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::add_table() failed for '" + sheet_name_key
+            + "' with table '" + table_name_key + "': " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::update_table(
+    std::string_view sheet_name, std::string_view table_name,
+    CellRange range, TableOptions options)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    const std::string table_name_key(table_name);
+    const std::string replacement_name = options.name;
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        detail::validate_worksheet_table(range, options);
+
+        const std::vector<detail::BasicWorksheetTableCatalogEntry> effective_tables =
+            impl_->effective_basic_tables();
+        validate_workbook_editor_effective_table_catalog(effective_tables);
+        const std::size_t target_index = find_workbook_editor_table(
+            effective_tables, sheet_name_key, table_name_key);
+        const detail::BasicWorksheetTableCatalogEntry& target =
+            effective_tables[target_index];
+        if (workbook_editor_table_ranges_equal(target.range, range)
+            && target.name == target.display_name
+            && workbook_editor_table_options_equal(target.options, options)) {
+            impl_->clear_last_edit_error();
+            return;
+        }
+
+        detail::BasicWorksheetTableCatalogEntry replacement = target;
+        replacement.name = options.name;
+        replacement.display_name = options.name;
+        replacement.range = range;
+        replacement.options = options;
+        std::vector<detail::BasicWorksheetTableCatalogEntry> proposed_tables =
+            effective_tables;
+        proposed_tables[target_index] = replacement;
+        validate_workbook_editor_effective_table_catalog(proposed_tables);
+
+        WorkbookEditor::Impl::PendingBasicTableEdits updated_edits =
+            impl_->pending_basic_table_edits;
+        WorkbookEditor::Impl::PendingBasicTableEdit& worksheet_edit =
+            stage_workbook_editor_table_worksheet_state(
+                updated_edits, sheet_name_key, effective_tables);
+        const auto staged_target =
+            find_workbook_editor_staged_table(worksheet_edit, target);
+        if (staged_target == worksheet_edit.tables.end()) {
+            throw FastXlsxError("table lifecycle state lost its stable identity");
+        }
+        *staged_target = replacement;
+        ++worksheet_edit.update_count;
+
+        impl_->editor.update_basic_table_by_name(sheet_name_key,
+            target.relationship_id, target.table_part, range,
+            std::move(options), target.id);
+
+        static_assert(std::is_nothrow_swappable_v<
+            WorkbookEditor::Impl::PendingBasicTableEdits>);
+        using std::swap;
+        swap(impl_->pending_basic_table_edits, updated_edits);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::update_table() failed for '" + sheet_name_key
+            + "' table '" + table_name_key + "' -> '" + replacement_name
+            + "': " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::remove_table(
+    std::string_view sheet_name, std::string_view table_name)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    const std::string table_name_key(table_name);
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+
+        const std::vector<detail::BasicWorksheetTableCatalogEntry> effective_tables =
+            impl_->effective_basic_tables();
+        validate_workbook_editor_effective_table_catalog(effective_tables);
+        const std::size_t target_index = find_workbook_editor_table(
+            effective_tables, sheet_name_key, table_name_key);
+        const detail::BasicWorksheetTableCatalogEntry target =
+            effective_tables[target_index];
+
+        WorkbookEditor::Impl::PendingBasicTableEdits updated_edits =
+            impl_->pending_basic_table_edits;
+        WorkbookEditor::Impl::PendingBasicTableEdit& worksheet_edit =
+            stage_workbook_editor_table_worksheet_state(
+                updated_edits, sheet_name_key, effective_tables);
+        const auto staged_target =
+            find_workbook_editor_staged_table(worksheet_edit, target);
+        if (staged_target == worksheet_edit.tables.end()) {
+            throw FastXlsxError("table lifecycle state lost its stable identity");
+        }
+        worksheet_edit.tables.erase(staged_target);
+        ++worksheet_edit.removal_count;
+        std::set<std::uint32_t> updated_reserved_ids =
+            impl_->reserved_basic_table_ids;
+        updated_reserved_ids.insert(target.id);
+
+        impl_->editor.remove_basic_table_by_name(
+            sheet_name_key, target.relationship_id, target.table_part);
+
+        static_assert(std::is_nothrow_swappable_v<
+            WorkbookEditor::Impl::PendingBasicTableEdits>);
+        static_assert(std::is_nothrow_swappable_v<std::set<std::uint32_t>>);
+        using std::swap;
+        swap(impl_->pending_basic_table_edits, updated_edits);
+        swap(impl_->reserved_basic_table_ids, updated_reserved_ids);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::remove_table() failed for '" + sheet_name_key
+            + "' table '" + table_name_key + "': " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
 void WorkbookEditor::set_auto_filter(
     std::string_view sheet_name, CellRange range)
 {
@@ -1243,6 +1574,7 @@ void WorkbookEditor::remove_worksheet(std::string_view name)
             || !impl_->pending_external_hyperlink_counts.empty()
             || !impl_->pending_classic_notes.empty()
             || !impl_->pending_data_validation_counts.empty()
+            || !impl_->pending_basic_table_edits.empty()
             || !impl_->pending_auto_filter_edits.empty()
             || !impl_->pending_freeze_pane_edits.empty()
             || !impl_->pending_merged_cell_edits.empty()) {
@@ -1331,6 +1663,10 @@ void WorkbookEditor::rename_sheet(
             updated_data_validation_counts =
                 impl_->stage_pending_data_validation_counts_move(
                     old_name_key, new_name_key);
+        std::optional<WorkbookEditor::Impl::PendingBasicTableEdits>
+            updated_basic_table_edits =
+                impl_->stage_pending_basic_table_edits_move(
+                    old_name_key, new_name_key);
         std::optional<WorkbookEditor::Impl::PendingAutoFilterEdits>
             updated_auto_filter_edits =
                 impl_->stage_pending_auto_filter_edits_move(
@@ -1374,6 +1710,8 @@ void WorkbookEditor::rename_sheet(
         impl_->commit_pending_classic_notes_move(updated_classic_notes);
         impl_->commit_pending_data_validation_counts_move(
             updated_data_validation_counts);
+        impl_->commit_pending_basic_table_edits_move(
+            updated_basic_table_edits);
         impl_->commit_pending_auto_filter_edits_move(updated_auto_filter_edits);
         impl_->commit_pending_freeze_pane_edits_move(updated_freeze_pane_edits);
         impl_->commit_pending_merged_cell_edits_move(updated_merged_cell_edits);

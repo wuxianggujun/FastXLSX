@@ -387,6 +387,39 @@ bool parse_boolean(std::string_view value, std::string_view label)
         "worksheet table reader has an invalid " + std::string(label));
 }
 
+TableTotalsFunction parse_table_totals_function(std::string_view value)
+{
+    if (value == "sum") {
+        return TableTotalsFunction::Sum;
+    }
+    if (value == "count") {
+        return TableTotalsFunction::Count;
+    }
+    if (value == "average") {
+        return TableTotalsFunction::Average;
+    }
+    if (value == "max") {
+        return TableTotalsFunction::Maximum;
+    }
+    if (value == "min") {
+        return TableTotalsFunction::Minimum;
+    }
+    if (value == "product") {
+        return TableTotalsFunction::Product;
+    }
+    if (value == "countNums") {
+        return TableTotalsFunction::CountNumbers;
+    }
+    if (value == "stdDev") {
+        return TableTotalsFunction::StandardDeviation;
+    }
+    if (value == "var") {
+        return TableTotalsFunction::Variance;
+    }
+    throw FastXlsxError(
+        "worksheet table reader has an unsupported totalsRowFunction");
+}
+
 struct A1Coordinate {
     std::uint32_t row = 0;
     std::uint32_t column = 0;
@@ -1038,10 +1071,31 @@ public:
             throw FastXlsxError(
                 "worksheet table column count does not match table range width");
         }
+        CellRange expected_filter_range = view_.range;
+        if (view_.show_totals_row) {
+            --expected_filter_range.last_row;
+        }
         if (view_.auto_filter_range.has_value()
-            && !same_range(*view_.auto_filter_range, view_.range)) {
+            && !same_range(*view_.auto_filter_range, expected_filter_range)) {
             throw FastXlsxError(
-                "worksheet table autoFilter boundary must match the table range when totals rows are absent");
+                "worksheet table autoFilter boundary must match the writer-compatible table range");
+        }
+        if (!view_.show_totals_row) {
+            for (const WorksheetTableColumnView& column : view_.columns) {
+                if (column.totals_function.has_value() || !column.totals_label.empty()) {
+                    throw FastXlsxError(
+                        "worksheet table column totals metadata requires a totals row");
+                }
+            }
+        } else {
+            const bool has_totals_function = std::any_of(view_.columns.begin(),
+                view_.columns.end(), [](const WorksheetTableColumnView& column) {
+                    return column.totals_function.has_value();
+                });
+            if (!has_totals_function) {
+                throw FastXlsxError(
+                    "worksheet table totals row requires at least one totals function");
+            }
         }
         return std::move(view_);
     }
@@ -1108,6 +1162,7 @@ private:
                 if (id == 0 || id > std::numeric_limits<std::uint32_t>::max()) {
                     throw FastXlsxError("worksheet table id is outside uint32 range");
                 }
+                view_.id = static_cast<std::uint32_t>(id);
                 saw_id = true;
             } else if (attribute_name.local_name == "name") {
                 view_.name = decode_xml_value(raw_value,
@@ -1138,14 +1193,17 @@ private:
                         "worksheet table reader supports exactly one header row");
                 }
             } else if (attribute_name.local_name == "totalsRowCount") {
-                if (parse_unsigned_decimal(raw_value, "totalsRowCount") != 0U) {
+                const std::uint64_t count =
+                    parse_unsigned_decimal(raw_value, "totalsRowCount");
+                if (count > 1U) {
                     throw FastXlsxError(
-                        "worksheet table reader does not support totals rows");
+                        "worksheet table reader supports at most one totals row");
                 }
+                view_.show_totals_row = count == 1U;
             } else if (attribute_name.local_name == "totalsRowShown") {
                 if (parse_boolean(raw_value, "totalsRowShown")) {
                     throw FastXlsxError(
-                        "worksheet table reader does not support totals rows");
+                        "worksheet table reader requires totalsRowCount for visible totals rows");
                 }
             } else {
                 throw FastXlsxError(
@@ -1337,12 +1395,16 @@ private:
                     options_.max_column_name_bytes,
                     "tableColumn name (max_column_name_bytes)");
                 saw_name = true;
-            } else if (attribute_name.local_name == "totalsRowLabel"
-                || attribute_name.local_name == "totalsRowFunction"
-                || attribute_name.local_name == "calculatedColumnFormula"
+            } else if (attribute_name.local_name == "totalsRowLabel") {
+                column.totals_label = decode_xml_value(raw_value,
+                    options_.max_column_name_bytes,
+                    "tableColumn totalsRowLabel (max_column_name_bytes)");
+            } else if (attribute_name.local_name == "totalsRowFunction") {
+                column.totals_function = parse_table_totals_function(raw_value);
+            } else if (attribute_name.local_name == "calculatedColumnFormula"
                 || attribute_name.local_name == "totalsRowFormula") {
                 throw FastXlsxError(
-                    "worksheet table reader does not support totals or calculated column metadata");
+                    "worksheet table reader does not support calculated table formulas");
             } else {
                 throw FastXlsxError(
                     "worksheet tableColumn has an unsupported attribute");
@@ -1385,13 +1447,20 @@ private:
                     "worksheet tableStyleInfo has an unsupported qualified attribute");
             }
             if (attribute_name.local_name == "name") {
-                (void)decode_xml_value(raw_value,
+                view_.style_name = decode_xml_value(raw_value,
                     options_.max_table_name_bytes, "table style name");
-            } else if (attribute_name.local_name == "showFirstColumn"
-                || attribute_name.local_name == "showLastColumn"
-                || attribute_name.local_name == "showRowStripes"
-                || attribute_name.local_name == "showColumnStripes") {
-                (void)parse_boolean(raw_value, "tableStyleInfo boolean");
+            } else if (attribute_name.local_name == "showFirstColumn") {
+                view_.show_first_column =
+                    parse_boolean(raw_value, "tableStyleInfo showFirstColumn");
+            } else if (attribute_name.local_name == "showLastColumn") {
+                view_.show_last_column =
+                    parse_boolean(raw_value, "tableStyleInfo showLastColumn");
+            } else if (attribute_name.local_name == "showRowStripes") {
+                view_.show_row_stripes =
+                    parse_boolean(raw_value, "tableStyleInfo showRowStripes");
+            } else if (attribute_name.local_name == "showColumnStripes") {
+                view_.show_column_stripes =
+                    parse_boolean(raw_value, "tableStyleInfo showColumnStripes");
             } else {
                 throw FastXlsxError(
                     "worksheet tableStyleInfo has an unsupported attribute");
@@ -1570,10 +1639,11 @@ void validate_options(const WorksheetTableReaderOptions& options)
 
 } // namespace
 
-WorksheetTableReadSummary read_worksheet_tables_from_package(
+WorksheetTableReadSummary read_worksheet_table_package_views_impl(
     const PackageReader& package,
     const PartName& worksheet_part,
-    const WorksheetTableReadCallbacks& callbacks,
+    const WorksheetTableReadCallbacks* public_callbacks,
+    const WorksheetTablePackageReadCallbacks* package_callbacks,
     WorksheetTableReaderOptions options)
 {
     validate_options(options);
@@ -1655,11 +1725,38 @@ WorksheetTableReadSummary read_worksheet_tables_from_package(
         if (view.auto_filter_range.has_value()) {
             ++summary.auto_filter_count;
         }
-        if (callbacks.on_table) {
-            callbacks.on_table(view);
+        if (public_callbacks != nullptr && public_callbacks->on_table) {
+            public_callbacks->on_table(view);
+        }
+        if (package_callbacks != nullptr && package_callbacks->on_table) {
+            package_callbacks->on_table(WorksheetTablePackageView {
+                view,
+                relationship_id,
+                table_part,
+            });
         }
     }
     return summary;
+}
+
+WorksheetTableReadSummary read_worksheet_tables_from_package(
+    const PackageReader& package,
+    const PartName& worksheet_part,
+    const WorksheetTableReadCallbacks& callbacks,
+    WorksheetTableReaderOptions options)
+{
+    return read_worksheet_table_package_views_impl(
+        package, worksheet_part, &callbacks, nullptr, options);
+}
+
+WorksheetTableReadSummary read_worksheet_table_package_views_from_package(
+    const PackageReader& package,
+    const PartName& worksheet_part,
+    const WorksheetTablePackageReadCallbacks& callbacks,
+    WorksheetTableReaderOptions options)
+{
+    return read_worksheet_table_package_views_impl(
+        package, worksheet_part, nullptr, &callbacks, options);
 }
 
 } // namespace fastxlsx::detail

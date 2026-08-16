@@ -31,3 +31,4 @@
 #include <fastxlsx/workbook_editor.hpp>
 #include <fastxlsx/worksheet_metadata.hpp>
 #include <fastxlsx/worksheet_reader.hpp>
+#include <fastxlsx/worksheet_table.hpp>

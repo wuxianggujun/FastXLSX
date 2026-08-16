@@ -1,9 +1,11 @@
 ﻿#include "package_editor.hpp"
 
 #include "worksheet_comment_reader.hpp"
+#include "worksheet_table_reader.hpp"
 
 #include <fastxlsx/detail/formula_reference_audit.hpp>
 #include <fastxlsx/detail/worksheet_metadata_rewriter.hpp>
+#include <fastxlsx/detail/worksheet_table_serializer.hpp>
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
 #include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/detail/xml.hpp>
@@ -50,6 +52,8 @@ constexpr std::string_view content_type_comments =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml";
 constexpr std::string_view content_type_vml =
     "application/vnd.openxmlformats-officedocument.vmlDrawing";
+constexpr std::string_view content_type_table =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml";
 constexpr std::string_view relationship_type_calc_chain =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain";
 constexpr std::string_view relationship_type_worksheet =
@@ -3454,6 +3458,76 @@ PartName classic_note_relationship_target_part(
     return PartName(owner.substr(0, slash) + "/" + relationship.target);
 }
 
+int table_relationship_hex_digit_value(char character) noexcept
+{
+    if (character >= '0' && character <= '9') {
+        return character - '0';
+    }
+    if (character >= 'a' && character <= 'f') {
+        return character - 'a' + 10;
+    }
+    if (character >= 'A' && character <= 'F') {
+        return character - 'A' + 10;
+    }
+    return -1;
+}
+
+PartName basic_table_relationship_target_part(
+    const PartName& owner_part, const Relationship& relationship)
+{
+    if (relationship.target_mode != Relationship::TargetMode::Internal
+        || relationship.target.empty()) {
+        throw FastXlsxError(
+            "worksheet table relationship target is not an internal part");
+    }
+    std::string decoded;
+    decoded.reserve(relationship.target.size());
+    for (std::size_t index = 0; index < relationship.target.size(); ++index) {
+        const char character = relationship.target[index];
+        if (character != '%') {
+            if (character == '\0') {
+                throw FastXlsxError(
+                    "worksheet table relationship target contains a null byte");
+            }
+            decoded.push_back(character);
+            continue;
+        }
+        if (index + 2U >= relationship.target.size()) {
+            throw FastXlsxError(
+                "worksheet table relationship target has incomplete percent encoding");
+        }
+        const int high =
+            table_relationship_hex_digit_value(relationship.target[index + 1U]);
+        const int low =
+            table_relationship_hex_digit_value(relationship.target[index + 2U]);
+        if (high < 0 || low < 0) {
+            throw FastXlsxError(
+                "worksheet table relationship target has invalid percent encoding");
+        }
+        const char decoded_character = static_cast<char>((high << 4) | low);
+        if (decoded_character == '\0') {
+            throw FastXlsxError(
+                "worksheet table relationship target decodes to a null byte");
+        }
+        decoded.push_back(decoded_character);
+        index += 2U;
+    }
+    if (decoded.find_first_of("?#") != std::string::npos) {
+        throw FastXlsxError(
+            "worksheet table relationship target cannot contain a query or fragment");
+    }
+    if (decoded.front() == '/') {
+        return PartName(decoded);
+    }
+    const std::string& owner = owner_part.value();
+    const std::size_t slash = owner.find_last_of('/');
+    if (slash == std::string::npos) {
+        throw FastXlsxError(
+            "worksheet table relationship owner has no package directory");
+    }
+    return PartName(owner.substr(0, slash) + "/" + decoded);
+}
+
 std::vector<std::string_view> package_path_segments(std::string_view path)
 {
     std::vector<std::string_view> segments;
@@ -3886,6 +3960,26 @@ void upsert_part_replacement_chunks(std::vector<PackagePartReplacement>& replace
         write_mode,
         std::move(reason),
     });
+}
+
+PartName next_basic_table_part_name(const PackageReader& reader,
+    const PackageManifest& manifest,
+    const std::vector<PackagePartReplacement>& replacements,
+    const std::vector<PartName>& reserved_parts)
+{
+    for (std::uint64_t index = 1;
+         index <= std::numeric_limits<std::uint32_t>::max(); ++index) {
+        const PartName candidate(
+            "/xl/tables/table" + std::to_string(index) + ".xml");
+        if (manifest.find_part(candidate) == nullptr
+            && reader.find_entry(candidate.zip_path()) == nullptr
+            && find_replacement(replacements, candidate.zip_path()) == nullptr
+            && std::find(reserved_parts.begin(), reserved_parts.end(), candidate)
+                == reserved_parts.end()) {
+            return candidate;
+        }
+    }
+    throw FastXlsxError("worksheet table part id space is exhausted");
 }
 
 PackageEntryReplacement* find_entry_replacement(
@@ -8017,6 +8111,57 @@ const EditPlan& PackageEditor::edit_plan() const noexcept
     return edit_plan_;
 }
 
+std::vector<BasicWorksheetTableCatalogEntry>
+PackageEditor::source_basic_tables() const
+{
+    std::vector<BasicWorksheetTableCatalogEntry> tables;
+    for (const WorkbookSheetReference& worksheet : reader_.workbook_sheets()) {
+        WorksheetTablePackageReadCallbacks callbacks;
+        callbacks.on_table = [&](const WorksheetTablePackageView& package_view) {
+            const WorksheetTableView& table = package_view.table;
+            TableOptions options;
+            options.name = table.name;
+            options.column_names.reserve(table.columns.size());
+            bool has_totals_functions = false;
+            bool has_totals_labels = false;
+            options.column_totals_functions.reserve(table.columns.size());
+            options.column_totals_labels.reserve(table.columns.size());
+            for (const WorksheetTableColumnView& column : table.columns) {
+                options.column_names.push_back(column.name);
+                options.column_totals_functions.push_back(column.totals_function);
+                options.column_totals_labels.push_back(column.totals_label);
+                has_totals_functions = has_totals_functions || column.totals_function.has_value();
+                has_totals_labels = has_totals_labels || !column.totals_label.empty();
+            }
+            if (!has_totals_functions) {
+                options.column_totals_functions.clear();
+            }
+            if (!has_totals_labels) {
+                options.column_totals_labels.clear();
+            }
+            options.show_totals_row = table.show_totals_row;
+            options.style_name = table.style_name;
+            options.show_first_column = table.show_first_column;
+            options.show_last_column = table.show_last_column;
+            options.show_row_stripes = table.show_row_stripes;
+            options.show_column_stripes = table.show_column_stripes;
+            tables.push_back(BasicWorksheetTableCatalogEntry {
+                worksheet.name,
+                table.id,
+                table.name,
+                table.display_name,
+                table.range,
+                package_view.relationship_id,
+                package_view.table_part,
+                std::move(options),
+            });
+        };
+        (void)read_worksheet_table_package_views_from_package(
+            reader_, worksheet.part_name, callbacks);
+    }
+    return tables;
+}
+
 std::string PackageEditor::current_workbook_xml_for_diagnostics(
     std::string_view purpose) const
 {
@@ -8372,7 +8517,8 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats,
     std::optional<SinglePassWorksheetTransformStats> single_pass_stats,
     std::vector<Relationship> relationship_additions,
-    std::optional<ClassicNotePackageUpdate> classic_note_update)
+    std::optional<ClassicNotePackageUpdate> classic_note_update,
+    std::optional<BasicTablePackageUpdate> basic_table_update)
 {
     const auto staged_commit_started = std::chrono::steady_clock::now();
     if (chunks.empty()) {
@@ -8422,9 +8568,16 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
 
     const bool remove_classic_notes = classic_note_update.has_value()
         && classic_note_update->action == ClassicNotePackageUpdate::Action::Remove;
+    const bool add_basic_table = basic_table_update.has_value()
+        && basic_table_update->action == BasicTablePackageUpdate::Action::Add;
+    const bool replace_basic_table = basic_table_update.has_value()
+        && basic_table_update->action == BasicTablePackageUpdate::Action::Replace;
+    const bool remove_basic_table = basic_table_update.has_value()
+        && basic_table_update->action == BasicTablePackageUpdate::Action::Remove;
     const bool rewrite_worksheet_relationships =
-        !relationship_additions.empty() || remove_classic_notes;
+        !relationship_additions.empty() || remove_classic_notes || remove_basic_table;
     const bool rewrite_classic_note_content_types = classic_note_update.has_value();
+    const bool rewrite_basic_table_content_types = add_basic_table || remove_basic_table;
     for (Relationship& relationship : relationship_additions) {
         updated_manifest.add_relationship(
             target_worksheet_part, std::move(relationship));
@@ -8471,6 +8624,68 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             });
         if (!has_remaining_vml_part) {
             (void)updated_manifest.content_types().remove_default("vml");
+        }
+    }
+    if (add_basic_table) {
+        if (updated_manifest.find_part(basic_table_update->table_part) != nullptr) {
+            throw FastXlsxError("generated worksheet table part already exists");
+        }
+        updated_manifest.add_part(basic_table_update->table_part,
+            std::string(content_type_table)).mark_generated();
+    } else if (replace_basic_table || remove_basic_table) {
+        const PackagePart* current_table_part =
+            updated_manifest.find_part(basic_table_update->table_part);
+        if (current_table_part == nullptr
+            || current_table_part->content_type != content_type_table) {
+            throw FastXlsxError(
+                "worksheet table mutation target is not a registered table part");
+        }
+
+        const EditPlan ownership_audit =
+            PartRewritePlanner(updated_manifest).plan_part_removal(
+                basic_table_update->table_part,
+                "worksheet table part ownership audit");
+        const EditPlanRemovedPart* audited_part =
+            ownership_audit.find_removed_part(basic_table_update->table_part);
+        if (audited_part == nullptr || audited_part->inbound_relationships.size() != 1) {
+            throw FastXlsxError(
+                "worksheet table part ownership is not exclusive to its worksheet");
+        }
+        const RemovedPartInboundRelationshipAudit& inbound =
+            audited_part->inbound_relationships.front();
+        if (inbound.owner_part != target_worksheet_part.value()
+            || inbound.relationship_id != basic_table_update->relationship_id
+            || inbound.relationship_type != relationship_type_table) {
+            throw FastXlsxError(
+                "worksheet table part is referenced outside its table relationship");
+        }
+        const RelationshipSet* table_relationships =
+            updated_manifest.relationships_for(basic_table_update->table_part);
+        if (table_relationships != nullptr && !table_relationships->empty()) {
+            throw FastXlsxError(
+                "worksheet table part has unsupported owned relationships");
+        }
+
+        if (remove_basic_table) {
+            RelationshipSet* worksheet_relationships =
+                updated_manifest.relationships_for(target_worksheet_part);
+            if (worksheet_relationships == nullptr
+                || worksheet_relationships->remove_by_id(
+                       basic_table_update->relationship_id) != 1) {
+                throw FastXlsxError(
+                    "worksheet table removal could not remove its relationship");
+            }
+            const std::string table_reason =
+                "writer-compatible worksheet table part removed";
+            if (!updated_manifest.remove_part(basic_table_update->table_part)) {
+                throw FastXlsxError(
+                    "worksheet table removal could not remove its table part");
+            }
+            updated_edit_plan.remove_part(
+                basic_table_update->table_part, table_reason);
+            stage_part_removal_entries(updated_edit_plan, updated_replacements,
+                updated_entry_replacements, updated_omitted_entries, reader_,
+                basic_table_update->table_part);
         }
     }
 
@@ -8558,11 +8773,16 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
         }
     }
 
-    if (rewrite_content_types_for_calc_chain || rewrite_classic_note_content_types) {
+    if (rewrite_content_types_for_calc_chain || rewrite_classic_note_content_types
+        || rewrite_basic_table_content_types) {
         upsert_entry_replacement(reader_, updated_entry_replacements, "[Content_Types].xml",
             serialize_content_types(updated_manifest.content_types()));
         updated_edit_plan.set_package_entry("[Content_Types].xml", PartWriteMode::LocalDomRewrite,
-            rewrite_classic_note_content_types
+            rewrite_basic_table_content_types
+                ? (remove_basic_table
+                          ? "content types updated for worksheet table removal"
+                          : "content types updated for generated worksheet table part")
+                : rewrite_classic_note_content_types
                 ? (remove_classic_notes
                           ? "content types updated for final classic note removal"
                           : "content types updated for generated classic note comments/VML parts")
@@ -8597,7 +8817,11 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
         remove_omitted_entry(updated_omitted_entries, worksheet_relationship_entry);
         updated_edit_plan.set_package_entry(worksheet_relationship_entry,
             PartWriteMode::LocalDomRewrite,
-            classic_note_update.has_value()
+            basic_table_update.has_value()
+                ? (remove_basic_table
+                          ? "worksheet relationships updated for worksheet table removal"
+                          : "worksheet relationships updated for generated worksheet table part")
+                : classic_note_update.has_value()
                 ? (remove_classic_notes
                           ? "worksheet relationships updated for "
                             "final classic note removal"
@@ -8647,6 +8871,31 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             classic_note_update->comments_part.zip_path());
         remove_omitted_entry(updated_omitted_entries,
             classic_note_update->vml_part.zip_path());
+    }
+    if (add_basic_table || replace_basic_table) {
+        const std::string table_reason = replace_basic_table
+            ? "writer-compatible worksheet table metadata replaced"
+            : "generated writer-compatible table part for existing-workbook table insertion";
+        require_materialized_part_replacement_payload_size(
+            basic_table_update->table_part,
+            basic_table_update->table_xml.size(),
+            PartWriteMode::GenerateSmallXml,
+            replace_basic_table
+                ? "worksheet table part replacement"
+                : "worksheet table part generation");
+        upsert_part_replacement_chunks(updated_replacements,
+            basic_table_update->table_part,
+            std::vector<PackageEntryChunk> {PackageEntryChunk::memory(
+                std::move(basic_table_update->table_xml))},
+            PartWriteMode::GenerateSmallXml, table_reason);
+        updated_manifest.set_part_write_mode(
+            basic_table_update->table_part, PartWriteMode::GenerateSmallXml);
+        updated_edit_plan.set_part(basic_table_update->table_part,
+            PartWriteMode::GenerateSmallXml, table_reason);
+        remove_entry_replacement(updated_entry_replacements,
+            basic_table_update->table_part.zip_path());
+        remove_omitted_entry(updated_omitted_entries,
+            basic_table_update->table_part.zip_path());
     }
 
     updated_manifest.set_part_write_mode(target_worksheet_part, target_write_mode);
@@ -9178,6 +9427,290 @@ void PackageEditor::add_data_validation_by_name(
     replace_worksheet_part_from_chunk_source_with_commit_notes(
         worksheet_part, staged_source, worksheet_metadata_reference_policy(),
         "existing-workbook data validation metadata edit", std::move(commit_notes));
+}
+
+BasicWorksheetTableCatalogEntry PackageEditor::add_basic_table_by_name(
+    std::string_view sheet_name,
+    CellRange range, TableOptions options, std::uint32_t table_id)
+{
+    validate_worksheet_table(range, options);
+    if (table_id == 0) {
+        throw FastXlsxError("worksheet table id must be positive");
+    }
+
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "worksheet table edit");
+
+    const PartName table_part =
+        next_basic_table_part_name(
+            reader_, manifest_, replacements_, reserved_basic_table_parts_);
+    const std::string table_xml =
+        serialize_worksheet_table(range, options, table_id);
+
+    RelationshipSet prospective_relationships;
+    if (const RelationshipSet* existing = manifest_.relationships_for(worksheet_part)) {
+        prospective_relationships = *existing;
+    }
+    Relationship relationship {
+        next_relationship_id(prospective_relationships),
+        std::string(relationship_type_table),
+        relative_part_relationship_target(worksheet_part, table_part),
+        Relationship::TargetMode::Internal,
+    };
+    prospective_relationships.add(relationship);
+
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for table planning");
+    const WorksheetTablePartRewritePlan rewrite_plan =
+        plan_worksheet_table_part_rewrite(
+            [&](std::string& chunk) { return planning_reader(chunk); });
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for table rewrite");
+    write_worksheet_table_part_rewrite(
+        [&](std::string& chunk) { return output_reader(chunk); },
+        relationship.id, rewrite_plan, rewritten_source_file.path());
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    WorksheetReplacementChunkAuditResult replacement_audit =
+        worksheet_replacement_audits_from_chunk_source(
+            worksheet_part, staged_source, &prospective_relationships);
+
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "existing-workbook table insertion adds one writer-compatible table part, "
+        "worksheet tableParts reference, relationship, and content-type override "
+        "without inspecting or changing cell payloads");
+    BasicTablePackageUpdate package_update {
+        BasicTablePackageUpdate::Action::Add,
+        table_part,
+        table_xml,
+        relationship.id,
+        table_id,
+    };
+    BasicWorksheetTableCatalogEntry added_table {
+        std::string(sheet_name),
+        table_id,
+        options.name,
+        options.name,
+        range,
+        relationship.id,
+        table_part,
+        options,
+    };
+    std::vector<PartName> updated_reserved_parts = reserved_basic_table_parts_;
+    updated_reserved_parts.push_back(table_part);
+    replace_worksheet_part_prevalidated_chunks(
+        worksheet_part,
+        std::vector<PackageEntryChunk> {
+            PackageEntryChunk::file(rewritten_source_file.path())},
+        worksheet_metadata_reference_policy(),
+        std::move(replacement_audit.payload_audit.notes),
+        std::move(replacement_audit.payload_audit.audits),
+        std::move(replacement_audit.relationship_reference_audit.notes),
+        std::move(replacement_audit.relationship_reference_audit.audits),
+        "existing-workbook worksheet table metadata edit",
+        true, true, std::move(commit_notes), rewritten_source_file.path(),
+        PartWriteMode::StreamRewrite, std::nullopt, std::nullopt,
+        std::vector<Relationship> {relationship}, std::nullopt,
+        std::move(package_update));
+    rewritten_source_file.release();
+    static_assert(std::is_nothrow_swappable_v<std::vector<PartName>>);
+    using std::swap;
+    swap(reserved_basic_table_parts_, updated_reserved_parts);
+    return added_table;
+}
+
+void PackageEditor::update_basic_table_by_name(std::string_view sheet_name,
+    std::string_view relationship_id, const PartName& table_part,
+    CellRange range, TableOptions options, std::uint32_t table_id)
+{
+    validate_worksheet_table(range, options);
+    if (relationship_id.empty() || table_id == 0) {
+        throw FastXlsxError(
+            "worksheet table update requires stable relationship and table ids");
+    }
+
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "worksheet table update");
+
+    const RelationshipSet* worksheet_relationships =
+        manifest_.relationships_for(worksheet_part);
+    const Relationship* relationship = worksheet_relationships == nullptr
+        ? nullptr
+        : worksheet_relationships->find_by_id(relationship_id);
+    if (relationship == nullptr
+        || relationship->type != relationship_type_table
+        || relationship->target_mode != Relationship::TargetMode::Internal
+        || basic_table_relationship_target_part(worksheet_part, *relationship)
+            != table_part) {
+        throw FastXlsxError(
+            "worksheet table update identity does not match the current relationship");
+    }
+
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for table update audit");
+    (void)plan_worksheet_table_part_rewrite(
+        [&](std::string& chunk) { return planning_reader(chunk); });
+
+    PackageManifest updated_manifest = manifest_;
+    EditPlan updated_edit_plan = edit_plan_;
+    std::vector<PackagePartReplacement> updated_replacements = replacements_;
+    std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
+    std::vector<std::string> updated_omitted_entries = omitted_entries_;
+
+    const PackagePart* current_table_part = updated_manifest.find_part(table_part);
+    if (current_table_part == nullptr
+        || current_table_part->content_type != content_type_table) {
+        throw FastXlsxError(
+            "worksheet table update target is not a registered table part");
+    }
+    const EditPlan ownership_audit = PartRewritePlanner(updated_manifest).plan_part_removal(
+        table_part, "worksheet table part ownership audit");
+    const EditPlanRemovedPart* audited_part = ownership_audit.find_removed_part(table_part);
+    if (audited_part == nullptr || audited_part->inbound_relationships.size() != 1) {
+        throw FastXlsxError(
+            "worksheet table part ownership is not exclusive to its worksheet");
+    }
+    const RemovedPartInboundRelationshipAudit& inbound =
+        audited_part->inbound_relationships.front();
+    if (inbound.owner_part != worksheet_part.value()
+        || inbound.relationship_id != relationship_id
+        || inbound.relationship_type != relationship_type_table) {
+        throw FastXlsxError(
+            "worksheet table part is referenced outside its table relationship");
+    }
+    const RelationshipSet* table_relationships =
+        updated_manifest.relationships_for(table_part);
+    if (table_relationships != nullptr && !table_relationships->empty()) {
+        throw FastXlsxError(
+            "worksheet table part has unsupported owned relationships");
+    }
+
+    const std::string table_reason =
+        "writer-compatible worksheet table metadata replaced";
+    const std::string table_xml =
+        serialize_worksheet_table(range, options, table_id);
+    require_materialized_part_replacement_payload_size(
+        table_part, table_xml.size(), PartWriteMode::GenerateSmallXml,
+        "worksheet table part replacement");
+    upsert_part_replacement_chunks(updated_replacements, table_part,
+        std::vector<PackageEntryChunk> {PackageEntryChunk::memory(table_xml)},
+        PartWriteMode::GenerateSmallXml, table_reason);
+    updated_manifest.set_part_write_mode(table_part, PartWriteMode::GenerateSmallXml);
+    updated_edit_plan.set_part(
+        table_part, PartWriteMode::GenerateSmallXml, table_reason);
+    remove_entry_replacement(updated_entry_replacements, table_part.zip_path());
+    remove_omitted_entry(updated_omitted_entries, table_part.zip_path());
+
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    run_package_editor_worksheet_part_replacement_staged_hook();
+#endif
+
+    commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
+        entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
+        updated_replacements, updated_entry_replacements, updated_omitted_entries);
+}
+
+void PackageEditor::remove_basic_table_by_name(std::string_view sheet_name,
+    std::string_view relationship_id, const PartName& table_part)
+{
+    if (relationship_id.empty()) {
+        throw FastXlsxError(
+            "worksheet table removal requires a stable relationship id");
+    }
+
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "worksheet table removal");
+
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for table removal planning");
+    const WorksheetTablePartRewritePlan rewrite_plan =
+        plan_worksheet_table_part_removal(
+            [&](std::string& chunk) { return planning_reader(chunk); },
+            relationship_id);
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for table removal rewrite");
+    write_worksheet_table_part_rewrite(
+        [&](std::string& chunk) { return output_reader(chunk); },
+        relationship_id, rewrite_plan, rewritten_source_file.path());
+
+    RelationshipSet prospective_relationships;
+    if (const RelationshipSet* existing = manifest_.relationships_for(worksheet_part)) {
+        prospective_relationships = *existing;
+    }
+    if (prospective_relationships.remove_by_id(relationship_id) != 1) {
+        throw FastXlsxError(
+            "worksheet table removal identity does not match the current relationship");
+    }
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    WorksheetReplacementChunkAuditResult replacement_audit =
+        worksheet_replacement_audits_from_chunk_source(
+            worksheet_part, staged_source, &prospective_relationships);
+
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "existing-workbook table removal deletes one writer-compatible tablePart, "
+        "worksheet relationship, table part, and content-type override without "
+        "inspecting or changing cell payloads");
+    BasicTablePackageUpdate package_update {
+        BasicTablePackageUpdate::Action::Remove,
+        table_part,
+        {},
+        std::string(relationship_id),
+        0,
+    };
+    std::vector<PartName> updated_reserved_parts = reserved_basic_table_parts_;
+    if (std::find(updated_reserved_parts.begin(), updated_reserved_parts.end(),
+            table_part) == updated_reserved_parts.end()) {
+        updated_reserved_parts.push_back(table_part);
+    }
+    replace_worksheet_part_prevalidated_chunks(
+        worksheet_part,
+        std::vector<PackageEntryChunk> {
+            PackageEntryChunk::file(rewritten_source_file.path())},
+        worksheet_metadata_reference_policy(),
+        std::move(replacement_audit.payload_audit.notes),
+        std::move(replacement_audit.payload_audit.audits),
+        std::move(replacement_audit.relationship_reference_audit.notes),
+        std::move(replacement_audit.relationship_reference_audit.audits),
+        "existing-workbook worksheet table metadata removal",
+        true, true, std::move(commit_notes), rewritten_source_file.path(),
+        PartWriteMode::StreamRewrite, std::nullopt, std::nullopt,
+        {}, std::nullopt, std::move(package_update));
+    rewritten_source_file.release();
+    static_assert(std::is_nothrow_swappable_v<std::vector<PartName>>);
+    using std::swap;
+    swap(reserved_basic_table_parts_, updated_reserved_parts);
 }
 
 bool PackageEditor::rewrite_auto_filter_by_name(

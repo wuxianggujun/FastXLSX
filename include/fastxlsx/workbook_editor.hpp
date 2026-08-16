@@ -6,6 +6,7 @@
 #include <fastxlsx/cell_value.hpp>
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/worksheet_metadata.hpp>
+#include <fastxlsx/worksheet_table.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -270,6 +271,22 @@ struct WorkbookEditorWorksheetEditSummary {
     /// Number of worksheet-local data-validation rules appended for this
     /// planned worksheet. Zero when no data-validation edit is queued.
     std::size_t data_validation_count = 0;
+
+    /// Final number of writer-compatible table parts retained by queued table
+    /// lifecycle edits for this planned worksheet.
+    std::size_t table_count = 0;
+
+    /// Number of successful writer-compatible table additions queued for this
+    /// worksheet.
+    std::size_t table_addition_count = 0;
+
+    /// Number of successful writer-compatible table replacements queued for
+    /// this worksheet.
+    std::size_t table_update_count = 0;
+
+    /// Number of successful writer-compatible table removals queued for this
+    /// worksheet.
+    std::size_t table_removal_count = 0;
 
     /// True when set_auto_filter() or clear_auto_filter() changed the
     /// worksheet-root autoFilter for this planned worksheet.
@@ -3291,6 +3308,91 @@ public:
         std::string_view sheet_name,
         std::initializer_list<CellRange> ranges,
         DataValidationRule rule);
+
+    /// Adds one writer-compatible table to an existing workbook worksheet.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The call
+    /// adds one `xl/tables/tableN.xml` part, one worksheet `<tablePart>` entry,
+    /// one worksheet-local internal relationship, and the required content-type
+    /// override in a single staged transaction. `TableOptions` is shared with
+    /// the Streaming writer. Existing worksheet XML, relationships, cells, and
+    /// unknown package entries are preserved.
+    ///
+    /// Table names are unique workbook-wide using conservative ASCII
+    /// case-insensitive comparison. Table ids and generated part names are also
+    /// allocated workbook-wide, while ranges must not overlap another table on
+    /// the same worksheet. Planned names from rename_sheet() and worksheets
+    /// added in the same editor session are accepted. A successful call grows
+    /// table_addition_count in pending_worksheet_edits().
+    ///
+    /// This API writes metadata only: it does not inspect or create header/data/
+    /// totals cells, calculate totals, synchronize formulas or defined names,
+    /// or shift the table after later structural edits. Source tables must fit
+    /// the bounded writer-compatible table projection so uniqueness and overlap
+    /// can be audited safely.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param range One-based inclusive table range including the header and,
+    /// when requested, the final totals row.
+    /// @param options Copied table name, columns, totals, and style metadata.
+    /// @throws FastXlsxError if input/source metadata is unsupported, a name/id/
+    /// range conflicts, schema order cannot be proven, or transactional staging
+    /// fails. Failure changes neither package plan nor public pending state.
+    void add_table(
+        std::string_view sheet_name, CellRange range, TableOptions options);
+
+    /// Replaces one existing writer-compatible table's metadata.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The target
+    /// name is matched using conservative ASCII case-insensitive comparison
+    /// within the selected current-planned worksheet. Source and same-session
+    /// added tables are supported. The replacement keeps the table id,
+    /// worksheet relationship id, table-part identity, and `<tablePart>` order,
+    /// while validating the final workbook-wide name catalog and same-sheet
+    /// range non-overlap. An identical replacement is a clean no-op; otherwise
+    /// a successful call grows table_update_count in pending_worksheet_edits().
+    ///
+    /// Source tables must fit the bounded writer-compatible projection and own
+    /// an exclusively referenced table part without child relationships. This
+    /// API does not inspect or modify header/data/totals cell payloads, evaluate
+    /// formulas, generate cached results, synchronize defined names, or shift
+    /// table metadata after later structural edits.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param table_name Current table name or display name.
+    /// @param range Replacement one-based inclusive table range.
+    /// @param options Copied replacement name, columns, totals, and style metadata.
+    /// @throws FastXlsxError if the target is missing, input/source metadata or
+    /// ownership is unsupported, the final catalog conflicts, or transactional
+    /// staging fails. Failure changes neither package plan nor public pending
+    /// state.
+    void update_table(
+        std::string_view sheet_name, std::string_view table_name,
+        CellRange range, TableOptions options);
+
+    /// Removes one existing writer-compatible table.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. The target
+    /// name is matched case-insensitively within the selected current-planned
+    /// worksheet. The edit atomically removes its worksheet `<tablePart>`,
+    /// relationship, table part, and content-type override; removing the final
+    /// table also removes the `<tableParts>` container. The removed name and
+    /// range may be reused, but its table id and part identity remain reserved
+    /// for the lifetime of this editor session. A successful call grows
+    /// table_removal_count and updates the final table_count diagnostic.
+    ///
+    /// Source tables have the same bounded projection and exclusive-ownership
+    /// requirements as update_table(). Cell payloads, formulas, defined names,
+    /// calculation metadata, and unrelated package entries remain unchanged;
+    /// later structural edits do not synchronize table metadata.
+    ///
+    /// @param sheet_name Existing current-planned worksheet name.
+    /// @param table_name Current table name or display name.
+    /// @throws FastXlsxError if the target is missing, source metadata or
+    /// ownership is unsupported, or transactional staging fails. Failure
+    /// changes neither package plan nor public pending state.
+    void remove_table(
+        std::string_view sheet_name, std::string_view table_name);
 
     /// Replaces the worksheet-root autoFilter with one range.
     ///

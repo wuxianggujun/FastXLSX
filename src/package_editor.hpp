@@ -9,6 +9,7 @@
 #include <fastxlsx/document_properties.hpp>
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/worksheet_metadata.hpp>
+#include <fastxlsx/worksheet_table.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -178,6 +179,17 @@ struct PackageEntryReplacement {
     // Materialized payload for active metadata entries only:
     // [Content_Types].xml, package relationships, and source-owned .rels.
     std::string materialized_data;
+};
+
+struct BasicWorksheetTableCatalogEntry {
+    std::string worksheet_name;
+    std::uint32_t id = 0;
+    std::string name;
+    std::string display_name;
+    CellRange range;
+    std::string relationship_id;
+    PartName table_part;
+    TableOptions options;
 };
 
 struct PackageEditorOutputEntryPlan {
@@ -485,6 +497,10 @@ public:
     [[nodiscard]] const PackageReader& reader() const noexcept;
     [[nodiscard]] const PackageManifest& manifest() const noexcept;
     [[nodiscard]] const EditPlan& edit_plan() const noexcept;
+    // Bounded source-only table catalog used by the public lifecycle facade for
+    // workbook-wide name/id and worksheet-local overlap preflight.
+    [[nodiscard]] std::vector<BasicWorksheetTableCatalogEntry>
+    source_basic_tables() const;
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
     [[nodiscard]] std::span<const std::filesystem::path>
     testing_owned_temporary_files() const noexcept
@@ -592,6 +608,20 @@ public:
     // mutation or formula/range synchronization.
     void add_data_validation_by_name(std::string_view sheet_name,
         std::vector<CellRange> ranges, DataValidationRule rule);
+    // Adds one writer-compatible table part and its worksheet tableParts/
+    // relationship/content-type metadata in one staged package transaction.
+    [[nodiscard]] BasicWorksheetTableCatalogEntry add_basic_table_by_name(
+        std::string_view sheet_name, CellRange range, TableOptions options,
+        std::uint32_t table_id);
+    // Replaces one current writer-compatible table part while preserving its
+    // package identity and worksheet tablePart relationship.
+    void update_basic_table_by_name(std::string_view sheet_name,
+        std::string_view relationship_id, const PartName& table_part,
+        CellRange range, TableOptions options, std::uint32_t table_id);
+    // Removes one current writer-compatible table and closes its worksheet
+    // relationship, table part, content type, and edit-plan entries together.
+    void remove_basic_table_by_name(std::string_view sheet_name,
+        std::string_view relationship_id, const PartName& table_part);
     // Replaces or clears the worksheet-root autoFilter without touching table
     // parts, worksheet relationships, content types, or calc metadata. Returns
     // false only when a clear request finds no current autoFilter to remove.
@@ -765,6 +795,20 @@ private:
         std::string vml_relationship_id;
     };
 
+    struct BasicTablePackageUpdate {
+        enum class Action {
+            Add,
+            Replace,
+            Remove,
+        };
+
+        Action action = Action::Add;
+        PartName table_part;
+        std::string table_xml;
+        std::string relationship_id;
+        std::uint32_t table_id = 0;
+    };
+
     explicit PackageEditor(PackageReader reader);
     void replace_worksheet_cells_impl(PartName worksheet_part,
         std::span<const WorksheetCellReplacement> replacements,
@@ -807,7 +851,8 @@ private:
         std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats = std::nullopt,
         std::optional<SinglePassWorksheetTransformStats> single_pass_stats = std::nullopt,
         std::vector<Relationship> relationship_additions = {},
-        std::optional<ClassicNotePackageUpdate> classic_note_update = std::nullopt);
+        std::optional<ClassicNotePackageUpdate> classic_note_update = std::nullopt,
+        std::optional<BasicTablePackageUpdate> basic_table_update = std::nullopt);
 
     PackageReader reader_;
     PackageManifest manifest_;
@@ -815,6 +860,7 @@ private:
     std::vector<PackagePartReplacement> replacements_;
     std::vector<PackageEntryReplacement> entry_replacements_;
     std::vector<std::string> omitted_entries_;
+    std::vector<PartName> reserved_basic_table_parts_;
     std::vector<std::filesystem::path> temporary_files_;
 };
 

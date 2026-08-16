@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -25,6 +26,9 @@ constexpr int merged_cells_schema_rank = 9;
 constexpr int data_validations_schema_rank = 12;
 constexpr int hyperlink_schema_rank = 13;
 constexpr int legacy_drawing_schema_rank = 25;
+constexpr int table_parts_schema_rank = 31;
+constexpr std::string_view relationships_namespace =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 constexpr std::uint32_t max_freeze_pane_row_split = 1048575U;
 constexpr std::uint32_t max_freeze_pane_column_split = 16383U;
 
@@ -57,6 +61,16 @@ std::optional<std::string_view> attribute_value(
     }
     if (position == element_name_begin) {
         throw FastXlsxError("worksheet metadata contains an empty element name");
+    }
+    if (closing_tag) {
+        while (position < raw_tag.size() - 1U && is_xml_space(raw_tag[position])) {
+            ++position;
+        }
+        if (position != raw_tag.size() - 1U || raw_tag[position] != '>') {
+            throw FastXlsxError(
+                "worksheet metadata closing tag contains attributes");
+        }
+        return std::nullopt;
     }
 
     std::optional<std::string_view> requested_value;
@@ -148,6 +162,203 @@ std::optional<std::string_view> attribute_value(
         throw FastXlsxError("worksheet metadata contains an incomplete XML tag");
     }
     return requested_value;
+}
+
+struct WorksheetXmlAttribute {
+    std::string_view name;
+    std::string_view value;
+};
+
+std::vector<WorksheetXmlAttribute> worksheet_xml_attributes(std::string_view raw_tag)
+{
+    if (raw_tag.size() < 3 || raw_tag.front() != '<' || raw_tag.back() != '>'
+        || is_closing_tag(raw_tag)) {
+        throw FastXlsxError("worksheet metadata contains an invalid opening XML tag");
+    }
+
+    std::size_t position = 1;
+    while (position < raw_tag.size() && !is_xml_space(raw_tag[position])
+        && raw_tag[position] != '/' && raw_tag[position] != '>') {
+        ++position;
+    }
+    std::vector<WorksheetXmlAttribute> attributes;
+    std::unordered_set<std::string_view> names;
+    while (position < raw_tag.size()) {
+        while (position < raw_tag.size() && is_xml_space(raw_tag[position])) {
+            ++position;
+        }
+        if (position >= raw_tag.size() || raw_tag[position] == '>') {
+            break;
+        }
+        if (raw_tag[position] == '/') {
+            if (position + 2 != raw_tag.size() || raw_tag[position + 1] != '>') {
+                throw FastXlsxError("worksheet metadata contains an invalid self-closing tag");
+            }
+            break;
+        }
+        const std::size_t name_begin = position;
+        while (position < raw_tag.size() && !is_xml_space(raw_tag[position])
+            && raw_tag[position] != '=' && raw_tag[position] != '/'
+            && raw_tag[position] != '>') {
+            ++position;
+        }
+        if (position == name_begin) {
+            throw FastXlsxError("worksheet metadata contains an empty attribute name");
+        }
+        const std::string_view name = raw_tag.substr(name_begin, position - name_begin);
+        while (position < raw_tag.size() && is_xml_space(raw_tag[position])) {
+            ++position;
+        }
+        if (position >= raw_tag.size() || raw_tag[position] != '=') {
+            throw FastXlsxError("worksheet metadata contains an attribute without a value");
+        }
+        ++position;
+        while (position < raw_tag.size() && is_xml_space(raw_tag[position])) {
+            ++position;
+        }
+        if (position >= raw_tag.size()
+            || (raw_tag[position] != '\'' && raw_tag[position] != '"')) {
+            throw FastXlsxError("worksheet metadata contains an unquoted attribute value");
+        }
+        const char quote = raw_tag[position++];
+        const std::size_t value_begin = position;
+        while (position < raw_tag.size() && raw_tag[position] != quote) {
+            ++position;
+        }
+        if (position >= raw_tag.size()) {
+            throw FastXlsxError("worksheet metadata contains an unterminated attribute value");
+        }
+        const std::string_view value = raw_tag.substr(value_begin, position - value_begin);
+        ++position;
+        if (position < raw_tag.size() && !is_xml_space(raw_tag[position])
+            && raw_tag[position] != '/' && raw_tag[position] != '>') {
+            throw FastXlsxError("worksheet metadata attributes are not separated by whitespace");
+        }
+        if (!names.emplace(name).second) {
+            throw FastXlsxError("worksheet metadata contains a duplicate attribute");
+        }
+        attributes.push_back(WorksheetXmlAttribute {name, value});
+    }
+    if (position >= raw_tag.size() || raw_tag.back() != '>') {
+        throw FastXlsxError("worksheet metadata contains an incomplete XML tag");
+    }
+    return attributes;
+}
+
+struct WorksheetXmlQName {
+    std::string_view prefix;
+    std::string_view local_name;
+};
+
+WorksheetXmlQName worksheet_xml_qname(std::string_view raw_tag)
+{
+    if (raw_tag.size() < 3 || raw_tag.front() != '<' || raw_tag.back() != '>') {
+        throw FastXlsxError("worksheet metadata contains an invalid XML tag");
+    }
+    std::size_t begin = is_closing_tag(raw_tag) ? 2U : 1U;
+    const std::size_t end = [&] {
+        std::size_t value = begin;
+        while (value < raw_tag.size() && !is_xml_space(raw_tag[value])
+            && raw_tag[value] != '/' && raw_tag[value] != '>') {
+            ++value;
+        }
+        return value;
+    }();
+    if (end == begin) {
+        throw FastXlsxError("worksheet metadata contains an empty element name");
+    }
+    const std::string_view qualified = raw_tag.substr(begin, end - begin);
+    const std::size_t separator = qualified.find(':');
+    if (separator != std::string_view::npos
+        && (separator == 0 || separator + 1U == qualified.size()
+            || qualified.find(':', separator + 1U) != std::string_view::npos)) {
+        throw FastXlsxError("worksheet metadata contains an invalid qualified element name");
+    }
+    return separator == std::string_view::npos
+        ? WorksheetXmlQName {{}, qualified}
+        : WorksheetXmlQName {qualified.substr(0, separator), qualified.substr(separator + 1U)};
+}
+
+std::string decode_basic_xml_attribute(std::string_view value)
+{
+    std::string decoded;
+    decoded.reserve(value.size());
+    for (std::size_t position = 0; position < value.size();) {
+        if (value[position] != '&') {
+            decoded.push_back(value[position++]);
+            continue;
+        }
+        const std::size_t semicolon = value.find(';', position + 1U);
+        if (semicolon == std::string_view::npos) {
+            throw FastXlsxError("worksheet metadata contains an unterminated XML entity");
+        }
+        const std::string_view entity = value.substr(position + 1U,
+            semicolon - position - 1U);
+        if (entity == "amp") {
+            decoded.push_back('&');
+        } else if (entity == "lt") {
+            decoded.push_back('<');
+        } else if (entity == "gt") {
+            decoded.push_back('>');
+        } else if (entity == "quot") {
+            decoded.push_back('"');
+        } else if (entity == "apos") {
+            decoded.push_back('\'');
+        } else {
+            throw FastXlsxError("worksheet metadata contains an unsupported XML entity");
+        }
+        position = semicolon + 1U;
+    }
+    return decoded;
+}
+
+bool is_namespace_declaration(std::string_view name) noexcept
+{
+    return name == "xmlns" || name.starts_with("xmlns:");
+}
+
+struct WorksheetNamespaceChange {
+    std::string prefix;
+    std::optional<std::string> previous;
+};
+
+std::vector<WorksheetNamespaceChange> apply_worksheet_namespaces(
+    std::string_view raw_tag, std::unordered_map<std::string, std::string>& bindings)
+{
+    std::vector<WorksheetNamespaceChange> changes;
+    for (const WorksheetXmlAttribute& attribute : worksheet_xml_attributes(raw_tag)) {
+        std::string prefix;
+        if (attribute.name == "xmlns") {
+            prefix = {};
+        } else if (attribute.name.starts_with("xmlns:")) {
+            prefix = std::string(attribute.name.substr(6U));
+            if (prefix.empty()) {
+                throw FastXlsxError("worksheet metadata contains an empty namespace prefix");
+            }
+        } else {
+            continue;
+        }
+        const auto found = bindings.find(prefix);
+        changes.push_back(WorksheetNamespaceChange {
+            prefix,
+            found == bindings.end() ? std::nullopt
+                                     : std::optional<std::string>(found->second)});
+        bindings[prefix] = decode_basic_xml_attribute(attribute.value);
+    }
+    return changes;
+}
+
+void restore_worksheet_namespaces(
+    const std::vector<WorksheetNamespaceChange>& changes,
+    std::unordered_map<std::string, std::string>& bindings)
+{
+    for (auto change = changes.rbegin(); change != changes.rend(); ++change) {
+        if (change->previous.has_value()) {
+            bindings[change->prefix] = *change->previous;
+        } else {
+            bindings.erase(change->prefix);
+        }
+    }
 }
 
 std::string xml_element_prefix(
@@ -686,7 +897,7 @@ std::string worksheet_root_with_relationship_namespace(std::string_view raw_tag)
     if (raw_tag.size() < 3 || raw_tag.front() != '<' || raw_tag.back() != '>'
         || is_closing_tag(raw_tag)) {
         throw FastXlsxError(
-            "worksheet external hyperlink edit requires a valid worksheet root tag");
+            "worksheet relationship metadata edit requires a valid worksheet root tag");
     }
 
     std::string root(raw_tag);
@@ -1329,6 +1540,524 @@ WorksheetDataValidationRewritePlan plan_worksheet_data_validation_rewrite(
         first_after_data_validations_offset.value_or(worksheet_end_offset),
         0,
         1};
+}
+
+WorksheetTablePartRewritePlan plan_worksheet_table_part_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk)
+{
+    bool saw_worksheet_start = false;
+    bool saw_sheet_data_end = false;
+    bool saw_worksheet_end = false;
+    bool saw_table_parts = false;
+    std::size_t child_count = 0;
+    std::optional<std::uint64_t> declared_count;
+    std::optional<std::uint64_t> first_after_table_parts_offset;
+    std::uint64_t worksheet_end_offset = 0;
+    std::uint64_t container_start_offset = 0;
+    int last_suffix_rank = 0;
+    std::string element_prefix;
+    std::vector<std::string> metadata_stack;
+    std::unordered_set<std::string> relationship_ids;
+    std::optional<WorksheetTablePartRewritePlan> plan;
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::WorksheetStart) {
+                if (saw_worksheet_start || event.self_closing) {
+                    throw FastXlsxError(
+                        "worksheet table edit encountered duplicate or empty worksheet root");
+                }
+                element_prefix = xml_element_prefix(event.raw_xml, "worksheet");
+                saw_worksheet_start = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::SheetDataEnd) {
+                saw_sheet_data_end = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                if (!event.self_closing) {
+                    saw_worksheet_end = true;
+                    worksheet_end_offset = event.raw_xml_offset;
+                }
+                return;
+            }
+            if (event.kind != WorksheetEventKind::Metadata) {
+                return;
+            }
+
+            const bool closing = is_closing_tag(event.raw_xml);
+            if (closing) {
+                if (metadata_stack.empty() || metadata_stack.back() != event.element_name) {
+                    throw FastXlsxError(
+                        "worksheet tableParts metadata contains mismatched element nesting");
+                }
+                if (metadata_stack.size() == 1 && event.element_name == "tableParts") {
+                    if (!saw_table_parts || plan.has_value()) {
+                        throw FastXlsxError(
+                            "worksheet contains duplicate or ambiguous tableParts metadata");
+                    }
+                    if (!declared_count.has_value()) {
+                        throw FastXlsxError("worksheet tableParts requires count");
+                    }
+                    if (*declared_count != static_cast<std::uint64_t>(child_count)) {
+                        throw FastXlsxError(
+                            "worksheet tableParts count does not match its direct children");
+                    }
+                    plan = WorksheetTablePartRewritePlan {
+                        WorksheetTablePartRewritePlan::Action::AppendBeforeContainerClose,
+                        event.raw_xml_offset,
+                        event.raw_xml_offset,
+                        container_start_offset,
+                        static_cast<std::uint64_t>(child_count) + 1U,
+                        element_prefix};
+                }
+                metadata_stack.pop_back();
+                return;
+            }
+
+            const bool top_level = metadata_stack.empty();
+            const bool direct_table_part_child = metadata_stack.size() == 1
+                && metadata_stack.front() == "tableParts";
+            if (top_level && saw_sheet_data_end) {
+                const std::optional<int> rank =
+                    worksheet_suffix_schema_rank(event.element_name);
+                if (!rank.has_value()) {
+                    throw FastXlsxError(
+                        "worksheet contains top-level suffix metadata whose position relative "
+                        "to tableParts is unsupported");
+                }
+                if (*rank < last_suffix_rank) {
+                    throw FastXlsxError(
+                        "worksheet top-level suffix metadata is not in schema order");
+                }
+                last_suffix_rank = *rank;
+                if (*rank > table_parts_schema_rank
+                    && !first_after_table_parts_offset.has_value()) {
+                    first_after_table_parts_offset = event.raw_xml_offset;
+                }
+                if (event.element_name == "tableParts") {
+                    if (saw_table_parts) {
+                        throw FastXlsxError(
+                            "worksheet contains duplicate tableParts containers");
+                    }
+                    if (xml_element_prefix(event.raw_xml, "tableParts") != element_prefix) {
+                        throw FastXlsxError(
+                            "worksheet tableParts QName differs from the worksheet root");
+                    }
+                    saw_table_parts = true;
+                    container_start_offset = event.raw_xml_offset;
+                    for (const WorksheetXmlAttribute& attribute :
+                            worksheet_xml_attributes(event.raw_xml)) {
+                        if (is_namespace_declaration(attribute.name)) {
+                            continue;
+                        }
+                        if (attribute.name != "count") {
+                            throw FastXlsxError(
+                                "worksheet tableParts has an unsupported attribute");
+                        }
+                    }
+                    if (const std::optional<std::string_view> count =
+                            attribute_value(event.raw_xml, "count")) {
+                        declared_count = parse_unsigned_decimal(*count);
+                        if (!declared_count.has_value()) {
+                            throw FastXlsxError(
+                                "worksheet tableParts count is not an unsigned integer");
+                        }
+                    }
+                    if (event.self_closing) {
+                        if (!declared_count.has_value()) {
+                            throw FastXlsxError("worksheet tableParts requires count");
+                        }
+                        if (*declared_count != 0U) {
+                            throw FastXlsxError(
+                                "self-closing worksheet tableParts must have count zero");
+                        }
+                        plan = WorksheetTablePartRewritePlan {
+                            WorksheetTablePartRewritePlan::Action::ExpandSelfClosingContainer,
+                            event.raw_xml_offset,
+                            event.raw_xml_offset,
+                            event.raw_xml_offset,
+                            1,
+                            element_prefix};
+                    }
+                }
+            } else if (top_level && event.element_name == "tableParts") {
+                throw FastXlsxError(
+                    "worksheet tableParts metadata appears before sheetData");
+            }
+
+            if (direct_table_part_child) {
+                if (event.element_name != "tablePart") {
+                    throw FastXlsxError(
+                        "worksheet tableParts container has an unsupported child element");
+                }
+                if (xml_element_prefix(event.raw_xml, "tablePart") != element_prefix) {
+                    throw FastXlsxError(
+                        "worksheet tablePart QName differs from the worksheet root");
+                }
+                const std::optional<std::string_view> relationship_id =
+                    attribute_value(event.raw_xml, "r:id");
+                for (const WorksheetXmlAttribute& attribute :
+                        worksheet_xml_attributes(event.raw_xml)) {
+                    if (is_namespace_declaration(attribute.name)) {
+                        continue;
+                    }
+                    if (attribute.name != "r:id") {
+                        throw FastXlsxError(
+                            "worksheet tablePart has an unsupported attribute");
+                    }
+                }
+                if (!relationship_id.has_value() || relationship_id->empty()) {
+                    throw FastXlsxError(
+                        "worksheet tablePart requires a non-empty r:id");
+                }
+                if (!relationship_ids.emplace(*relationship_id).second) {
+                    throw FastXlsxError(
+                        "worksheet tablePart relationship ids must be unique");
+                }
+                ++child_count;
+            } else if (metadata_stack.size() >= 2
+                && metadata_stack.front() == "tableParts") {
+                throw FastXlsxError(
+                    "worksheet tablePart contains unsupported nested metadata");
+            }
+
+            if (!event.self_closing) {
+                metadata_stack.emplace_back(event.element_name);
+            }
+        });
+
+    if (!metadata_stack.empty()) {
+        throw FastXlsxError("worksheet tableParts metadata ended inside an open element");
+    }
+    if (!saw_worksheet_start || !saw_sheet_data_end || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "table edit requires a worksheet root, sheetData, and closing worksheet root");
+    }
+    if (saw_table_parts) {
+        if (!plan.has_value()) {
+            throw FastXlsxError("worksheet tableParts container has no closing boundary");
+        }
+        return *plan;
+    }
+    return WorksheetTablePartRewritePlan {
+        WorksheetTablePartRewritePlan::Action::InsertContainerBefore,
+        first_after_table_parts_offset.value_or(worksheet_end_offset),
+        first_after_table_parts_offset.value_or(worksheet_end_offset),
+        0,
+        1,
+        element_prefix};
+}
+
+WorksheetTablePartRewritePlan plan_worksheet_table_part_removal(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view relationship_id)
+{
+    if (relationship_id.empty()) {
+        throw FastXlsxError("worksheet table relationship id cannot be empty");
+    }
+
+    struct MetadataFrame {
+        std::string local_name;
+        std::string prefix;
+        std::uint64_t start_offset = 0;
+        std::uint64_t end_offset = 0;
+        std::optional<std::string> relationship_id;
+        std::vector<WorksheetNamespaceChange> namespace_changes;
+    };
+
+    bool saw_worksheet_start = false;
+    bool saw_sheet_data_end = false;
+    bool saw_worksheet_end = false;
+    bool saw_table_parts = false;
+    bool table_parts_self_closing = false;
+    std::size_t child_count = 0;
+    std::optional<std::uint64_t> declared_count;
+    std::uint64_t table_parts_start_offset = 0;
+    std::uint64_t table_parts_end_offset = 0;
+    std::optional<std::uint64_t> target_start_offset;
+    std::optional<std::uint64_t> target_end_offset;
+    std::string worksheet_prefix;
+    std::optional<std::string> worksheet_namespace_uri;
+    std::string table_parts_prefix;
+    std::unordered_map<std::string, std::string> namespace_bindings;
+    std::unordered_set<std::string> relationship_ids;
+    std::vector<MetadataFrame> frames;
+    int last_suffix_rank = 0;
+
+    const auto namespace_uri_for = [&](std::string_view prefix)
+        -> std::optional<std::string_view> {
+        const auto found = namespace_bindings.find(std::string(prefix));
+        if (found == namespace_bindings.end()) {
+            return std::nullopt;
+        }
+        return std::string_view(found->second.data(), found->second.size());
+    };
+    const auto is_worksheet_namespace = [&](std::string_view prefix) {
+        const std::optional<std::string_view> current = namespace_uri_for(prefix);
+        return worksheet_namespace_uri.has_value()
+            ? current.has_value() && *current == *worksheet_namespace_uri
+            : !current.has_value();
+    };
+    const auto parse_relationship_attribute = [&](std::string_view raw_tag) {
+        std::optional<std::string> result;
+        for (const WorksheetXmlAttribute& attribute : worksheet_xml_attributes(raw_tag)) {
+            if (is_namespace_declaration(attribute.name)) {
+                continue;
+            }
+            const std::size_t separator = attribute.name.find(':');
+            if (separator == std::string_view::npos || separator == 0
+                || separator + 1U == attribute.name.size()
+                || attribute.name.find(':', separator + 1U) != std::string_view::npos) {
+                throw FastXlsxError(
+                    "worksheet tablePart requires one qualified relationship id");
+            }
+            const std::string_view prefix = attribute.name.substr(0, separator);
+            const std::string_view local = attribute.name.substr(separator + 1U);
+            const std::optional<std::string_view> uri = namespace_uri_for(prefix);
+            if (local != "id" || !uri.has_value() || *uri != relationships_namespace) {
+                throw FastXlsxError(
+                    "worksheet tablePart relationship id namespace is not OpenXML");
+            }
+            if (result.has_value()) {
+                throw FastXlsxError("worksheet tablePart contains duplicate relationship ids");
+            }
+            result = decode_basic_xml_attribute(attribute.value);
+        }
+        if (!result.has_value() || result->empty()) {
+            throw FastXlsxError("worksheet tablePart requires a non-empty relationship id");
+        }
+        return result;
+    };
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::WorksheetStart) {
+                if (saw_worksheet_start || event.self_closing) {
+                    throw FastXlsxError(
+                        "worksheet table removal encountered duplicate or empty worksheet root");
+                }
+                const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+                if (qname.local_name != "worksheet") {
+                    throw FastXlsxError("worksheet table removal found an invalid worksheet root");
+                }
+                worksheet_prefix = std::string(qname.prefix);
+                (void)apply_worksheet_namespaces(event.raw_xml, namespace_bindings);
+                if (const std::optional<std::string_view> root_uri =
+                        namespace_uri_for(worksheet_prefix)) {
+                    worksheet_namespace_uri = std::string(*root_uri);
+                }
+                saw_worksheet_start = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::SheetDataEnd) {
+                saw_sheet_data_end = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                if (!event.self_closing) {
+                    saw_worksheet_end = true;
+                }
+                return;
+            }
+            const bool inside_table_parts = !frames.empty()
+                && frames.front().local_name == "tableParts";
+            if (event.kind != WorksheetEventKind::Metadata) {
+                if (inside_table_parts && event.kind == WorksheetEventKind::RawText
+                    && std::all_of(event.raw_xml.begin(), event.raw_xml.end(),
+                        [](char character) { return is_xml_space(character); })) {
+                    return;
+                }
+                if (inside_table_parts) {
+                    throw FastXlsxError(
+                        "worksheet tableParts contains unsupported non-element content");
+                }
+                return;
+            }
+
+            const bool closing = is_closing_tag(event.raw_xml);
+            if (closing) {
+                const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+                if (frames.empty() || frames.back().local_name != qname.local_name
+                    || frames.back().prefix != qname.prefix) {
+                    throw FastXlsxError(
+                        "worksheet tableParts metadata contains mismatched element nesting");
+                }
+                MetadataFrame frame = std::move(frames.back());
+                frames.pop_back();
+                frame.end_offset = event_end_offset(event);
+                if (frame.local_name == "tablePart") {
+                if (frames.size() != 1 || frames.front().local_name != "tableParts"
+                    || qname.prefix != table_parts_prefix
+                    || !frame.relationship_id.has_value()) {
+                        throw FastXlsxError(
+                            "worksheet tablePart closing QName or nesting is invalid");
+                    }
+                    if (*frame.relationship_id == relationship_id) {
+                        target_start_offset = frame.start_offset;
+                        target_end_offset = frame.end_offset;
+                    }
+                } else if (frame.local_name == "tableParts") {
+                    if (!saw_table_parts || !frames.empty()
+                        || qname.prefix != table_parts_prefix) {
+                        throw FastXlsxError(
+                            "worksheet tableParts closing QName or nesting is invalid");
+                    }
+                    if (!declared_count.has_value()) {
+                        throw FastXlsxError("worksheet tableParts requires count");
+                    }
+                    if (*declared_count != static_cast<std::uint64_t>(child_count)) {
+                        throw FastXlsxError(
+                            "worksheet tableParts count does not match its direct children");
+                    }
+                    table_parts_end_offset = frame.end_offset;
+                }
+                if (frame.local_name == "tablePart"
+                    || frame.local_name == "tableParts") {
+                    restore_worksheet_namespaces(frame.namespace_changes,
+                        namespace_bindings);
+                }
+                return;
+            }
+
+            const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+            const std::vector<WorksheetNamespaceChange> changes =
+                apply_worksheet_namespaces(event.raw_xml, namespace_bindings);
+            const bool top_level = frames.empty();
+            const bool direct_child = frames.size() == 1
+                && frames.front().local_name == "tableParts";
+            if (top_level && saw_sheet_data_end) {
+                const std::optional<int> rank =
+                    worksheet_suffix_schema_rank(qname.local_name);
+                if (!rank.has_value() || *rank < last_suffix_rank) {
+                    throw FastXlsxError(
+                        "worksheet suffix metadata is unsupported or not in schema order");
+                }
+                last_suffix_rank = *rank;
+                if (qname.prefix != worksheet_prefix || !is_worksheet_namespace(qname.prefix)) {
+                    throw FastXlsxError(
+                        "worksheet table metadata QName differs from worksheet root");
+                }
+                if (qname.local_name == "tableParts") {
+                    if (saw_table_parts) {
+                        throw FastXlsxError("worksheet contains duplicate tableParts containers");
+                    }
+                    saw_table_parts = true;
+                    table_parts_prefix = std::string(qname.prefix);
+                    table_parts_start_offset = event.raw_xml_offset;
+                    for (const WorksheetXmlAttribute& attribute :
+                            worksheet_xml_attributes(event.raw_xml)) {
+                    if (is_namespace_declaration(attribute.name)) {
+                            continue;
+                        }
+                        if (attribute.name != "count") {
+                            throw FastXlsxError(
+                                "worksheet tableParts has an unsupported attribute");
+                        }
+                    }
+                    if (const std::optional<std::string_view> count =
+                            attribute_value(event.raw_xml, "count")) {
+                        declared_count = parse_unsigned_decimal(*count);
+                        if (!declared_count.has_value()) {
+                            throw FastXlsxError(
+                                "worksheet tableParts count is not an unsigned integer");
+                        }
+                    }
+                    if (event.self_closing) {
+                        table_parts_self_closing = true;
+                        table_parts_end_offset = event_end_offset(event);
+                        if (!declared_count.has_value()) {
+                            throw FastXlsxError("worksheet tableParts requires count");
+                        }
+                        if (*declared_count != 0U) {
+                            throw FastXlsxError(
+                                "self-closing worksheet tableParts must have count zero");
+                        }
+                    }
+                }
+            } else if (top_level && qname.local_name == "tableParts") {
+                throw FastXlsxError(
+                    "worksheet tableParts metadata appears before sheetData");
+            }
+            if (direct_child) {
+                if (qname.local_name != "tablePart" || qname.prefix != table_parts_prefix
+                    || !is_worksheet_namespace(qname.prefix)) {
+                    throw FastXlsxError(
+                        "worksheet tableParts has an unsupported direct child");
+                }
+                const std::optional<std::string> current_id =
+                    parse_relationship_attribute(event.raw_xml);
+                if (!relationship_ids.emplace(*current_id).second) {
+                    throw FastXlsxError(
+                        "worksheet tablePart relationship ids must be unique");
+                }
+                ++child_count;
+                if (event.self_closing) {
+                    if (*current_id == relationship_id) {
+                        target_start_offset = event.raw_xml_offset;
+                        target_end_offset = event_end_offset(event);
+                    }
+                    restore_worksheet_namespaces(changes, namespace_bindings);
+                    return;
+                }
+                MetadataFrame frame {
+                    std::string(qname.local_name),
+                    std::string(qname.prefix),
+                    event.raw_xml_offset,
+                    0,
+                    current_id,
+                    changes};
+                frames.push_back(std::move(frame));
+                return;
+            }
+            if (!top_level && !frames.empty() && frames.front().local_name == "tableParts") {
+                throw FastXlsxError(
+                    "worksheet tablePart contains unsupported nested metadata");
+            }
+            if (!event.self_closing) {
+                frames.push_back(MetadataFrame {
+                    std::string(qname.local_name),
+                    std::string(qname.prefix),
+                    event.raw_xml_offset,
+                    0,
+                    std::nullopt,
+                    changes});
+            } else {
+                restore_worksheet_namespaces(changes, namespace_bindings);
+            }
+        });
+
+    if (!frames.empty()) {
+        throw FastXlsxError("worksheet tableParts metadata ended inside an open element");
+    }
+    if (!saw_worksheet_start || !saw_sheet_data_end || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "table removal requires a worksheet root, sheetData, and closing worksheet root");
+    }
+    if (!saw_table_parts || table_parts_self_closing || !target_start_offset.has_value()
+        || !target_end_offset.has_value()) {
+        throw FastXlsxError("worksheet table relationship id was not found");
+    }
+    if (table_parts_end_offset == 0) {
+        throw FastXlsxError("worksheet tableParts container has no closing boundary");
+    }
+    if (child_count == 1) {
+        return WorksheetTablePartRewritePlan {
+            WorksheetTablePartRewritePlan::Action::RemoveContainer,
+            table_parts_start_offset,
+            table_parts_end_offset,
+            table_parts_start_offset,
+            0,
+            table_parts_prefix};
+    }
+    return WorksheetTablePartRewritePlan {
+        WorksheetTablePartRewritePlan::Action::RemoveChild,
+        *target_start_offset,
+        *target_end_offset,
+        table_parts_start_offset,
+        static_cast<std::uint64_t>(child_count - 1U),
+        table_parts_prefix};
 }
 
 WorksheetAutoFilterRewritePlan plan_worksheet_auto_filter_rewrite(
@@ -2254,6 +2983,106 @@ void write_worksheet_data_validation_rewrite(
     if (!output) {
         throw FastXlsxError(
             "failed to finalize staged worksheet data validation metadata file");
+    }
+}
+
+void write_worksheet_table_part_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view relationship_id,
+    const WorksheetTablePartRewritePlan& plan,
+    const std::filesystem::path& output_path)
+{
+    if (relationship_id.empty()) {
+        throw FastXlsxError("worksheet table relationship id cannot be empty");
+    }
+
+    std::string table_part_xml = "<" + plan.element_prefix + "tablePart r:id=\"";
+    append_escaped_xml_attribute(table_part_xml, relationship_id);
+    table_part_xml += "\"/>";
+    const std::string container_close = "</" + plan.element_prefix + "tableParts>";
+
+    std::ofstream output(output_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError("failed to create staged worksheet table metadata file");
+    }
+
+    bool applied = false;
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (is_synthetic_self_closing_end(event)) {
+                return;
+            }
+
+            const bool removes_source_range =
+                plan.action == WorksheetTablePartRewritePlan::Action::RemoveChild
+                || plan.action == WorksheetTablePartRewritePlan::Action::RemoveContainer;
+            if (removes_source_range
+                && event.raw_xml_offset >= plan.source_offset
+                && event.raw_xml_offset < plan.source_end_offset) {
+                applied = true;
+                return;
+            }
+
+            if (plan.action == WorksheetTablePartRewritePlan::Action::AppendBeforeContainerClose
+                && event.raw_xml_offset == plan.container_start_offset
+                && event.kind == WorksheetEventKind::Metadata
+                && !is_closing_tag(event.raw_xml)) {
+                write_bytes(output, metadata_container_opening_with_count(
+                    event.raw_xml, plan.new_count, false, "tableParts"));
+                return;
+            }
+
+            if ((plan.action == WorksheetTablePartRewritePlan::Action::RemoveChild)
+                && event.raw_xml_offset == plan.container_start_offset
+                && event.kind == WorksheetEventKind::Metadata
+                && !is_closing_tag(event.raw_xml)) {
+                write_bytes(output, metadata_container_opening_with_count(
+                    event.raw_xml, plan.new_count, false, "tableParts"));
+                return;
+            }
+
+            if (!applied && event.raw_xml_offset == plan.source_offset) {
+                switch (plan.action) {
+                case WorksheetTablePartRewritePlan::Action::InsertContainerBefore: {
+                    std::string opening = "<" + plan.element_prefix + "tableParts count=\"1\">";
+                    write_bytes(output, opening);
+                    write_bytes(output, table_part_xml);
+                    write_bytes(output, container_close);
+                    break;
+                }
+                case WorksheetTablePartRewritePlan::Action::AppendBeforeContainerClose:
+                    write_bytes(output, table_part_xml);
+                    break;
+                case WorksheetTablePartRewritePlan::Action::ExpandSelfClosingContainer:
+                    write_bytes(output, metadata_container_opening_with_count(
+                        event.raw_xml, plan.new_count, true, "tableParts"));
+                    write_bytes(output, table_part_xml);
+                    write_bytes(output, container_close);
+                    applied = true;
+                    return;
+                case WorksheetTablePartRewritePlan::Action::RemoveChild:
+                case WorksheetTablePartRewritePlan::Action::RemoveContainer:
+                    throw FastXlsxError(
+                        "worksheet table removal did not reach its planned source boundary");
+                }
+                applied = true;
+            }
+
+            if (!removes_source_range && event.kind == WorksheetEventKind::WorksheetStart) {
+                write_bytes(output,
+                    worksheet_root_with_relationship_namespace(event.raw_xml));
+            } else {
+                write_bytes(output, event.raw_xml);
+            }
+        });
+
+    if (!applied) {
+        throw FastXlsxError(
+            "worksheet table rewrite did not reach its planned insertion boundary");
+    }
+    output.flush();
+    if (!output) {
+        throw FastXlsxError("failed to finalize staged worksheet table metadata file");
     }
 }
 

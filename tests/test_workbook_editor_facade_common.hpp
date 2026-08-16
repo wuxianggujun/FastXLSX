@@ -186,6 +186,10 @@ bool workbook_editor_edit_summaries_equal(
             || left.classic_note_update_count != right.classic_note_update_count
             || left.classic_note_removal_count != right.classic_note_removal_count
             || left.data_validation_count != right.data_validation_count
+            || left.table_count != right.table_count
+            || left.table_addition_count != right.table_addition_count
+            || left.table_update_count != right.table_update_count
+            || left.table_removal_count != right.table_removal_count
             || left.auto_filter_changed != right.auto_filter_changed
             || left.auto_filter_range.has_value() != right.auto_filter_range.has_value()
             || left.merged_cell_addition_count != right.merged_cell_addition_count

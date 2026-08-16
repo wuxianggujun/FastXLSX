@@ -73,6 +73,7 @@ set(_fastxlsx_sources
     src/worksheet_comment_writer.cpp
     src/worksheet_reader.cpp
     src/worksheet_table_reader.cpp
+    src/worksheet_table_serializer.cpp
     src/xml.cpp
     src/zip_store_writer.cpp
 )
@@ -172,6 +173,7 @@ install(
         include/fastxlsx/workbook_editor.hpp
         include/fastxlsx/worksheet_metadata.hpp
         include/fastxlsx/worksheet_reader.hpp
+        include/fastxlsx/worksheet_table.hpp
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fastxlsx
 )
 

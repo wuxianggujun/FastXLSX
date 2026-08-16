@@ -3,6 +3,7 @@
 #include <fastxlsx/document_properties.hpp>
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/worksheet_metadata.hpp>
+#include <fastxlsx/worksheet_table.hpp>
 
 #include <array>
 #include <chrono>
@@ -497,78 +498,6 @@ struct IconSetRule {
     /// Whether Excel should reverse icon order.
     /// The default is omitted from XML; `true` writes `reverse="1"`.
     bool reverse = false;
-};
-
-/// Built-in Excel totals-row aggregate metadata for a table column.
-///
-/// API mode: Streaming worksheet table metadata. This writes only the
-/// OpenXML `totalsRowFunction` attribute. FastXLSX does not calculate totals,
-/// generate formula text, or rewrite totals row cells.
-enum class TableTotalsFunction {
-    Sum,
-    Count,
-    Average,
-    Maximum,
-    Minimum,
-    Product,
-    CountNumbers,
-    StandardDeviation,
-    Variance,
-};
-
-/// A streaming-only worksheet table definition.
-///
-/// API mode: Streaming worksheet metadata for new workbooks. FastXLSX stores
-/// one lightweight table object per call to WorksheetWriter::add_table() and
-/// emits a table part plus worksheet relationship during close(). Column names
-/// are copied into writer state; the writer does not inspect previously written
-/// header cells, infer column names, or keep a full worksheet cell matrix.
-struct TableOptions {
-    /// Workbook-wide table display name. The first slice accepts conservative
-    /// ASCII identifiers only: first character must be a letter or underscore,
-    /// followed by letters, digits, or underscores.
-    std::string name;
-
-    /// Header names written to `<tableColumns>`. The count must match the table
-    /// range width. Names are copied and must be non-empty and unique within
-    /// the table in the current implementation.
-    std::vector<std::string> column_names;
-
-    /// Shows the final row in the supplied range as a one-row Excel totals row.
-    ///
-    /// This writes table metadata only. The caller must append the totals row
-    /// cells and include that row in the table range before calling
-    /// WorksheetWriter::add_table(). FastXLSX does not generate totals formulas,
-    /// totals-row cell text, styles.xml, or calculated columns.
-    bool show_totals_row = false;
-
-    /// Optional per-column totals-row function metadata.
-    ///
-    /// Empty means no column totals functions. When supplied, the vector size
-    /// must match column_names; empty optionals leave the corresponding column
-    /// without a function. Visible totals rows require at least one function
-    /// metadata entry for Excel compatibility. FastXLSX only writes the
-    /// OpenXML attribute; it does not calculate, validate, or rewrite totals
-    /// row cell values.
-    std::vector<std::optional<TableTotalsFunction>> column_totals_functions;
-
-    /// Optional per-column totals-row label metadata.
-    ///
-    /// Empty means no column totals labels. When supplied, the vector size must
-    /// match column_names; empty strings omit the corresponding OpenXML
-    /// attribute. Labels require visible totals row metadata, and visible totals
-    /// rows still require at least one totals function metadata entry for Excel
-    /// compatibility. FastXLSX only writes the `totalsRowLabel` attribute and
-    /// does not write the cell text for the caller.
-    std::vector<std::string> column_totals_labels;
-
-    /// Built-in Excel table style name. Empty string omits `<tableStyleInfo>`.
-    std::string style_name = "TableStyleMedium2";
-
-    bool show_first_column = false;
-    bool show_last_column = false;
-    bool show_row_stripes = true;
-    bool show_column_stripes = false;
 };
 
 /// How a two-cell image anchor should behave when cells move or resize.

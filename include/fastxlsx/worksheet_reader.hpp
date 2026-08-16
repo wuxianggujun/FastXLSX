@@ -4,6 +4,7 @@
 #include <fastxlsx/streaming_writer.hpp>
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/worksheet_metadata.hpp>
+#include <fastxlsx/worksheet_table.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -688,6 +689,8 @@ struct WorksheetConditionalFormatReadSummary {
 struct WorksheetTableColumnView {
     std::uint32_t id = 0;
     std::string name;
+    std::optional<TableTotalsFunction> totals_function;
+    std::string totals_label;
 };
 
 /// Owning projection of one worksheet table and its basic header metadata.
@@ -698,11 +701,18 @@ struct WorksheetTableColumnView {
 /// Relationship ids and part names are intentionally not exposed.
 struct WorksheetTableView {
     std::uint64_t index = 0;
+    std::uint32_t id = 0;
     CellRange range;
     std::string name;
     std::string display_name;
     std::vector<WorksheetTableColumnView> columns;
     std::optional<CellRange> auto_filter_range;
+    bool show_totals_row = false;
+    std::string style_name;
+    bool show_first_column = false;
+    bool show_last_column = false;
+    bool show_row_stripes = true;
+    bool show_column_stripes = false;
 };
 
 /// Callbacks used by WorkbookReader::read_worksheet_tables().
@@ -991,9 +1001,9 @@ struct WorksheetCommentReadSummary {
 /// dxf/style/formula semantics.
 ///
 /// read_worksheet_tables() separately follows worksheet table relationships and
-/// projects linked table ranges, names, basic header columns, and table-local
-/// auto-filter boundaries. It does not build a relationship graph or table/style,
-/// formula, totals-row, or filter-criteria object model.
+/// projects linked table ids/ranges/names, basic header columns, writer-compatible
+/// totals metadata, table-local auto-filter boundaries, and table style flags. It
+/// does not build a relationship graph or full table/formula/filter object model.
 ///
 /// read_worksheet_images() separately follows the worksheet drawing and
 /// drawing-local image relationships. It projects the current writer-compatible
@@ -1305,11 +1315,11 @@ public:
     ///
     /// The narrow projection accepts a standard table root with non-empty
     /// `name`/`displayName`, a valid range, one header row, direct tableColumns
-    /// matching the range width, optional table-local autoFilter boundaries, and
-    /// writer-compatible tableStyleInfo metadata that is audited but not
-    /// projected. Totals rows, totals/calculated formulas, full filter criteria,
-    /// extension metadata, and other table semantics fail explicitly instead of
-    /// being flattened.
+    /// matching the range width, an optional writer-compatible totals row with
+    /// built-in per-column function/label metadata, optional table-local
+    /// autoFilter boundaries, and writer-compatible tableStyleInfo metadata.
+    /// Calculated-column/totals formulas, full filter criteria, extension metadata,
+    /// and other table semantics fail explicitly instead of being flattened.
     ///
     /// This read-only method does not inspect header cell payloads, infer names,
     /// enforce workbook-wide table-name uniqueness, modify relationships/content

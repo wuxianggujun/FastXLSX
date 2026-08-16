@@ -15,6 +15,7 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -94,6 +95,14 @@ struct WorkbookEditor::Impl {
     };
     using PendingMergedCellEdits =
         std::map<std::string, PendingMergedCellEditCounts, std::less<>>;
+    struct PendingBasicTableEdit {
+        std::vector<detail::BasicWorksheetTableCatalogEntry> tables;
+        std::size_t addition_count = 0;
+        std::size_t update_count = 0;
+        std::size_t removal_count = 0;
+    };
+    using PendingBasicTableEdits =
+        std::map<std::string, PendingBasicTableEdit, std::less<>>;
     struct PendingClassicNoteEdit {
         std::vector<detail::ClassicNote> notes;
         std::size_t addition_count = 0;
@@ -123,6 +132,10 @@ struct WorkbookEditor::Impl {
     std::map<std::string, std::size_t, std::less<>> pending_external_hyperlink_counts;
     PendingClassicNotes pending_classic_notes;
     std::map<std::string, std::size_t, std::less<>> pending_data_validation_counts;
+    PendingBasicTableEdits pending_basic_table_edits;
+    std::optional<std::vector<detail::BasicWorksheetTableCatalogEntry>>
+        source_basic_table_catalog;
+    std::set<std::uint32_t> reserved_basic_table_ids;
     PendingAutoFilterEdits pending_auto_filter_edits;
     PendingFreezePaneEdits pending_freeze_pane_edits;
     PendingMergedCellEdits pending_merged_cell_edits;
@@ -413,6 +426,75 @@ struct WorkbookEditor::Impl {
         swap(pending_data_validation_counts, *updated);
     }
 
+    [[nodiscard]] const std::vector<detail::BasicWorksheetTableCatalogEntry>&
+    source_basic_tables()
+    {
+        if (!source_basic_table_catalog.has_value()) {
+            source_basic_table_catalog = editor.source_basic_tables();
+        }
+        return *source_basic_table_catalog;
+    }
+
+    [[nodiscard]] std::vector<detail::BasicWorksheetTableCatalogEntry>
+    effective_basic_tables()
+    {
+        const auto& source_tables = source_basic_tables();
+        std::vector<detail::BasicWorksheetTableCatalogEntry> tables;
+        tables.reserve(source_tables.size() + reserved_basic_table_ids.size());
+        for (const detail::WorkbookEditorSheetCatalogEntry& worksheet :
+             sheet_catalog.entries()) {
+            const auto pending = pending_basic_table_edits.find(
+                worksheet.planned_name);
+            if (pending != pending_basic_table_edits.end()) {
+                tables.insert(tables.end(), pending->second.tables.begin(),
+                    pending->second.tables.end());
+                continue;
+            }
+            if (worksheet.added) {
+                continue;
+            }
+            for (const detail::BasicWorksheetTableCatalogEntry& source :
+                 source_tables) {
+                if (source.worksheet_name != worksheet.source_name) {
+                    continue;
+                }
+                tables.push_back(source);
+                tables.back().worksheet_name = worksheet.planned_name;
+            }
+        }
+        return tables;
+    }
+
+    [[nodiscard]] std::optional<PendingBasicTableEdits>
+    stage_pending_basic_table_edits_move(
+        std::string_view old_name, std::string_view new_name) const
+    {
+        const auto source = pending_basic_table_edits.find(old_name);
+        if (source == pending_basic_table_edits.end()) {
+            return std::nullopt;
+        }
+        PendingBasicTableEdits updated = pending_basic_table_edits;
+        auto updated_source = updated.find(old_name);
+        auto moved = std::move(updated_source->second);
+        updated.erase(updated_source);
+        for (detail::BasicWorksheetTableCatalogEntry& table : moved.tables) {
+            table.worksheet_name = new_name;
+        }
+        updated.insert_or_assign(std::string(new_name), std::move(moved));
+        return updated;
+    }
+
+    void commit_pending_basic_table_edits_move(
+        std::optional<PendingBasicTableEdits>& updated) noexcept
+    {
+        if (!updated.has_value()) {
+            return;
+        }
+        static_assert(std::is_nothrow_swappable_v<PendingBasicTableEdits>);
+        using std::swap;
+        swap(pending_basic_table_edits, *updated);
+    }
+
     [[nodiscard]] std::optional<PendingAutoFilterEdits>
     stage_pending_auto_filter_edits_move(
         std::string_view old_name, std::string_view new_name) const
@@ -544,6 +626,10 @@ struct WorkbookEditor::Impl {
                 pending_data_validation_counts.find(current_name);
             const bool data_validations_added =
                 pending_data_validations != pending_data_validation_counts.end();
+            const auto pending_basic_tables =
+                pending_basic_table_edits.find(current_name);
+            const bool basic_tables_added =
+                pending_basic_tables != pending_basic_table_edits.end();
             const auto pending_auto_filter =
                 pending_auto_filter_edits.find(current_name);
             const bool auto_filter_changed =
@@ -563,6 +649,7 @@ struct WorkbookEditor::Impl {
                 && !external_hyperlinks_added
                 && !classic_notes_added
                 && !data_validations_added
+                && !basic_tables_added
                 && !auto_filter_changed
                 && !freeze_panes_changed
                 && !merged_cells_changed
@@ -591,6 +678,12 @@ struct WorkbookEditor::Impl {
             }
             if (data_validations_added) {
                 summary.data_validation_count = pending_data_validations->second;
+            }
+            if (basic_tables_added) {
+                summary.table_count = pending_basic_tables->second.tables.size();
+                summary.table_addition_count = pending_basic_tables->second.addition_count;
+                summary.table_update_count = pending_basic_tables->second.update_count;
+                summary.table_removal_count = pending_basic_tables->second.removal_count;
             }
             summary.auto_filter_changed = auto_filter_changed;
             if (auto_filter_changed) {

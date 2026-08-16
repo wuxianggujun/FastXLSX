@@ -234,6 +234,7 @@ void test_projects_linked_tables_in_source_order()
     check(values.size() == 2 && values[0].index == 0 && values[1].index == 1,
         "table source-order projection mismatch");
     check(values[0].name == "InventoryTable"
+            && values[0].id == 7
             && values[0].display_name == "Inventory_Display"
             && values[0].range.first_row == 1
             && values[0].range.last_row == 3
@@ -249,6 +250,12 @@ void test_projects_linked_tables_in_source_order()
             && values[0].auto_filter_range->last_row == 3
             && !values[1].auto_filter_range.has_value(),
         "table-local auto-filter projection mismatch");
+    check(values[0].style_name == "TableStyleMedium9"
+            && !values[0].show_first_column
+            && !values[0].show_last_column
+            && values[0].show_row_stripes
+            && !values[0].show_column_stripes,
+        "table style projection mismatch");
     check(values[1].name == "SecondTable"
             && values[1].columns.size() == 2
             && values[1].range.first_column == 3
@@ -305,6 +312,40 @@ void test_callback_failure_allows_retry()
     const auto summary = reader.read_worksheet_tables("Data", retry);
     check(count == 2 && summary.table_count == 2,
         "table reader should retry from the worksheet after callback failure");
+}
+
+void test_projects_writer_compatible_totals_and_style()
+{
+    const std::filesystem::path path = write_single_table_fixture(
+        "worksheet-table-reader-totals.xlsx",
+        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="9" name="TotalsTable" displayName="TotalsTable" ref="A1:B3" totalsRowCount="1"><autoFilter ref="A1:B2"/><tableColumns count="2"><tableColumn id="1" name="Metric" totalsRowLabel="Total"/><tableColumn id="2" name="Value" totalsRowFunction="sum"/></tableColumns><tableStyleInfo name="TableStyleMedium4" showFirstColumn="1" showLastColumn="0" showRowStripes="0" showColumnStripes="1"/></table>)");
+    const fastxlsx::WorkbookReader reader = fastxlsx::WorkbookReader::open(path);
+
+    std::vector<fastxlsx::WorksheetTableView> values;
+    fastxlsx::WorksheetTableReadCallbacks callbacks;
+    callbacks.on_table = [&](const fastxlsx::WorksheetTableView& value) {
+        values.push_back(value);
+    };
+    const auto summary = reader.read_worksheet_tables("Data", callbacks);
+
+    check(values.size() == 1 && values[0].id == 9
+            && values[0].show_totals_row
+            && values[0].auto_filter_range.has_value()
+            && values[0].auto_filter_range->last_row == 2,
+        "writer-compatible totals table projection mismatch");
+    check(values[0].columns.size() == 2
+            && values[0].columns[0].totals_label == "Total"
+            && !values[0].columns[0].totals_function.has_value()
+            && values[0].columns[1].totals_function
+                == fastxlsx::TableTotalsFunction::Sum,
+        "writer-compatible table column totals projection mismatch");
+    check(values[0].style_name == "TableStyleMedium4"
+            && values[0].show_first_column
+            && !values[0].show_last_column
+            && !values[0].show_row_stripes
+            && values[0].show_column_stripes
+            && summary.table_count == 1,
+        "writer-compatible table style projection mismatch");
 }
 
 void test_absent_and_foreign_table_parts_are_clean()
@@ -497,9 +538,15 @@ void test_rejects_unsupported_and_malformed_table_shapes()
     expect_table_shape_error("worksheet-table-reader-filter-criteria.xlsx",
         R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="T" displayName="T" ref="A1:B2"><autoFilter ref="A1:B2"><filterColumn colId="0"/></autoFilter><tableColumns count="2"><tableColumn id="1" name="A"/><tableColumn id="2" name="B"/></tableColumns></table>)",
         "unsupported nested table semantics");
-    expect_table_shape_error("worksheet-table-reader-totals.xlsx",
-        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="T" displayName="T" ref="A1:B3" totalsRowCount="1"><tableColumns count="2"><tableColumn id="1" name="A"/><tableColumn id="2" name="B"/></tableColumns></table>)",
-        "does not support totals rows");
+    expect_table_shape_error("worksheet-table-reader-totals-filter-boundary.xlsx",
+        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="T" displayName="T" ref="A1:B3" totalsRowCount="1"><autoFilter ref="A1:B3"/><tableColumns count="2"><tableColumn id="1" name="A"/><tableColumn id="2" name="B" totalsRowFunction="sum"/></tableColumns></table>)",
+        "autoFilter boundary");
+    expect_table_shape_error("worksheet-table-reader-unsupported-totals-function.xlsx",
+        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="T" displayName="T" ref="A1:B3" totalsRowCount="1"><autoFilter ref="A1:B2"/><tableColumns count="2"><tableColumn id="1" name="A"/><tableColumn id="2" name="B" totalsRowFunction="custom"/></tableColumns></table>)",
+        "unsupported totalsRowFunction");
+    expect_table_shape_error("worksheet-table-reader-totals-without-function.xlsx",
+        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="T" displayName="T" ref="A1:B3" totalsRowCount="1"><autoFilter ref="A1:B2"/><tableColumns count="2"><tableColumn id="1" name="A" totalsRowLabel="Total"/><tableColumn id="2" name="B"/></tableColumns></table>)",
+        "requires at least one totals function");
     expect_table_shape_error("worksheet-table-reader-calculated-formula.xlsx",
         R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="T" displayName="T" ref="A1:B2"><tableColumns count="2"><tableColumn id="1" name="A"><calculatedColumnFormula>A2*2</calculatedColumnFormula></tableColumn><tableColumn id="2" name="B"/></tableColumns></table>)",
         "unsupported nested table semantics");
@@ -590,6 +637,7 @@ int main()
     try {
         test_projects_linked_tables_in_source_order();
         test_callback_failure_allows_retry();
+        test_projects_writer_compatible_totals_and_style();
         test_absent_and_foreign_table_parts_are_clean();
         test_guardrails();
         test_relationship_and_content_type_audit();

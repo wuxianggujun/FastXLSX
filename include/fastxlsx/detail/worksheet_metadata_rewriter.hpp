@@ -38,6 +38,23 @@ struct WorksheetDataValidationRewritePlan {
     std::uint64_t new_count = 1;
 };
 
+struct WorksheetTablePartRewritePlan {
+    enum class Action {
+        InsertContainerBefore,
+        AppendBeforeContainerClose,
+        ExpandSelfClosingContainer,
+        RemoveChild,
+        RemoveContainer,
+    };
+
+    Action action = Action::InsertContainerBefore;
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+    std::uint64_t container_start_offset = 0;
+    std::uint64_t new_count = 1;
+    std::string element_prefix;
+};
+
 struct WorksheetAutoFilterRewritePlan {
     bool has_existing_auto_filter = false;
     std::uint64_t source_offset = 0;
@@ -173,6 +190,30 @@ void write_worksheet_data_validation_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view data_validation_xml,
     const WorksheetDataValidationRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Selects a schema-safe append/insert boundary for one linked table part.
+/// Existing tableParts count and direct r:id children are audited rather than
+/// repaired, and the worksheet element prefix is retained in the plan.
+[[nodiscard]] WorksheetTablePartRewritePlan
+plan_worksheet_table_part_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk);
+
+/// Audits one worksheet tableParts container and selects the exact direct
+/// tablePart whose namespace-resolved relationship id matches the target.
+/// The last child removes the complete container; otherwise count is decremented.
+[[nodiscard]] WorksheetTablePartRewritePlan
+plan_worksheet_table_part_removal(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view relationship_id);
+
+/// Adds one tablePart relationship reference and ensures the worksheet root
+/// carries the standard OpenXML relationships namespace binding for prefix r,
+/// or applies an exact removal plan without changing root namespace bindings.
+void write_worksheet_table_part_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view relationship_id,
+    const WorksheetTablePartRewritePlan& plan,
     const std::filesystem::path& output_path);
 
 /// Locates an existing worksheet-root autoFilter or a schema-safe insertion

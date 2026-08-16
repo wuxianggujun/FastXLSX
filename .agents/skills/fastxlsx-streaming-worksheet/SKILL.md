@@ -11,8 +11,11 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 - `docs/ARCHITECTURE.md`
 - `docs/PERFORMANCE_TARGETS.md`
 - `include/fastxlsx/streaming_writer.hpp`
+- `include/fastxlsx/worksheet_table.hpp`
+- `include/fastxlsx/detail/worksheet_table_serializer.hpp`
 - `include/fastxlsx/detail/worksheet_comment_writer.hpp`
 - `src/streaming_writer.cpp`
+- `src/worksheet_table_serializer.cpp`
 - `src/worksheet_comment_writer.cpp`
 - `include/fastxlsx/worksheet_reader.hpp`
 - `src/worksheet_reader.cpp`
@@ -54,7 +57,7 @@ Cell references、dimension tracking、XML escape、finite numbers、inline/shar
 
 `read_worksheet_conditional_formats()` 是独立 bounded worksheet-root companion：按 source order 投影 owning multi-range `sqref`、priority 与 writer-compatible rule payload，当前只接受 two-/three-color color scale、basic data bar 和 basic `3Arrows` icon set。保持 XML window、nesting、format/range count 与 `sqref` guardrail；审计唯一 container/direct child、QName/namespace scope、suffix schema、单个 direct `cfRule`、priority、rule kind/operator、`cfvo`/color/icon threshold shape、ARGB 与 unsupported metadata。失败前允许 partial callbacks，callback exception 原样传播且 entry 可从头 retry；禁止 advanced/custom icon sets、advanced data bars、`dxf`/styles、formula/cellIs、OPC mutation 或 Patch/In-memory handoff。
 
-`read_worksheet_tables()` 是独立 bounded linked-table companion：先按 worksheet `tableParts` source order 保留受 count/id guardrail 限制的 relationship ids，再逐个跟随 owner-local 标准 internal relationship，以 fresh table-part entry source 投影 owning range/name/displayName/basic header columns/table-local auto-filter。审计 QName/namespace/schema/count、percent-decoded normalized unique target、part/content type、table root/header/filter boundary，并限制 XML/nesting/table/id/target/name/column/range。Writer-compatible tableStyleInfo 只审计；totals/formula/full filter/extensions 明确 fail。失败前允许 partial callbacks且可从 worksheet retry；禁止 header-cell inference、完整 table model、OPC mutation或 Patch/In-memory handoff。
+`read_worksheet_tables()` 是独立 bounded linked-table companion：先按 worksheet `tableParts` source order 保留受 count/id guardrail 限制的 relationship ids，再逐个跟随 owner-local 标准 internal relationship，以 fresh table-part entry source 投影 owning id/range/name/displayName/basic columns、writer-compatible totals function/label、table-local auto-filter 与 style flags。审计 QName/namespace/schema/count、percent-decoded normalized unique target、part/content type、table root/header/totals/filter/style boundary，并限制 XML/nesting/table/id/target/name/column/range。Visible totals row 必须至少有一个 totals function，且 filter boundary 必须排除最后一行；calculated/other totals formula、full filter/sort 与 extensions 明确 fail。失败前允许 partial callbacks 且可从 worksheet retry；禁止 header/data/totals cell inference、完整 table model、OPC mutation或 In-memory handoff，Patch 只显式复用成功 projection 做 source audit。
 
 `read_worksheet_images()` 是独立 bounded drawing/image companion：先有界扫描 worksheet 唯一 direct standard drawing id，再跟随 owner-local internal relationship 到 drawing part；按 direct `xdr:twoCellAnchor` source order 投影 owning writer-compatible picture metadata，并经 drawing-local relationship 解析 PNG/JPEG media。每个 unique media entry 只完整 drain 一次以验证 ZIP size/CRC/signature，payload 不保留、pixels 不解码。限制 XML/nesting/image/id/target/name/description/numeric/media，审计 QName/namespace/schema/part/content type/anchor/picture/transform shape；`xdr:oneCellAnchor` / `xdr:absoluteAnchor` 元素、chart/shape/crop/rotation/hyperlink 明确 fail。失败前允许 partial callbacks且可从 worksheet retry；禁止完整 drawing model、OPC mutation或 Patch/In-memory handoff，no-images build 调用抛错。
 
@@ -75,7 +78,7 @@ Existing-file large worksheet rewrite 属于 C5，不应通过 `WorksheetEditor`
 ## 验证
 
 - Classic-note writer 另测 coordinate/empty/duplicate/lifecycle、unwritten target、author dedup/source order、UTF-8/XML escaping/whitespace、comments/VML/content types、跨 feature relationship/suffix ordering、本库 reader stored/DEFLATE round-trip、成功 close 后 note state release，以及 OpenPyXL/Excel reopen。
-- Table companion 另测 stored/production DEFLATE、source order、owning basic projection、callback retry、absent/foreign extension、XML/nesting/table/id/target/name/column/range guardrail、relationship type/mode/target/part/content type、table shape/filter boundary/style audit、totals/formula/full-filter rejection 与 package no-side-effect。
+- Table companion 另测 stored/production DEFLATE、source order、owning id/range/name/displayName/basic columns、writer-compatible totals function/label、table-local filter/style flags、callback retry、absent/foreign extension、XML/nesting/table/id/target/name/column/range guardrail、relationship type/mode/target/part/content type、table root/header/totals/filter/style diagnostics、calculated/other totals formula/full-filter rejection 与 package no-side-effect。
 - Image companion 另测 stored/production DEFLATE、source order、owning anchor/metadata、unique media reuse、entity decode、callback retry、absent drawing、XML/nesting/image/id/target/name/description/numeric/media guardrail、worksheet/drawing relationship type/mode/target/part/content type、PNG/JPEG signature/CRC、unsupported anchor/object/transform/hyperlink rejection、no-images runtime 与 package no-side-effect。
 - Comment companion 另测 stored/production DEFLATE、source order、owning ref/author/simple text、entity decode/self-closing values、callback retry、absent comments、十二类 guardrail、comments/VML relationship/target/part/content-type audit、threaded/rich/phonetic/extension/invalid ref/authorId/shapeId rejection 与 package no-side-effect；VML payload 不解析。
 

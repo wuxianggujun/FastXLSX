@@ -273,6 +273,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// planned worksheet. Zero when no data-validation edit is queued.
     std::size_t data_validation_count = 0;
 
+    /// Number of successful worksheet-local data-validation removals queued for
+    /// this planned worksheet.
+    std::size_t data_validation_removal_count = 0;
+
     /// Number of worksheet-local conditional-formatting rules appended for this
     /// planned worksheet. Zero when no conditional-formatting edit is queued.
     std::size_t conditional_format_count = 0;
@@ -3463,6 +3467,30 @@ public:
         std::string_view sheet_name,
         std::initializer_list<CellRange> ranges,
         DataValidationRule rule);
+
+    /// Removes one current worksheet-local data-validation rule by source index.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. `index` is
+    /// zero-based in the current effective `<dataValidations>` source order and
+    /// matches `WorksheetDataValidationView::index`. Same-session additions and
+    /// earlier removals therefore affect the index accepted by a later call.
+    /// The effective container is first traversed by the strict bounded public
+    /// projection; unsupported or malformed validation semantics fail before an
+    /// exact child byte range is removed. Removing the final child removes the
+    /// complete container; otherwise `count` is normalized to the retained direct
+    /// child count.
+    ///
+    /// The rewrite is file-backed and preserves non-target validations, cells,
+    /// relationships, content types, styles, calc metadata, and unknown package
+    /// entries. It does not evaluate formulas, validate cell values, repair or
+    /// merge ranges, or synchronize later structural edits. Failure publishes no
+    /// package or public state and leaves the editor usable for retry.
+    ///
+    /// @throws FastXlsxError if the worksheet or index is invalid, the effective
+    /// validation container cannot be strictly projected, or staging fails.
+    void remove_data_validation(
+        std::string_view sheet_name,
+        std::uint64_t index);
 
     /// Adds one writer-compatible table to an existing workbook worksheet.
     ///

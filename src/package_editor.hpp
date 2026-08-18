@@ -610,6 +610,10 @@ public:
     // mutation or formula/range synchronization.
     void add_data_validation_by_name(std::string_view sheet_name,
         std::vector<CellRange> ranges, DataValidationRule rule);
+    // Removes one current zero-based writer-compatible validation after strict
+    // bounded projection; no relationship/content-type state is changed.
+    void remove_data_validation_by_name(
+        std::string_view sheet_name, std::uint64_t validation_index);
     void add_conditional_color_scale_by_name(std::string_view sheet_name,
         std::vector<CellRange> ranges, TwoColorScaleRule rule);
     void add_conditional_color_scale_by_name(std::string_view sheet_name,

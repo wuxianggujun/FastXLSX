@@ -38,6 +38,19 @@ struct WorksheetDataValidationRewritePlan {
     std::uint64_t new_count = 1;
 };
 
+struct WorksheetDataValidationRemovalPlan {
+    enum class Action {
+        RemoveChild,
+        RemoveContainer,
+    };
+
+    Action action = Action::RemoveChild;
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+    std::uint64_t container_start_offset = 0;
+    std::uint64_t new_count = 0;
+};
+
 struct WorksheetConditionalFormatRewritePlan {
     std::uint64_t source_offset = 0;
     std::uint32_t priority = 1;
@@ -196,6 +209,21 @@ void write_worksheet_data_validation_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view data_validation_xml,
     const WorksheetDataValidationRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Selects one zero-based direct dataValidation child for exact removal. The
+/// caller must first complete the strict bounded data-validation projection so
+/// unsupported rule semantics fail before this structural byte-range plan.
+[[nodiscard]] WorksheetDataValidationRemovalPlan
+plan_worksheet_data_validation_removal(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::uint64_t validation_index);
+
+/// Streams the source worksheet to a staged file while removing the planned
+/// dataValidation child, or the whole container when it was the final child.
+void write_worksheet_data_validation_removal(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetDataValidationRemovalPlan& plan,
     const std::filesystem::path& output_path);
 
 /// Audits worksheet-root conditionalFormatting containers and all direct cfRule

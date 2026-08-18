@@ -2198,6 +2198,175 @@ WorksheetDataValidationRewritePlan plan_worksheet_data_validation_rewrite(
         1};
 }
 
+WorksheetDataValidationRemovalPlan plan_worksheet_data_validation_removal(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::uint64_t validation_index)
+{
+    struct MetadataFrame {
+        std::string local_name;
+        bool target_validation = false;
+    };
+
+    bool saw_sheet_data_end = false;
+    bool saw_worksheet_end = false;
+    bool saw_data_validations = false;
+    bool data_validations_self_closing = false;
+    std::size_t child_count = 0;
+    std::optional<std::uint64_t> declared_count;
+    std::uint64_t container_start_offset = 0;
+    std::uint64_t container_end_offset = 0;
+    std::optional<std::uint64_t> target_start_offset;
+    std::optional<std::uint64_t> target_end_offset;
+    int last_suffix_rank = 0;
+    std::vector<MetadataFrame> metadata_stack;
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::SheetDataEnd) {
+                saw_sheet_data_end = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                if (!event.self_closing) {
+                    saw_worksheet_end = true;
+                }
+                return;
+            }
+
+            const bool directly_inside_data_validations = metadata_stack.size() == 1
+                && metadata_stack.front().local_name == "dataValidations";
+            if (event.kind != WorksheetEventKind::Metadata) {
+                if (directly_inside_data_validations
+                    && event.kind == WorksheetEventKind::RawText
+                    && !std::all_of(event.raw_xml.begin(), event.raw_xml.end(),
+                        [](char character) { return is_xml_space(character); })) {
+                    throw FastXlsxError(
+                        "worksheet data validation metadata contains unsupported text");
+                }
+                return;
+            }
+
+            const bool closing = is_closing_tag(event.raw_xml);
+            if (closing) {
+                if (metadata_stack.empty()
+                    || metadata_stack.back().local_name != event.element_name) {
+                    throw FastXlsxError(
+                        "worksheet data validation metadata contains mismatched element nesting");
+                }
+                MetadataFrame frame = std::move(metadata_stack.back());
+                metadata_stack.pop_back();
+                if (frame.target_validation) {
+                    target_end_offset = event_end_offset(event);
+                }
+                if (frame.local_name == "dataValidations") {
+                    if (!saw_data_validations || !metadata_stack.empty()) {
+                        throw FastXlsxError(
+                            "worksheet contains ambiguous data validation metadata");
+                    }
+                    if (declared_count.has_value()
+                        && *declared_count != static_cast<std::uint64_t>(child_count)) {
+                        throw FastXlsxError(
+                            "worksheet data validation count does not match its direct children");
+                    }
+                    container_end_offset = event_end_offset(event);
+                }
+                return;
+            }
+
+            const bool top_level = metadata_stack.empty();
+            const bool direct_data_validation_child = metadata_stack.size() == 1
+                && metadata_stack.front().local_name == "dataValidations";
+            if (top_level && saw_sheet_data_end) {
+                const std::optional<int> rank =
+                    worksheet_suffix_schema_rank(event.element_name);
+                if (!rank.has_value() || *rank < last_suffix_rank) {
+                    throw FastXlsxError(
+                        "worksheet suffix metadata is unsupported or not in schema order");
+                }
+                last_suffix_rank = *rank;
+                if (event.element_name == "dataValidations") {
+                    if (saw_data_validations) {
+                        throw FastXlsxError(
+                            "worksheet contains duplicate data validation containers");
+                    }
+                    saw_data_validations = true;
+                    container_start_offset = event.raw_xml_offset;
+                    if (const std::optional<std::string_view> count =
+                            attribute_value(event.raw_xml, "count")) {
+                        declared_count = parse_unsigned_decimal(*count);
+                        if (!declared_count.has_value()) {
+                            throw FastXlsxError(
+                                "worksheet data validation count is not an unsigned integer");
+                        }
+                    }
+                    if (event.self_closing) {
+                        data_validations_self_closing = true;
+                        container_end_offset = event_end_offset(event);
+                        if (declared_count.has_value() && *declared_count != 0U) {
+                            throw FastXlsxError(
+                                "self-closing data validation container must have count zero");
+                        }
+                    }
+                }
+            } else if (top_level && event.element_name == "dataValidations") {
+                throw FastXlsxError(
+                    "worksheet data validation metadata appears before sheetData");
+            }
+
+            bool target_validation = false;
+            if (direct_data_validation_child) {
+                if (event.element_name != "dataValidation") {
+                    throw FastXlsxError(
+                        "data validation container has an unsupported child element");
+                }
+                target_validation = static_cast<std::uint64_t>(child_count)
+                    == validation_index;
+                ++child_count;
+                if (target_validation) {
+                    target_start_offset = event.raw_xml_offset;
+                    if (event.self_closing) {
+                        target_end_offset = event_end_offset(event);
+                    }
+                }
+            }
+
+            if (!event.self_closing) {
+                metadata_stack.push_back(MetadataFrame {
+                    std::string(event.element_name),
+                    target_validation});
+            }
+        });
+
+    if (!metadata_stack.empty()) {
+        throw FastXlsxError("worksheet data validation metadata ended inside an open element");
+    }
+    if (!saw_sheet_data_end || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "data validation removal requires sheetData and a closing worksheet root");
+    }
+    if (!saw_data_validations || data_validations_self_closing
+        || !target_start_offset.has_value() || !target_end_offset.has_value()) {
+        throw FastXlsxError("worksheet data validation index was not found");
+    }
+    if (container_end_offset == 0) {
+        throw FastXlsxError("worksheet data validation container has no closing boundary");
+    }
+    if (child_count == 1U) {
+        return WorksheetDataValidationRemovalPlan {
+            WorksheetDataValidationRemovalPlan::Action::RemoveContainer,
+            container_start_offset,
+            container_end_offset,
+            container_start_offset,
+            0};
+    }
+    return WorksheetDataValidationRemovalPlan {
+        WorksheetDataValidationRemovalPlan::Action::RemoveChild,
+        *target_start_offset,
+        *target_end_offset,
+        container_start_offset,
+        static_cast<std::uint64_t>(child_count - 1U)};
+}
+
 WorksheetTablePartRewritePlan plan_worksheet_table_part_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk)
 {
@@ -3679,6 +3848,53 @@ void write_worksheet_data_validation_rewrite(
     if (!output) {
         throw FastXlsxError(
             "failed to finalize staged worksheet data validation metadata file");
+    }
+}
+
+void write_worksheet_data_validation_removal(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetDataValidationRemovalPlan& plan,
+    const std::filesystem::path& output_path)
+{
+    std::ofstream output(output_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError(
+            "failed to create staged worksheet data validation removal file");
+    }
+
+    bool applied = false;
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (is_synthetic_self_closing_end(event)) {
+                return;
+            }
+
+            if (event.raw_xml_offset >= plan.source_offset
+                && event.raw_xml_offset < plan.source_end_offset) {
+                applied = true;
+                return;
+            }
+
+            if (plan.action == WorksheetDataValidationRemovalPlan::Action::RemoveChild
+                && event.raw_xml_offset == plan.container_start_offset
+                && event.kind == WorksheetEventKind::Metadata
+                && !is_closing_tag(event.raw_xml)) {
+                write_bytes(output, metadata_container_opening_with_count(
+                    event.raw_xml, plan.new_count, false, "data validation"));
+                return;
+            }
+
+            write_bytes(output, event.raw_xml);
+        });
+
+    if (!applied) {
+        throw FastXlsxError(
+            "worksheet data validation removal did not reach its planned source boundary");
+    }
+    output.flush();
+    if (!output) {
+        throw FastXlsxError(
+            "failed to finalize staged worksheet data validation removal file");
     }
 }
 

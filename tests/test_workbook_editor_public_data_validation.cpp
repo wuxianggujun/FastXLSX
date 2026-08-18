@@ -301,6 +301,150 @@ void test_validation_on_added_renamed_worksheet()
         "added worksheet rename should compose with validation staging");
 }
 
+void test_remove_validation_by_current_index_and_remove_final_container()
+{
+    const std::filesystem::path source = write_source_with_validation_and_hyperlink(
+        "fastxlsx-workbook-editor-data-validation-remove-source.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    fastxlsx::DataValidationRule list;
+    list.type = fastxlsx::DataValidationType::List;
+    list.formula1 = "\"One,Two\"";
+    editor.add_data_validation(
+        "Data", fastxlsx::CellRange {2, 2, 8, 2}, list);
+
+    fastxlsx::DataValidationRule custom;
+    custom.type = fastxlsx::DataValidationType::Custom;
+    custom.formula1 = "C2>0";
+    editor.add_data_validation(
+        "Data", fastxlsx::CellRange {2, 3, 8, 3}, custom);
+    editor.remove_data_validation("Data", 1);
+
+    const auto pending = editor.pending_worksheet_edits();
+    check(pending.size() == 1 && pending.front().data_validation_count == 2
+            && pending.front().data_validation_removal_count == 1,
+        "data validation diagnostics should retain additions and removals separately");
+
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-data-validation-remove-output.xlsx");
+    editor.save_as(output);
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dataValidations count="2">)",
+        "removing one current validation should decrement the container count");
+    check(worksheet_xml.find(R"(type="list")") == std::string::npos,
+        "zero-based current index removal should remove the selected validation");
+    check_contains(worksheet_xml,
+        R"(<dataValidation type="custom" sqref="C2:C8"><formula1>C2&gt;0</formula1></dataValidation>)",
+        "non-target same-session validation should be preserved");
+    check_contains(entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
+        R"(Target="https://example.invalid/source" TargetMode="External")",
+        "data validation removal should preserve worksheet relationships");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.remove_data_validation("Data", 1);
+    reopened.remove_data_validation("Data", 0);
+    const auto reopened_pending = reopened.pending_worksheet_edits();
+    check(reopened_pending.size() == 1
+            && reopened_pending.front().data_validation_count == 0
+            && reopened_pending.front().data_validation_removal_count == 2,
+        "later removals should use the current effective source order");
+    const std::filesystem::path empty_output = artifact(
+        "fastxlsx-workbook-editor-data-validation-remove-final-output.xlsx");
+    reopened.save_as(empty_output);
+    const auto empty_entries = fastxlsx::test::read_zip_entries(empty_output);
+    check(empty_entries.at("xl/worksheets/sheet1.xml").find("<dataValidations")
+            == std::string::npos,
+        "removing the final validation should remove the complete container");
+    check_contains(empty_entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
+        R"(Target="https://example.invalid/source" TargetMode="External")",
+        "final validation removal should not change worksheet relationships");
+}
+
+void test_remove_validation_failure_rename_added_and_retry()
+{
+    const std::filesystem::path source = write_source_with_validation_and_hyperlink(
+        "fastxlsx-workbook-editor-data-validation-remove-retry-source.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(threw_fastxlsx_error([&] {
+        editor.remove_data_validation("Data", 1);
+    }), "out-of-range data validation removal should fail");
+    check(!editor.has_pending_changes() && !editor.has_unsaved_changes()
+            && editor.pending_worksheet_edits().empty(),
+        "out-of-range removal should not publish package or public state");
+
+    {
+        ScopedWorksheetReplacementStagedHook hook(fail_after_data_validation_staging);
+        check(threw_fastxlsx_error([&] {
+            editor.remove_data_validation("Data", 0);
+        }), "injected data validation removal staging failure should escape");
+    }
+    check(!editor.has_pending_changes() && editor.pending_worksheet_edits().empty(),
+        "removal staging failure should preserve a clean retry state");
+    editor.remove_data_validation("Data", 0);
+    editor.rename_sheet("Data", "Renamed Data");
+    const auto renamed_pending = editor.pending_worksheet_edits();
+    check(renamed_pending.size() == 1
+            && renamed_pending.front().planned_name == "Renamed Data"
+            && renamed_pending.front().data_validation_removal_count == 1,
+        "rename should migrate data validation removal diagnostics");
+    check(threw_fastxlsx_error([&] {
+        editor.save_as(artifact("fastxlsx-workbook-editor-data-validation-remove-missing")
+            / "parent" / "output.xlsx");
+    }), "data validation removal save should fail when the output parent is missing");
+    check(editor.has_unsaved_changes(),
+        "failed removal save should retain retry state");
+    const std::filesystem::path retry_output = artifact(
+        "fastxlsx-workbook-editor-data-validation-remove-retry-output.xlsx");
+    editor.save_as(retry_output);
+    check(fastxlsx::test::read_zip_entries(retry_output)
+              .at("xl/worksheets/sheet1.xml")
+              .find("<dataValidations") == std::string::npos,
+        "successful removal retry should persist the staged deletion");
+
+    const std::filesystem::path unsupported_source =
+        write_source_with_validation_and_hyperlink(
+            "fastxlsx-workbook-editor-data-validation-remove-unsupported-source.xlsx");
+    auto unsupported_entries = fastxlsx::test::read_zip_entries(unsupported_source);
+    replace_first_or_throw(unsupported_entries.at("xl/worksheets/sheet1.xml"),
+        "<dataValidation ", R"(<dataValidation imeMode="noControl" )");
+    fastxlsx::test::write_stored_zip_entries(unsupported_source, unsupported_entries);
+    fastxlsx::WorkbookEditor unsupported_editor =
+        fastxlsx::WorkbookEditor::open(unsupported_source);
+    check(threw_fastxlsx_error([&] {
+        unsupported_editor.remove_data_validation("Data", 0);
+    }), "unsupported source validation semantics should fail strict removal audit");
+    check(!unsupported_editor.has_pending_changes()
+            && unsupported_editor.pending_worksheet_edits().empty(),
+        "strict removal audit failure should not publish state");
+
+    const std::filesystem::path added_source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-data-validation-remove-added-source.xlsx");
+    fastxlsx::WorkbookEditor added_editor =
+        fastxlsx::WorkbookEditor::open(added_source);
+    added_editor.add_worksheet("Added");
+    fastxlsx::DataValidationRule added_rule;
+    added_rule.type = fastxlsx::DataValidationType::List;
+    added_rule.formula1 = "\"X,Y\"";
+    added_editor.add_data_validation(
+        "Added", fastxlsx::CellRange {1, 1, 5, 1}, added_rule);
+    added_editor.remove_data_validation("Added", 0);
+    added_editor.rename_sheet("Added", "Renamed Added");
+    const auto added_pending = added_editor.pending_worksheet_edits();
+    check(added_pending.size() == 1 && added_pending.front().added
+            && added_pending.front().planned_name == "Renamed Added"
+            && added_pending.front().data_validation_count == 1
+            && added_pending.front().data_validation_removal_count == 1,
+        "same-session added worksheet should compose validation add/remove/rename diagnostics");
+    const std::filesystem::path added_output = artifact(
+        "fastxlsx-workbook-editor-data-validation-remove-added-output.xlsx");
+    added_editor.save_as(added_output);
+    check(fastxlsx::test::read_zip_entries(added_output)
+              .at("xl/worksheets/sheet3.xml")
+              .find("<dataValidations") == std::string::npos,
+        "same-session added validation removal should leave no container");
+}
+
 } // namespace
 
 int main()
@@ -311,6 +455,8 @@ int main()
         test_self_closing_missing_count_and_count_mismatch();
         test_validation_failure_state_rename_and_retry();
         test_validation_on_added_renamed_worksheet();
+        test_remove_validation_by_current_index_and_remove_final_container();
+        test_remove_validation_failure_rename_added_and_retry();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());
         return 1;

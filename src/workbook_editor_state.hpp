@@ -111,6 +111,12 @@ struct WorkbookEditor::Impl {
     };
     using PendingClassicNotes =
         std::map<std::string, PendingClassicNoteEdit, std::less<>>;
+    struct PendingDataValidationEdit {
+        std::size_t addition_count = 0;
+        std::size_t removal_count = 0;
+    };
+    using PendingDataValidationEdits =
+        std::map<std::string, PendingDataValidationEdit, std::less<>>;
 
     Impl(detail::PackageEditor editor, WorkbookEditorOptions options)
         : editor(std::move(editor))
@@ -131,7 +137,7 @@ struct WorkbookEditor::Impl {
     std::map<std::string, std::size_t, std::less<>> pending_internal_hyperlink_counts;
     std::map<std::string, std::size_t, std::less<>> pending_external_hyperlink_counts;
     PendingClassicNotes pending_classic_notes;
-    std::map<std::string, std::size_t, std::less<>> pending_data_validation_counts;
+    PendingDataValidationEdits pending_data_validation_edits;
     std::map<std::string, std::size_t, std::less<>> pending_conditional_format_counts;
     PendingBasicTableEdits pending_basic_table_edits;
     std::optional<std::vector<detail::BasicWorksheetTableCatalogEntry>>
@@ -399,32 +405,33 @@ struct WorkbookEditor::Impl {
         swap(pending_classic_notes, *updated);
     }
 
-    [[nodiscard]] std::optional<std::map<std::string, std::size_t, std::less<>>>
-    stage_pending_data_validation_counts_move(
+    [[nodiscard]] std::optional<PendingDataValidationEdits>
+    stage_pending_data_validation_edits_move(
         std::string_view old_name, std::string_view new_name) const
     {
-        const auto source = pending_data_validation_counts.find(old_name);
-        if (source == pending_data_validation_counts.end()) {
+        const auto source = pending_data_validation_edits.find(old_name);
+        if (source == pending_data_validation_edits.end()) {
             return std::nullopt;
         }
-        auto updated = pending_data_validation_counts;
+        auto updated = pending_data_validation_edits;
         const auto updated_source = updated.find(old_name);
-        const std::size_t count = updated_source->second;
+        const PendingDataValidationEdit edit = updated_source->second;
         updated.erase(updated_source);
-        updated[std::string(new_name)] += count;
+        PendingDataValidationEdit& destination = updated[std::string(new_name)];
+        destination.addition_count += edit.addition_count;
+        destination.removal_count += edit.removal_count;
         return updated;
     }
 
-    void commit_pending_data_validation_counts_move(
-        std::optional<std::map<std::string, std::size_t, std::less<>>>& updated) noexcept
+    void commit_pending_data_validation_edits_move(
+        std::optional<PendingDataValidationEdits>& updated) noexcept
     {
         if (!updated.has_value()) {
             return;
         }
-        static_assert(std::is_nothrow_swappable_v<
-            std::map<std::string, std::size_t, std::less<>>>);
+        static_assert(std::is_nothrow_swappable_v<PendingDataValidationEdits>);
         using std::swap;
-        swap(pending_data_validation_counts, *updated);
+        swap(pending_data_validation_edits, *updated);
     }
 
     [[nodiscard]] std::optional<std::map<std::string, std::size_t, std::less<>>>
@@ -652,9 +659,9 @@ struct WorkbookEditor::Impl {
             const bool classic_notes_added =
                 pending_notes != pending_classic_notes.end();
             const auto pending_data_validations =
-                pending_data_validation_counts.find(current_name);
-            const bool data_validations_added =
-                pending_data_validations != pending_data_validation_counts.end();
+                pending_data_validation_edits.find(current_name);
+            const bool data_validations_edited =
+                pending_data_validations != pending_data_validation_edits.end();
             const auto pending_conditional_formats =
                 pending_conditional_format_counts.find(current_name);
             const bool conditional_formats_added =
@@ -681,7 +688,7 @@ struct WorkbookEditor::Impl {
                 && !targeted_cells_replaced && !internal_hyperlinks_added
                 && !external_hyperlinks_added
                 && !classic_notes_added
-                && !data_validations_added
+                && !data_validations_edited
                 && !conditional_formats_added
                 && !basic_tables_added
                 && !auto_filter_changed
@@ -710,8 +717,11 @@ struct WorkbookEditor::Impl {
                 summary.classic_note_update_count = pending_notes->second.update_count;
                 summary.classic_note_removal_count = pending_notes->second.removal_count;
             }
-            if (data_validations_added) {
-                summary.data_validation_count = pending_data_validations->second;
+            if (data_validations_edited) {
+                summary.data_validation_count =
+                    pending_data_validations->second.addition_count;
+                summary.data_validation_removal_count =
+                    pending_data_validations->second.removal_count;
             }
             if (conditional_formats_added) {
                 summary.conditional_format_count = pending_conditional_formats->second;

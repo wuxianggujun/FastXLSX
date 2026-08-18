@@ -60,6 +60,7 @@ struct WorksheetConditionalFormatRewritePlan {
 struct WorksheetConditionalFormatRemovalPlan {
     std::uint64_t source_offset = 0;
     std::uint64_t source_end_offset = 0;
+    std::string element_prefix;
 };
 
 struct WorksheetTablePartRewritePlan {
@@ -258,6 +259,15 @@ plan_worksheet_conditional_format_removal(
 /// planned conditionalFormatting container without renumbering other rules.
 void write_worksheet_conditional_format_removal(
     const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetConditionalFormatRemovalPlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Streams the source worksheet to a staged file while replacing the complete
+/// planned conditionalFormatting container without changing its source-order
+/// position. The caller supplies a complete serialized single-rule container.
+void write_worksheet_conditional_format_replacement(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view conditional_format_xml,
     const WorksheetConditionalFormatRemovalPlan& plan,
     const std::filesystem::path& output_path);
 

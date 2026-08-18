@@ -330,6 +330,44 @@ template <typename PendingTableEdit>
         });
 }
 
+template <typename WorkbookEditorState>
+void update_workbook_editor_conditional_format(
+    WorkbookEditorState& state, std::string_view sheet_name,
+    std::uint64_t conditional_format_index, std::span<const CellRange> ranges,
+    detail::ConditionalFormatRule rule)
+{
+    const std::string sheet_name_key(sheet_name);
+    const std::size_t range_count = ranges.size();
+    try {
+        if (!state.has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+        if (ranges.empty()) {
+            throw FastXlsxError("conditional formatting range list cannot be empty");
+        }
+
+        auto updated_edits = state.pending_conditional_format_edits;
+        ++updated_edits[sheet_name_key].update_count;
+        state.editor.update_conditional_format_by_name(sheet_name_key,
+            conditional_format_index,
+            std::vector<CellRange>(ranges.begin(), ranges.end()), std::move(rule));
+
+        using std::swap;
+        swap(state.pending_conditional_format_edits, updated_edits);
+        ++state.pending_public_edit_count;
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::update_conditional_format() failed for '"
+            + sheet_name_key + "' at index "
+            + std::to_string(conditional_format_index) + " with "
+            + std::to_string(range_count) + " ranges: " + error.what());
+        state.record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
 } // namespace
 
 WorksheetMaterializationError::WorksheetMaterializationError(
@@ -1175,6 +1213,118 @@ void WorkbookEditor::add_conditional_icon_set(
     add_conditional_icon_set(
         sheet_name, std::span<const CellRange>(ranges.begin(), ranges.size()),
         std::move(rule));
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    CellRange range, TwoColorScaleRule rule)
+{
+    update_conditional_format(sheet_name, conditional_format_index,
+        std::span<const CellRange>(&range, 1), std::move(rule));
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    CellRange range, ThreeColorScaleRule rule)
+{
+    update_conditional_format(sheet_name, conditional_format_index,
+        std::span<const CellRange>(&range, 1), std::move(rule));
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    CellRange range, DataBarRule rule)
+{
+    update_conditional_format(sheet_name, conditional_format_index,
+        std::span<const CellRange>(&range, 1), std::move(rule));
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    CellRange range, IconSetRule rule)
+{
+    update_conditional_format(sheet_name, conditional_format_index,
+        std::span<const CellRange>(&range, 1), std::move(rule));
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    std::span<const CellRange> ranges, TwoColorScaleRule rule)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+    update_workbook_editor_conditional_format(*impl_, sheet_name,
+        conditional_format_index, ranges,
+        detail::ConditionalFormatRule {std::move(rule)});
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    std::span<const CellRange> ranges, ThreeColorScaleRule rule)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+    update_workbook_editor_conditional_format(*impl_, sheet_name,
+        conditional_format_index, ranges,
+        detail::ConditionalFormatRule {std::move(rule)});
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    std::span<const CellRange> ranges, DataBarRule rule)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+    update_workbook_editor_conditional_format(*impl_, sheet_name,
+        conditional_format_index, ranges,
+        detail::ConditionalFormatRule {std::move(rule)});
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    std::span<const CellRange> ranges, IconSetRule rule)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+    update_workbook_editor_conditional_format(*impl_, sheet_name,
+        conditional_format_index, ranges,
+        detail::ConditionalFormatRule {std::move(rule)});
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    std::initializer_list<CellRange> ranges, TwoColorScaleRule rule)
+{
+    update_conditional_format(sheet_name, conditional_format_index,
+        std::span<const CellRange>(ranges.begin(), ranges.size()), std::move(rule));
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    std::initializer_list<CellRange> ranges, ThreeColorScaleRule rule)
+{
+    update_conditional_format(sheet_name, conditional_format_index,
+        std::span<const CellRange>(ranges.begin(), ranges.size()), std::move(rule));
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    std::initializer_list<CellRange> ranges, DataBarRule rule)
+{
+    update_conditional_format(sheet_name, conditional_format_index,
+        std::span<const CellRange>(ranges.begin(), ranges.size()), std::move(rule));
+}
+
+void WorkbookEditor::update_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    std::initializer_list<CellRange> ranges, IconSetRule rule)
+{
+    update_conditional_format(sheet_name, conditional_format_index,
+        std::span<const CellRange>(ranges.begin(), ranges.size()), std::move(rule));
 }
 
 void WorkbookEditor::remove_conditional_format(

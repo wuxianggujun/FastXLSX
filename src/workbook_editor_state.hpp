@@ -119,6 +119,7 @@ struct WorkbookEditor::Impl {
         std::map<std::string, PendingDataValidationEdit, std::less<>>;
     struct PendingConditionalFormatEdit {
         std::size_t addition_count = 0;
+        std::size_t update_count = 0;
         std::size_t removal_count = 0;
     };
     using PendingConditionalFormatEdits =
@@ -454,6 +455,7 @@ struct WorkbookEditor::Impl {
         updated.erase(updated_source);
         PendingConditionalFormatEdit& destination = updated[std::string(new_name)];
         destination.addition_count += edit.addition_count;
+        destination.update_count += edit.update_count;
         destination.removal_count += edit.removal_count;
         return updated;
     }
@@ -733,6 +735,8 @@ struct WorkbookEditor::Impl {
             if (conditional_formats_edited) {
                 summary.conditional_format_count =
                     pending_conditional_formats->second.addition_count;
+                summary.conditional_format_update_count =
+                    pending_conditional_formats->second.update_count;
                 summary.conditional_format_removal_count =
                     pending_conditional_formats->second.removal_count;
             }

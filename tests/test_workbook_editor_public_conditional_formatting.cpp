@@ -4,6 +4,7 @@
 #include "test_workbook_editor_facade_common.hpp"
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <map>
 
@@ -95,6 +96,20 @@ const fastxlsx::WorkbookEditorWorksheetEditSummary* find_edit_summary(
             return summary.planned_name == planned_name;
         });
     return found == summaries.end() ? nullptr : &*found;
+}
+
+std::vector<fastxlsx::WorksheetConditionalFormatView> read_conditional_formats(
+    const std::filesystem::path& path, std::string_view sheet_name)
+{
+    const fastxlsx::WorkbookReader reader = fastxlsx::WorkbookReader::open(path);
+    std::vector<fastxlsx::WorksheetConditionalFormatView> values;
+    fastxlsx::WorksheetConditionalFormatReadCallbacks callbacks;
+    callbacks.on_conditional_format =
+        [&](const fastxlsx::WorksheetConditionalFormatView& value) {
+            values.push_back(value);
+        };
+    (void)reader.read_worksheet_conditional_formats(sheet_name, callbacks);
+    return values;
 }
 
 template <typename Mutation>
@@ -595,6 +610,285 @@ void test_preserves_opaque_advanced_multi_rule_source()
         "duplicate source priority should fail before state publication");
 }
 
+void test_update_conditional_format_overloads_and_preservation()
+{
+    const std::filesystem::path source = write_source_with_conditional_formatting(
+        "fastxlsx-workbook-editor-conditional-formatting-update-source.xlsx");
+    auto source_entries = fastxlsx::test::read_zip_entries(source);
+    source_entries.emplace("custom/conditional-format-update-opaque.bin", "keep-update");
+    fastxlsx::test::write_stored_zip_entries(source, source_entries);
+    source_entries = fastxlsx::test::read_zip_entries(source);
+
+    const std::string source_sheet_data = xml_element_fragment(
+        source_entries.at("xl/worksheets/sheet1.xml"), "<sheetData", "</sheetData>");
+    const std::string source_data_validations = xml_element_fragment(
+        source_entries.at("xl/worksheets/sheet1.xml"),
+        "<dataValidations", "</dataValidations>");
+    const std::string source_hyperlinks = xml_element_fragment(
+        source_entries.at("xl/worksheets/sheet1.xml"), "<hyperlinks", "</hyperlinks>");
+    const std::string source_untouched_worksheet =
+        source_entries.at("xl/worksheets/sheet2.xml");
+    const std::string source_relationships =
+        source_entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    const std::string source_workbook_relationships =
+        source_entries.at("xl/_rels/workbook.xml.rels");
+    const std::string source_content_types = source_entries.at("[Content_Types].xml");
+    const std::string source_workbook_xml = source_entries.at("xl/workbook.xml");
+    const std::string source_styles = source_entries.at("xl/styles.xml");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    const std::array<fastxlsx::CellRange, 2> span_ranges {{
+        {2, 2, 4, 2}, {6, 2, 8, 2}}};
+    const std::span<const fastxlsx::CellRange> ranges_span(
+        span_ranges.data(), span_ranges.size());
+
+    fastxlsx::TwoColorScaleRule two_color;
+    two_color.lower.color = fastxlsx::ArgbColor {0xFF, 0xAA, 0x11, 0x22};
+    two_color.upper.color = fastxlsx::ArgbColor {0xFF, 0x22, 0x88, 0x44};
+    editor.update_conditional_format(
+        "Data", 0, fastxlsx::CellRange {2, 1, 8, 1}, two_color);
+    editor.update_conditional_format("Data", 0, ranges_span, two_color);
+    editor.update_conditional_format(
+        "Data", 0, {{2, 3, 4, 3}, {6, 3, 8, 3}}, two_color);
+
+    fastxlsx::ThreeColorScaleRule three_color;
+    three_color.lower.color = fastxlsx::ArgbColor {0xFF, 0xF8, 0x69, 0x6B};
+    three_color.upper.color = fastxlsx::ArgbColor {0xFF, 0x63, 0xBE, 0x7B};
+    editor.update_conditional_format(
+        "Data", 0, fastxlsx::CellRange {2, 4, 8, 4}, three_color);
+    editor.update_conditional_format("Data", 0, ranges_span, three_color);
+    editor.update_conditional_format(
+        "Data", 0, {{2, 5, 4, 5}, {6, 5, 8, 5}}, three_color);
+
+    fastxlsx::DataBarRule data_bar;
+    data_bar.show_value = false;
+    data_bar.color = fastxlsx::ArgbColor {0xFF, 0x11, 0x88, 0xCC};
+    editor.update_conditional_format(
+        "Data", 0, fastxlsx::CellRange {2, 6, 8, 6}, data_bar);
+    editor.update_conditional_format("Data", 0, ranges_span, data_bar);
+    editor.update_conditional_format(
+        "Data", 0, {{2, 7, 4, 7}, {6, 7, 8, 7}}, data_bar);
+
+    fastxlsx::IconSetRule icon_set;
+    icon_set.value_type = fastxlsx::IconSetValueType::Percentile;
+    icon_set.thresholds = {10.0, 50.0, 90.0};
+    icon_set.show_value = false;
+    icon_set.reverse = true;
+    editor.update_conditional_format(
+        "Data", 0, fastxlsx::CellRange {2, 8, 8, 8}, icon_set);
+    editor.update_conditional_format("Data", 0, ranges_span, icon_set);
+    editor.update_conditional_format(
+        "Data", 0, {{2, 9, 4, 9}, {6, 9, 8, 9}}, icon_set);
+
+    const auto* summary = find_edit_summary(editor.pending_worksheet_edits(), "Data");
+    check(summary != nullptr && summary->conditional_format_count == 0
+            && summary->conditional_format_update_count == 12
+            && summary->conditional_format_removal_count == 0,
+        "all update overloads should publish only the independent update diagnostic");
+    check(editor.pending_change_count() == 12 && editor.has_unsaved_changes(),
+        "conditional-format updates should advance pending and unsaved state");
+    check(threw_fastxlsx_error([&] {
+        editor.save_as(artifact("fastxlsx-workbook-editor-conditional-formatting-update-missing")
+            / "parent" / "output.xlsx");
+    }), "conditional-format update save should fail when the parent is missing");
+    check(editor.has_unsaved_changes()
+            && editor.pending_worksheet_edits().front().conditional_format_update_count == 12,
+        "failed save should retain conditional-format update diagnostics and retry state");
+
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-conditional-formatting-update-output.xlsx");
+    editor.save_as(output);
+    check(editor.has_pending_changes() && !editor.has_unsaved_changes(),
+        "successful update save should advance only the unsaved watermark");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet = output_entries.at("xl/worksheets/sheet1.xml");
+    check(count_occurrences(output_worksheet, "<conditionalFormatting ") == 1,
+        "repeated updates should replace rather than append conditional formats");
+    check_contains(output_worksheet,
+        R"(<conditionalFormatting sqref="I2:I4 I6:I8"><cfRule type="iconSet" priority="1"><iconSet iconSet="3Arrows" showValue="0" reverse="1"><cfvo type="percentile" val="10"/><cfvo type="percentile" val="50"/><cfvo type="percentile" val="90"/></iconSet></cfRule></conditionalFormatting>)",
+        "final update should replace ranges and payload while preserving priority");
+    check(xml_element_fragment(output_worksheet, "<sheetData", "</sheetData>")
+            == source_sheet_data,
+        "conditional-format update should preserve cell XML exactly");
+    check(xml_element_fragment(output_worksheet,
+              "<dataValidations", "</dataValidations>") == source_data_validations
+            && xml_element_fragment(output_worksheet,
+                   "<hyperlinks", "</hyperlinks>") == source_hyperlinks,
+        "conditional-format update should preserve adjacent worksheet metadata exactly");
+    check(output_entries.at("xl/worksheets/sheet2.xml") == source_untouched_worksheet
+            && output_entries.at("xl/worksheets/_rels/sheet1.xml.rels")
+                == source_relationships
+            && output_entries.at("xl/_rels/workbook.xml.rels")
+                == source_workbook_relationships
+            && output_entries.at("[Content_Types].xml") == source_content_types
+            && output_entries.at("xl/workbook.xml") == source_workbook_xml
+            && output_entries.at("xl/styles.xml") == source_styles
+            && output_entries.at("custom/conditional-format-update-opaque.bin")
+                == "keep-update",
+        "conditional-format update should preserve package side-effect boundaries");
+
+    const auto values = read_conditional_formats(output, "Data");
+    check(values.size() == 1 && values.front().priority == 1
+            && values.front().kind == fastxlsx::WorksheetConditionalFormatKind::IconSet
+            && values.front().ranges.size() == 2
+            && values.front().ranges[0].first_row == 2
+            && values.front().ranges[0].first_column == 9
+            && values.front().ranges[0].last_row == 4
+            && values.front().ranges[0].last_column == 9
+            && values.front().ranges[1].first_row == 6
+            && values.front().ranges[1].first_column == 9
+            && values.front().ranges[1].last_row == 8
+            && values.front().ranges[1].last_column == 9
+            && values.front().icon_set.has_value()
+            && values.front().icon_set->reverse,
+        "bounded reader should reopen the final updated conditional format");
+}
+
+void test_update_conditional_format_effective_lifecycle()
+{
+    const std::filesystem::path source = write_source_with_conditional_formatting(
+        "fastxlsx-workbook-editor-conditional-formatting-update-lifecycle-source.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.add_conditional_data_bar(
+        "Data", fastxlsx::CellRange {2, 2, 8, 2}, {});
+    editor.update_conditional_format(
+        "Data", 1, fastxlsx::CellRange {2, 3, 8, 3}, fastxlsx::TwoColorScaleRule {});
+    editor.update_conditional_format(
+        "Data", 0, fastxlsx::CellRange {2, 4, 8, 4}, fastxlsx::IconSetRule {});
+    editor.remove_conditional_format("Data", 0);
+    fastxlsx::DataBarRule final_data_bar;
+    final_data_bar.color = fastxlsx::ArgbColor {0xFF, 0x44, 0x77, 0xAA};
+    editor.update_conditional_format(
+        "Data", 0, fastxlsx::CellRange {2, 5, 8, 5}, final_data_bar);
+    editor.rename_sheet("Data", "Renamed Data");
+    editor.update_conditional_format(
+        "Renamed Data", 0, {{2, 6, 4, 6}, {6, 6, 8, 6}}, final_data_bar);
+
+    editor.add_worksheet("Added");
+    editor.add_conditional_icon_set(
+        "Added", fastxlsx::CellRange {1, 1, 3, 1}, {});
+    editor.update_conditional_format(
+        "Added", 0, fastxlsx::CellRange {1, 2, 3, 2},
+        fastxlsx::ThreeColorScaleRule {});
+    editor.rename_sheet("Added", "Renamed Added");
+    editor.update_conditional_format(
+        "Renamed Added", 0, {{1, 3, 3, 3}, {1, 4, 3, 4}},
+        fastxlsx::ThreeColorScaleRule {});
+
+    const auto summaries = editor.pending_worksheet_edits();
+    const auto* renamed = find_edit_summary(summaries, "Renamed Data");
+    const auto* added = find_edit_summary(summaries, "Renamed Added");
+    check(renamed != nullptr && renamed->renamed
+            && renamed->conditional_format_count == 1
+            && renamed->conditional_format_update_count == 4
+            && renamed->conditional_format_removal_count == 1,
+        "source lifecycle diagnostics should follow update/remove and planned rename");
+    check(added != nullptr && added->added
+            && added->conditional_format_count == 1
+            && added->conditional_format_update_count == 2,
+        "added worksheet update diagnostics should follow its final planned name");
+
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-conditional-formatting-update-lifecycle-output.xlsx");
+    editor.save_as(output);
+    const auto renamed_values = read_conditional_formats(output, "Renamed Data");
+    const auto added_values = read_conditional_formats(output, "Renamed Added");
+    check(renamed_values.size() == 1 && renamed_values.front().priority == 2
+            && renamed_values.front().kind
+                == fastxlsx::WorksheetConditionalFormatKind::DataBar
+            && renamed_values.front().ranges.size() == 2,
+        "effective index after update/remove should retain the surviving priority");
+    check(added_values.size() == 1 && added_values.front().priority == 1
+            && added_values.front().kind
+                == fastxlsx::WorksheetConditionalFormatKind::ThreeColorScale
+            && added_values.front().ranges.size() == 2,
+        "renamed added worksheet should retain its updated rule and priority");
+}
+
+void test_update_conditional_format_failure_and_prefixed_qname()
+{
+    const std::filesystem::path source = write_source_with_conditional_formatting(
+        "fastxlsx-workbook-editor-conditional-formatting-update-failure-source.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    check(threw_fastxlsx_error([&] {
+        editor.update_conditional_format(
+            "Data", 1, fastxlsx::CellRange {1, 1, 2, 1}, fastxlsx::DataBarRule {});
+    }), "out-of-range conditional-format update should fail");
+    check(threw_fastxlsx_error([&] {
+        editor.update_conditional_format("Data", 0,
+            std::span<const fastxlsx::CellRange> {}, fastxlsx::DataBarRule {});
+    }), "empty conditional-format update range list should fail");
+    check(threw_fastxlsx_error([&] {
+        editor.update_conditional_format(
+            "Data", 0, fastxlsx::CellRange {0, 1, 2, 1}, fastxlsx::DataBarRule {});
+    }), "invalid conditional-format update range should fail");
+    fastxlsx::IconSetRule invalid_icons;
+    invalid_icons.thresholds = {0.0, 90.0, 20.0};
+    check(threw_fastxlsx_error([&] {
+        editor.update_conditional_format(
+            "Data", 0, fastxlsx::CellRange {1, 1, 2, 1}, invalid_icons);
+    }), "invalid conditional-format update rule should fail");
+    check(!editor.has_pending_changes() && editor.pending_worksheet_edits().empty(),
+        "invalid update calls should not publish package or public state");
+
+    {
+        ScopedConditionalFormatReplacementStagedHook hook(
+            fail_after_conditional_format_staging);
+        check(threw_fastxlsx_error([&] {
+            editor.update_conditional_format("Data", 0,
+                fastxlsx::CellRange {2, 2, 8, 2}, fastxlsx::DataBarRule {});
+        }), "injected conditional-format update staging failure should escape");
+    }
+    check(!editor.has_pending_changes() && editor.pending_worksheet_edits().empty(),
+        "update staging failure should not publish diagnostics or package state");
+    editor.update_conditional_format("Data", 0,
+        fastxlsx::CellRange {2, 2, 8, 2}, fastxlsx::DataBarRule {});
+    check(editor.pending_worksheet_edits().front().conditional_format_update_count == 1
+            && !editor.last_edit_error().has_value(),
+        "conditional-format update should remain retryable after staging failure");
+
+    auto unsupported_entries = fastxlsx::test::read_zip_entries(source);
+    replace_first_or_throw(unsupported_entries.at("xl/worksheets/sheet1.xml"),
+        "</colorScale></cfRule></conditionalFormatting>",
+        R"(</colorScale></cfRule><cfRule type="cellIs" priority="9"><formula>A1&gt;0</formula></cfRule></conditionalFormatting>)");
+    const std::filesystem::path unsupported_source = artifact(
+        "fastxlsx-workbook-editor-conditional-formatting-update-unsupported.xlsx");
+    fastxlsx::test::write_stored_zip_entries(unsupported_source, unsupported_entries);
+    fastxlsx::WorkbookEditor unsupported_editor =
+        fastxlsx::WorkbookEditor::open(unsupported_source);
+    check(threw_fastxlsx_error([&] {
+        unsupported_editor.update_conditional_format("Data", 0,
+            fastxlsx::CellRange {2, 2, 8, 2}, fastxlsx::DataBarRule {});
+    }), "multiple-rule or advanced conditional-format update should fail strictly");
+    check(!unsupported_editor.has_pending_changes()
+            && unsupported_editor.pending_worksheet_edits().empty(),
+        "unsupported conditional-format update should not publish state");
+
+    auto prefixed_entries = fastxlsx::test::read_zip_entries(source);
+    prefixed_entries.at("xl/worksheets/sheet1.xml") =
+        R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData/><x:conditionalFormatting sqref="A1:A3"><x:cfRule type="colorScale" priority="7"><x:colorScale><x:cfvo type="min"/><x:cfvo type="max"/><x:color rgb="FFF8696B"/><x:color rgb="FF63BE7B"/></x:colorScale></x:cfRule></x:conditionalFormatting></x:worksheet>)";
+    const std::filesystem::path prefixed_source = artifact(
+        "fastxlsx-workbook-editor-conditional-formatting-update-prefixed-source.xlsx");
+    fastxlsx::test::write_stored_zip_entries(prefixed_source, prefixed_entries);
+    fastxlsx::WorkbookEditor prefixed_editor =
+        fastxlsx::WorkbookEditor::open(prefixed_source);
+    prefixed_editor.update_conditional_format("Data", 0,
+        fastxlsx::CellRange {2, 2, 4, 2}, fastxlsx::DataBarRule {});
+    const std::filesystem::path prefixed_output = artifact(
+        "fastxlsx-workbook-editor-conditional-formatting-update-prefixed-output.xlsx");
+    prefixed_editor.save_as(prefixed_output);
+    const std::string prefixed_xml = fastxlsx::test::read_zip_entries(prefixed_output)
+                                         .at("xl/worksheets/sheet1.xml");
+    check_contains(prefixed_xml,
+        R"(<x:conditionalFormatting sqref="B2:B4"><x:cfRule type="dataBar" priority="7"><x:dataBar><x:cfvo type="min"/><x:cfvo type="max"/><x:color rgb="FF638EC6"/></x:dataBar></x:cfRule></x:conditionalFormatting>)",
+        "conditional-format update should retain the worksheet QName prefix");
+    check(prefixed_xml.find("<conditionalFormatting") == std::string::npos,
+        "prefixed update should not introduce unqualified worksheet elements");
+}
+
 void test_remove_conditional_format_lifecycle()
 {
     const std::filesystem::path source = write_source_with_conditional_formatting(
@@ -725,6 +1019,9 @@ int main()
         test_priority_overflow_fails_without_state_pollution();
         test_source_structure_audit_and_encoded_priority();
         test_preserves_opaque_advanced_multi_rule_source();
+        test_update_conditional_format_overloads_and_preservation();
+        test_update_conditional_format_effective_lifecycle();
+        test_update_conditional_format_failure_and_prefixed_qname();
         test_remove_conditional_format_lifecycle();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());

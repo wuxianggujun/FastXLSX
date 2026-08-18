@@ -285,6 +285,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// queued for this planned worksheet.
     std::size_t conditional_format_removal_count = 0;
 
+    /// Number of successful writer-compatible conditional-format replacements
+    /// queued for this planned worksheet.
+    std::size_t conditional_format_update_count = 0;
+
     /// Final number of writer-compatible table parts retained by queued table
     /// lifecycle edits for this planned worksheet.
     std::size_t table_count = 0;
@@ -3426,6 +3430,114 @@ public:
     /// Convenience overload for a copied icon-set initializer-list range set.
     void add_conditional_icon_set(
         std::string_view sheet_name,
+        std::initializer_list<CellRange> ranges,
+        IconSetRule rule);
+
+    /// Replaces one current writer-compatible conditional-format rule.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. `index` is
+    /// zero-based in the current effective source order and matches
+    /// `WorksheetConditionalFormatView::index`; earlier same-session additions,
+    /// updates, and removals are visible. The complete effective collection is
+    /// first traversed through the strict bounded projection, so advanced/custom,
+    /// dxf/formula/cellIs, multiple-rule, and malformed source metadata fail
+    /// before state publication.
+    ///
+    /// The replacement may change the owning ranges and writer-compatible rule
+    /// kind/payload, but preserves the original priority and source-order
+    /// position. Ranges are copied, must be non-empty and valid, and are not
+    /// sorted, merged, deduplicated, overlap-checked, or synchronized with later
+    /// structural edits. Cells, relationships, content types, styles/dxfs,
+    /// calculation metadata, linked objects, and unknown parts are preserved.
+    /// Failure publishes no package or public state and remains retryable.
+    ///
+    /// @param sheet_name Current planned worksheet name, including a planned
+    /// rename or worksheet added in this editor.
+    /// @param index Current zero-based conditional-format index.
+    /// @param range Replacement one-based inclusive owning range.
+    /// @param rule Copied writer-compatible replacement rule.
+    /// @throws FastXlsxError if validation, strict source projection, index
+    /// selection, schema proof, or transactional staging fails.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        CellRange range,
+        TwoColorScaleRule rule);
+
+    /// Three-color single-range overload with the same replacement contract.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        CellRange range,
+        ThreeColorScaleRule rule);
+
+    /// Basic data-bar single-range overload with the same replacement contract.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        CellRange range,
+        DataBarRule rule);
+
+    /// Basic 3Arrows single-range overload with the same replacement contract.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        CellRange range,
+        IconSetRule rule);
+
+    /// Replaces one rule with a copied non-empty two-color multi-range payload.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        std::span<const CellRange> ranges,
+        TwoColorScaleRule rule);
+
+    /// Replaces one rule with a copied non-empty three-color multi-range payload.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        std::span<const CellRange> ranges,
+        ThreeColorScaleRule rule);
+
+    /// Replaces one rule with a copied non-empty data-bar multi-range payload.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        std::span<const CellRange> ranges,
+        DataBarRule rule);
+
+    /// Replaces one rule with a copied non-empty icon-set multi-range payload.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        std::span<const CellRange> ranges,
+        IconSetRule rule);
+
+    /// Convenience overload for a copied two-color initializer-list range set.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        std::initializer_list<CellRange> ranges,
+        TwoColorScaleRule rule);
+
+    /// Convenience overload for a copied three-color initializer-list range set.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        std::initializer_list<CellRange> ranges,
+        ThreeColorScaleRule rule);
+
+    /// Convenience overload for a copied data-bar initializer-list range set.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
+        std::initializer_list<CellRange> ranges,
+        DataBarRule rule);
+
+    /// Convenience overload for a copied icon-set initializer-list range set.
+    void update_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index,
         std::initializer_list<CellRange> ranges,
         IconSetRule rule);
 

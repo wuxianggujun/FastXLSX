@@ -2258,8 +2258,12 @@ WorksheetConditionalFormatRemovalPlan plan_worksheet_conditional_format_removal(
     if (!target_start_offset.has_value() || !target_end_offset.has_value()) {
         throw FastXlsxError("worksheet conditional-format index was not found");
     }
+    std::string element_prefix = std::move(worksheet_prefix);
+    if (!element_prefix.empty()) {
+        element_prefix += ':';
+    }
     return WorksheetConditionalFormatRemovalPlan {
-        *target_start_offset, *target_end_offset};
+        *target_start_offset, *target_end_offset, std::move(element_prefix)};
 }
 
 WorksheetDataValidationRewritePlan plan_worksheet_data_validation_rewrite(
@@ -4028,6 +4032,46 @@ void write_worksheet_conditional_format_removal(
     if (!output) {
         throw FastXlsxError(
             "failed to finalize staged worksheet conditional-format removal file");
+    }
+}
+
+void write_worksheet_conditional_format_replacement(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::string_view conditional_format_xml,
+    const WorksheetConditionalFormatRemovalPlan& plan,
+    const std::filesystem::path& output_path)
+{
+    std::ofstream output(output_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError(
+            "failed to create staged worksheet conditional-format replacement file");
+    }
+
+    bool applied = false;
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (is_synthetic_self_closing_end(event)) {
+                return;
+            }
+            if (event.raw_xml_offset == plan.source_offset) {
+                write_bytes(output, conditional_format_xml);
+                applied = true;
+            }
+            if (event.raw_xml_offset >= plan.source_offset
+                && event.raw_xml_offset < plan.source_end_offset) {
+                return;
+            }
+            write_bytes(output, event.raw_xml);
+        });
+
+    if (!applied) {
+        throw FastXlsxError(
+            "worksheet conditional-format replacement did not reach its planned source boundary");
+    }
+    output.flush();
+    if (!output) {
+        throw FastXlsxError(
+            "failed to finalize staged worksheet conditional-format replacement file");
     }
 }
 

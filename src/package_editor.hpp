@@ -622,6 +622,11 @@ public:
         std::vector<CellRange> ranges, DataBarRule rule);
     void add_conditional_icon_set_by_name(std::string_view sheet_name,
         std::vector<CellRange> ranges, IconSetRule rule);
+    // Replaces one current zero-based writer-compatible conditional-format
+    // container while preserving its priority and source-order position.
+    void update_conditional_format_by_name(std::string_view sheet_name,
+        std::uint64_t conditional_format_index, std::vector<CellRange> ranges,
+        ConditionalFormatRule rule);
     // Removes one current zero-based writer-compatible conditional-format
     // container after strict bounded projection. Priorities are not renumbered.
     void remove_conditional_format_by_name(

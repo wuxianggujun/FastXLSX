@@ -28,6 +28,7 @@
 ## 设计原则
 
 - `WorkbookEditor::remove_conditional_format()` 是 worksheet-local Patch metadata edit：它按当前 effective worksheet 的 zero-based `WorksheetConditionalFormatView::index` 选择 writer-compatible 单规则容器，先执行 strict bounded projection，再以 exact byte-range rewrite 删除完整 `<conditionalFormatting>`。Same-session additions/removals 改变后续 index；最后一条删除不留下空容器且不重排剩余 priority。Planned rename/added worksheet、failure-before-state-change、staging/save retry、独立 `conditional_format_removal_count`、cells/relationships/content types/styles/dxf/calc/unknown-part preservation 与不做 structural sync 都是 public contract。Advanced/custom/dxf/formula/cellIs/multiple-rule source 明确 fail；该窄切片不等于完整 existing-workbook conditional-formatting object model。
+- `WorkbookEditor::update_conditional_format()` 是同一 current-effective index model 上的 writer-compatible replacement：四种 rule 各有 single range、`span` 与 initializer-list overload，可同时替换 owning ranges 和 rule kind/payload，但必须保留原 priority 与 source-order 位置。Doxygen 必须写清 strict source projection、source/same-session object、earlier mutation 后 index、planned rename/added worksheet、`conditional_format_update_count`、failure-before-state-change/save retry，以及 cells/relationships/content types/styles/dxf/calc/unknown-part preservation。Advanced/custom/dxf/formula/cellIs/multiple-rule source fail，range 不做 structural sync；该窄 update 不是任意 source takeover 或完整 conditional-formatting object model。
 
 - 易用 API 不能让 large worksheet 隐式进入 DOM、dense matrix 或无界 cell map。
 - `Cell` / `CellValue` 可以作为 owning 边界值和 small-file 存储，不作为 million-row 热路径长期模型。

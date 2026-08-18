@@ -9533,6 +9533,75 @@ void PackageEditor::remove_conditional_format_by_name(
         "existing-workbook conditional-format removal", std::move(commit_notes));
 }
 
+void PackageEditor::update_conditional_format_by_name(
+    std::string_view sheet_name, std::uint64_t conditional_format_index,
+    std::vector<CellRange> ranges, ConditionalFormatRule rule)
+{
+    if (ranges.empty()) {
+        throw FastXlsxError("conditional-format range list cannot be empty");
+    }
+    validate_conditional_format_rule(rule);
+    (void)sqref(ranges);
+
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "conditional-format update");
+
+    std::optional<std::uint32_t> target_priority;
+    CurrentWorksheetInputChunkReader projection_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for conditional-format update audit");
+    WorksheetConditionalFormatReadCallbacks callbacks;
+    callbacks.on_conditional_format =
+        [&](const WorksheetConditionalFormatView& view) {
+            if (view.index == conditional_format_index) {
+                target_priority = view.priority;
+            }
+        };
+    const WorksheetConditionalFormatReadSummary summary =
+        read_worksheet_conditional_formats_from_chunk_source(
+            [&](std::string& chunk) { return projection_reader(chunk); }, callbacks);
+    if (conditional_format_index >= summary.conditional_format_count
+        || !target_priority.has_value()) {
+        throw FastXlsxError("worksheet conditional-format index is out of range");
+    }
+
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for conditional-format update planning");
+    const WorksheetConditionalFormatRemovalPlan replacement_plan =
+        plan_worksheet_conditional_format_removal(
+            [&](std::string& chunk) { return planning_reader(chunk); },
+            conditional_format_index);
+    const std::string conditional_format_xml = serialize_conditional_format(
+        ranges, rule, *target_priority, replacement_plan.element_prefix);
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for conditional-format update rewrite");
+    write_worksheet_conditional_format_replacement(
+        [&](std::string& chunk) { return output_reader(chunk); },
+        conditional_format_xml, replacement_plan, rewritten_source_file.path());
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "existing-workbook conditional-format update replaces one strictly projected "
+        "worksheet-local container while preserving priority and without relationship, "
+        "content-type, style, or calculation mutation");
+    replace_worksheet_part_from_chunk_source_with_commit_notes(
+        worksheet_part, staged_source, worksheet_metadata_reference_policy(),
+        "existing-workbook conditional-format update", std::move(commit_notes));
+}
+
 void PackageEditor::add_conditional_color_scale_by_name(
     std::string_view sheet_name, std::vector<CellRange> ranges,
     TwoColorScaleRule rule)

@@ -1,13 +1,13 @@
 ---
 name: fastxlsx-conditional-formatting-features
-description: "实现或审查 FastXLSX Streaming/Patch conditional formatting write 与 bounded read。用于 two-/three-color color scales、basic data bars、basic 3Arrows icon sets、priority、multi-range sqref、existing-workbook writer-compatible add、事务/retry、本地 Excel/openpyxl/XlsxWriter 验证，以及判断 advanced/custom icon sets、advanced data bars、dxf/styles、formula/cellIs 是否越界。"
+description: "实现或审查 FastXLSX Streaming/Patch conditional formatting write 与 bounded read。用于 two-/three-color color scales、basic data bars、basic 3Arrows icon sets、priority、multi-range sqref、existing-workbook writer-compatible add/update/remove、事务/retry、本地 Excel/openpyxl/XlsxWriter 验证，以及判断 advanced/custom icon sets、advanced data bars、dxf/styles、formula/cellIs 是否越界。"
 ---
 
 # FastXLSX Conditional Formatting Features
 
 ## 当前窄切片
 
-以 public header 和 tests 为准，当前覆盖 Streaming write、bounded read 与 existing-workbook Patch add/remove 的 two-/three-color scales、basic data bars、basic `3Arrows` icon sets、priority 和 multi-range `sqref`。Patch public surface 为 `add_conditional_color_scale()`、`add_conditional_data_bar()`、`add_conditional_icon_set()` 与 `remove_conditional_format()`；三类 add API 均支持 single range、`span` 和 initializer-list multi-range overload，remove 按当前 effective zero-based reader index 删除完整单规则容器。
+以 public header 和 tests 为准，当前覆盖 Streaming write、bounded read 与 existing-workbook Patch add/update/remove 的 two-/three-color scales、basic data bars、basic `3Arrows` icon sets、priority 和 multi-range `sqref`。Patch public surface 为 `add_conditional_color_scale()`、`add_conditional_data_bar()`、`add_conditional_icon_set()`、`update_conditional_format()` 与 `remove_conditional_format()`；add/update 的四种 rule 均支持 single range、`span` 和 initializer-list multi-range overload，update/remove 按当前 effective zero-based reader index 替换或删除完整单规则容器。
 
 ## 非目标
 
@@ -15,7 +15,7 @@ description: "实现或审查 FastXLSX Streaming/Patch conditional formatting wr
 - Advanced data bar options。
 - 通用 `dxf`/styles 对象模型。
 - `formula` / `cellIs` 等完整规则族。
-- Existing rule update、任意 source takeover 或完整 existing-workbook conditional-formatting object model。`remove_conditional_format()` 只接管 strict writer-compatible 单规则容器，不是通用 source remove。
+- 任意 source takeover 或完整 existing-workbook conditional-formatting object model。`update_conditional_format()` / `remove_conditional_format()` 只接管 strict writer-compatible 单规则容器，不是通用 source mutation。
 
 ## 实现规则
 
@@ -27,9 +27,10 @@ description: "实现或审查 FastXLSX Streaming/Patch conditional formatting wr
 - Reader 必须保持 XML/nesting/format/range/`sqref` guardrail、callback exception retry 和 package no-side-effect；advanced/custom/dxf/formula/cellIs/multiple-rule container 默认 fail。
 - Patch add 使用独立 bounded structural/priority source audit，不复用或放宽严格 reader projection。Advanced/custom/dxf/formula/cellIs/multiple-rule payload 原样保留且不投影/接管；root/QName/nesting/schema/direct-child 或 priority 缺失/非法/重复/耗尽必须在状态发布前 fail，不能 repair 或静默覆盖。
 - Patch remove 先执行严格 bounded reader projection，再独立定位当前 effective zero-based container index；它删除完整 `<conditionalFormatting>` byte range，不重排剩余 priority。Advanced/custom/dxf/formula/cellIs/multiple-rule source、malformed structure 与 unsupported namespace/schema 必须在状态发布前 fail；same-session add/remove、planned rename/added worksheet、staging/save retry 与 `conditional_format_removal_count` 必须保持事务一致。
+- Patch update 使用相同 strict projection/current-effective index，捕获目标原 priority，并以 worksheet QName 前缀序列化完整 replacement container；source-order 位置和 priority 保留，ranges 与任意 writer-compatible kind/payload 可替换。Source/same-session added/updated object、earlier remove 后 index、planned rename/added worksheet、prefixed worksheet、staging/save retry 与 `conditional_format_update_count` 必须保持事务一致。
 - Patch priority 从 source 与 same-session additions 的 effective maximum + 1 分配；planned rename 和 same-session added worksheet 必须走 planned catalog，`pending_worksheet_edits()` 以 `conditional_format_count` 报告最终追加数。
-- Patch add/remove 只改 worksheet-local `<conditionalFormatting>`；cells、worksheet `.rels`、content types、styles/dxf、calc metadata、`calcChain` 与 linked objects 保留。Worksheet replacement、priority/count、pending/unsaved 与 public diagnostics 必须先在副本中 staging，再统一 commit；失败不污染状态并可 retry。
+- Patch add/update/remove 只改 worksheet-local `<conditionalFormatting>`；cells、worksheet `.rels`、content types、styles/dxf、calc metadata、`calcChain` 与 linked objects 保留。Worksheet replacement、priority/count、pending/unsaved 与 public diagnostics 必须先在副本中 staging，再统一 commit；失败不污染状态并可 retry。
 
 ## 验证
 
-按 T1 只构建 library 与直接 feature targets，运行 Patch conditional-format add/remove、Streaming conditional-formatting 与 bounded reader focused tests；默认不跑全量 CTest。覆盖 XML structure/schema order、三类 rule、multi-range/priority、effective-index source/final removal、same-session add/remove、planned rename/added worksheet、invalid source no-state-pollution、advanced/custom/multiple-rule rejection、failure/save retry、cells/relationships/content types/styles/calc/unknown-part preservation，以及 reader stored/DEFLATE/callback retry/foreign extension disambiguation。OpenPyXL/XlsxWriter/Excel 仅在实际运行时记录；验证通过只能支持当前窄切片 wording。
+按 T1 只构建 library 与直接 feature targets，运行 Patch conditional-format add/update/remove、Streaming conditional-formatting 与 bounded reader focused tests；默认不跑全量 CTest。覆盖 XML structure/schema order、四种 rule 的 single/`span`/initializer-list、multi-range/priority、effective-index source/same-session update/final removal、planned rename/added worksheet、prefixed QName、invalid source no-state-pollution、advanced/custom/multiple-rule rejection、failure/save retry、三个独立 public diagnostics，以及 cells/relationships/content types/styles/calc/unknown-part preservation。OpenPyXL/XlsxWriter/Excel 仅在实际运行时记录；验证通过只能支持当前窄 lifecycle wording。

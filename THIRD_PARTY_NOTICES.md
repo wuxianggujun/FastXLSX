@@ -28,5 +28,5 @@ FastXLSX 本身使用 MIT License，见 `LICENSE`。发布制品前应以 resolv
 ## Non-runtime / Future Features
 
 - `planned-xml`：zlib-ng、Expat、pugixml；当前源码未链接。
-- `planned-dev`：Catch2、Google Benchmark 候选；当前未由 feature 自动接线。
+- `planned-dev`：Catch2、Google Benchmark 候选；C7 评估确认当前 tests/benchmarks 不消费它们，因此 feature 暂不自动接线，也不进入任何默认 preset。后续只有真实 target 迁移开始后才引入对应 development preset 与 license/export 记录。
 - `reference-benchmarks`：OpenXLSX、xlnt，只用于 opt-in benchmark，不进入 FastXLSX runtime。

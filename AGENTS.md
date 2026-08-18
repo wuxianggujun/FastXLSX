@@ -43,7 +43,7 @@ FastXLSX 是 C++20 / MSVC 2026 优先的 XLSX 创建与编辑库，公开 Stream
 - vcpkg 默认 features：`runtime-minizip`、`images`。
 - Production 只直接链接/export minizip-ng；`FASTXLSX_ENABLE_DIRECT_ZLIB_PROFILING` 默认 OFF，只有 benchmark/profile build 才直接链接 `ZLIB::ZLIB` 并编译 one-pass direct engine。
 - `planned-xml` 只包含当前未链接的 zlib-ng/Expat/pugixml。
-- `planned-dev` 当前未自动接线 Catch2/Google Benchmark。
+- `planned-dev` 已完成评估但暂不接线：现有 tests/benchmarks 是自带 standalone executables，没有 Catch2/Google Benchmark 消费者；未开始真实 target 迁移前，不得把该 feature 写成当前 test/benchmark dependency，也不要添加空壳 probe target。
 - OpenXLSX、xlnt 等只作 reference benchmark。
 - 默认不用 FetchContent 或 vendoring。
 

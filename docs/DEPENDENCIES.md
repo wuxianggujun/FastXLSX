@@ -30,7 +30,7 @@ FastXLSX 使用 vcpkg manifest mode。依赖是否出现在 manifest、是否被
 ## Future / Development features
 
 - `planned-xml`：zlib-ng、Expat、pugixml；当前源码不链接，不得写成已实现 parser/DOM backend。
-- `planned-dev`：Catch2、Google Benchmark 候选依赖；当前 tests/benchmarks 不由该 feature 自动接线。
+- `planned-dev`：Catch2、Google Benchmark 候选依赖；当前 tests/benchmarks 是自带 standalone executables，不由该 feature 自动接线。本机 vcpkg 安装树没有对应 CMake config，因此不把它加入任何 preset，也不创建无实际消费者的 probe target。只有开始迁移真实 target 后，才在独立 development preset 中通过 `find_package` 和 target link 接入。
 - `reference-benchmarks`：OpenXLSX/xlnt，仅用于 opt-in 对照，不是 runtime foundation。
 
 ## 引入规则

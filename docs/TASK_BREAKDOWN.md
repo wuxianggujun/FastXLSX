@@ -133,4 +133,7 @@
 
 ## C7 Packaging / Dev Tooling
 
-- 评估 `planned-dev` 是否接入真实 CMake target；未接入前不得称为当前 test/benchmark dependency。
+- [x] 评估 `planned-dev` 是否接入真实 CMake target：当前不接入。
+  现有 tests/benchmarks 是自带的 standalone executables，不消费 Catch2 或 Google Benchmark；本机 vcpkg 安装树也没有这两个包的 CMake config。仅把 feature 加入 preset 会增加 configure/install 成本而不改变任何 target，因此不构成真实接线。
+- `planned-dev` 仍保留为候选 manifest feature，但不得称为当前 test/benchmark dependency，也不加入 production、stored、no-images 或 benchmark preset 的默认 feature 集合。
+- 重新评估条件：开始迁移至少一个真实 test/benchmark target，并能在独立 preset 中通过 `find_package`、target link、最小 focused build 和对应运行验证；迁移完成前不引入空壳 probe target。

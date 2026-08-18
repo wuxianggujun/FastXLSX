@@ -28,6 +28,8 @@ source package -> worksheet entry chunks -> bounded XML events -> active cell pr
 
 ## Patch
 
+- `WorkbookEditor::remove_conditional_format()` 走 worksheet-local metadata transaction：先从当前 effective worksheet 做 strict bounded projection，使用 reader 对齐的 zero-based index 定位一个 writer-compatible 单规则 `<conditionalFormatting>`，再以 file-backed exact byte-range rewrite 删除整个容器。Same-session additions/removals 会改变后续 index；最后一项删除不留下空容器且不重排其他 priority。Worksheet replacement、pending/unsaved 与 `conditional_format_removal_count` 在提交前隔离；planned rename/added worksheet、staging/save failure retry 支持，cells、relationships、content types、styles/dxf、calc metadata 与 unknown parts 保留。Advanced/custom/dxf/formula/cellIs/multiple-rule source fail，不做 structural range sync 或完整对象模型接管。
+
 ```text
 source package -> part index/relationships -> staged edits -> part-level rewrite -> save_as
 ```

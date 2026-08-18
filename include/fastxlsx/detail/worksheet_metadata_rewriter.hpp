@@ -57,6 +57,11 @@ struct WorksheetConditionalFormatRewritePlan {
     std::string element_prefix;
 };
 
+struct WorksheetConditionalFormatRemovalPlan {
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+};
+
 struct WorksheetTablePartRewritePlan {
     enum class Action {
         InsertContainerBefore,
@@ -239,6 +244,21 @@ void write_worksheet_conditional_format_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view conditional_format_xml,
     const WorksheetConditionalFormatRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Selects one zero-based conditionalFormatting container for exact removal.
+/// The caller must first complete the strict bounded conditional-format
+/// projection, which guarantees one writer-compatible rule per container.
+[[nodiscard]] WorksheetConditionalFormatRemovalPlan
+plan_worksheet_conditional_format_removal(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::uint64_t conditional_format_index);
+
+/// Streams the source worksheet to a staged file while removing the complete
+/// planned conditionalFormatting container without renumbering other rules.
+void write_worksheet_conditional_format_removal(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetConditionalFormatRemovalPlan& plan,
     const std::filesystem::path& output_path);
 
 /// Selects a schema-safe append/insert boundary for one linked table part.

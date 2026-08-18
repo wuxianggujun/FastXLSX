@@ -2054,6 +2054,214 @@ WorksheetConditionalFormatRewritePlan plan_worksheet_conditional_format_rewrite(
         std::move(element_prefix)};
 }
 
+WorksheetConditionalFormatRemovalPlan plan_worksheet_conditional_format_removal(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::uint64_t conditional_format_index)
+{
+    struct MetadataFrame {
+        std::string local_name;
+        std::string prefix;
+        bool conditional_formatting = false;
+        bool target = false;
+        std::vector<WorksheetNamespaceChange> namespace_changes;
+    };
+
+    bool saw_worksheet_start = false;
+    bool saw_sheet_data_start = false;
+    bool saw_sheet_data_end = false;
+    bool saw_worksheet_end = false;
+    std::uint64_t worksheet_end_offset = 0;
+    int last_suffix_rank = 0;
+    std::string worksheet_prefix;
+    std::optional<std::string> worksheet_namespace_uri;
+    std::unordered_map<std::string, std::string> namespace_bindings;
+    std::uint64_t container_count = 0;
+    std::optional<std::uint64_t> target_start_offset;
+    std::optional<std::uint64_t> target_end_offset;
+    std::vector<MetadataFrame> frames;
+
+    const auto namespace_uri_for = [&](std::string_view prefix)
+        -> std::optional<std::string_view> {
+        const auto found = namespace_bindings.find(std::string(prefix));
+        if (found == namespace_bindings.end()) {
+            return std::nullopt;
+        }
+        return std::string_view(found->second.data(), found->second.size());
+    };
+    const auto is_worksheet_namespace = [&](std::string_view prefix) {
+        const std::optional<std::string_view> current = namespace_uri_for(prefix);
+        return worksheet_namespace_uri.has_value()
+            ? current.has_value() && *current == *worksheet_namespace_uri
+            : !current.has_value();
+    };
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::WorksheetStart) {
+                if (saw_worksheet_start || event.self_closing) {
+                    throw FastXlsxError(
+                        "conditional-format removal encountered duplicate or empty worksheet root");
+                }
+                const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+                if (qname.local_name != "worksheet") {
+                    throw FastXlsxError(
+                        "conditional-format removal found an invalid worksheet root");
+                }
+                worksheet_prefix = std::string(qname.prefix);
+                (void)apply_worksheet_namespaces(event.raw_xml, namespace_bindings);
+                const std::optional<std::string_view> root_uri =
+                    namespace_uri_for(worksheet_prefix);
+                if (!root_uri.has_value() || *root_uri != spreadsheetml_namespace) {
+                    throw FastXlsxError(
+                        "conditional-format removal requires the SpreadsheetML worksheet namespace");
+                }
+                worksheet_namespace_uri = std::string(*root_uri);
+                saw_worksheet_start = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::SheetDataStart) {
+                if (!saw_worksheet_start || saw_sheet_data_start) {
+                    throw FastXlsxError(
+                        "conditional-format removal encountered an invalid sheetData start");
+                }
+                const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+                const std::vector<WorksheetNamespaceChange> changes =
+                    apply_worksheet_namespaces(event.raw_xml, namespace_bindings);
+                const bool matching_qname = qname.local_name == "sheetData"
+                    && qname.prefix == worksheet_prefix
+                    && is_worksheet_namespace(qname.prefix);
+                restore_worksheet_namespaces(changes, namespace_bindings);
+                if (!matching_qname || is_closing_tag(event.raw_xml)) {
+                    throw FastXlsxError(
+                        "conditional-format removal found a mismatched sheetData QName");
+                }
+                saw_sheet_data_start = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::SheetDataEnd) {
+                const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+                const bool matching_boundary = saw_sheet_data_start
+                    && !saw_sheet_data_end && qname.local_name == "sheetData"
+                    && qname.prefix == worksheet_prefix
+                    && (event.self_closing != is_closing_tag(event.raw_xml));
+                if (!matching_boundary) {
+                    throw FastXlsxError(
+                        "conditional-format removal found a mismatched sheetData boundary");
+                }
+                saw_sheet_data_end = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+                if (!saw_worksheet_start || saw_worksheet_end || event.self_closing
+                    || !is_closing_tag(event.raw_xml)
+                    || qname.local_name != "worksheet"
+                    || qname.prefix != worksheet_prefix) {
+                    throw FastXlsxError(
+                        "conditional-format removal found a mismatched worksheet root QName");
+                }
+                saw_worksheet_end = true;
+                worksheet_end_offset = event.raw_xml_offset;
+                return;
+            }
+
+            const bool directly_inside_conditional_formatting = frames.size() == 1
+                && frames.front().conditional_formatting;
+            if (event.kind != WorksheetEventKind::Metadata) {
+                if (directly_inside_conditional_formatting
+                    && event.kind == WorksheetEventKind::RawText
+                    && !std::all_of(event.raw_xml.begin(), event.raw_xml.end(),
+                        [](char character) { return is_xml_space(character); })) {
+                    throw FastXlsxError(
+                        "worksheet conditionalFormatting contains unsupported direct text");
+                }
+                return;
+            }
+
+            const bool closing = is_closing_tag(event.raw_xml);
+            const WorksheetXmlQName qname = worksheet_xml_qname(event.raw_xml);
+            if (closing) {
+                if (frames.empty() || frames.back().local_name != qname.local_name
+                    || frames.back().prefix != qname.prefix) {
+                    throw FastXlsxError(
+                        "worksheet conditional-format metadata contains mismatched element nesting");
+                }
+                MetadataFrame frame = std::move(frames.back());
+                frames.pop_back();
+                if (frame.target) {
+                    target_end_offset = event_end_offset(event);
+                }
+                restore_worksheet_namespaces(frame.namespace_changes, namespace_bindings);
+                return;
+            }
+
+            const std::vector<WorksheetNamespaceChange> changes =
+                apply_worksheet_namespaces(event.raw_xml, namespace_bindings);
+            const bool top_level = frames.empty();
+            const bool worksheet_qname = qname.prefix == worksheet_prefix
+                && is_worksheet_namespace(qname.prefix);
+            bool opens_conditional_formatting = false;
+            bool target = false;
+            if (top_level && saw_sheet_data_end) {
+                const std::optional<int> rank =
+                    worksheet_suffix_schema_rank(qname.local_name);
+                if (!rank.has_value() || *rank < last_suffix_rank) {
+                    throw FastXlsxError(
+                        "worksheet suffix metadata is unsupported or not in schema order");
+                }
+                if (!worksheet_qname) {
+                    throw FastXlsxError(
+                        "conditional-format removal metadata QName differs from worksheet root");
+                }
+                last_suffix_rank = *rank;
+                if (qname.local_name == "conditionalFormatting") {
+                    if (event.self_closing) {
+                        throw FastXlsxError(
+                            "worksheet conditionalFormatting cannot be self-closing");
+                    }
+                    target = container_count == conditional_format_index;
+                    if (target) {
+                        target_start_offset = event.raw_xml_offset;
+                    }
+                    ++container_count;
+                    opens_conditional_formatting = true;
+                }
+            } else if (top_level && qname.local_name == "conditionalFormatting") {
+                throw FastXlsxError(
+                    "worksheet conditionalFormatting appears before sheetData");
+            }
+
+            if (directly_inside_conditional_formatting
+                && (qname.local_name != "cfRule" || !worksheet_qname)) {
+                throw FastXlsxError(
+                    "worksheet conditionalFormatting has an unsupported direct child");
+            }
+
+            if (!event.self_closing) {
+                frames.push_back(MetadataFrame {
+                    std::string(qname.local_name), std::string(qname.prefix),
+                    opens_conditional_formatting, target, changes});
+            } else {
+                restore_worksheet_namespaces(changes, namespace_bindings);
+            }
+        });
+
+    if (!frames.empty()) {
+        throw FastXlsxError(
+            "worksheet conditional-format metadata ended inside an open element");
+    }
+    if (!saw_worksheet_start || !saw_sheet_data_start || !saw_sheet_data_end
+        || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "conditional-format removal requires a worksheet root, sheetData, and closing worksheet root");
+    }
+    if (!target_start_offset.has_value() || !target_end_offset.has_value()) {
+        throw FastXlsxError("worksheet conditional-format index was not found");
+    }
+    return WorksheetConditionalFormatRemovalPlan {
+        *target_start_offset, *target_end_offset};
+}
+
 WorksheetDataValidationRewritePlan plan_worksheet_data_validation_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk)
 {
@@ -3784,6 +3992,42 @@ void write_worksheet_conditional_format_rewrite(
     if (!output) {
         throw FastXlsxError(
             "failed to finalize staged worksheet conditional-format metadata file");
+    }
+}
+
+void write_worksheet_conditional_format_removal(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetConditionalFormatRemovalPlan& plan,
+    const std::filesystem::path& output_path)
+{
+    std::ofstream output(output_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError(
+            "failed to create staged worksheet conditional-format removal file");
+    }
+
+    bool applied = false;
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (is_synthetic_self_closing_end(event)) {
+                return;
+            }
+            if (event.raw_xml_offset >= plan.source_offset
+                && event.raw_xml_offset < plan.source_end_offset) {
+                applied = true;
+                return;
+            }
+            write_bytes(output, event.raw_xml);
+        });
+
+    if (!applied) {
+        throw FastXlsxError(
+            "worksheet conditional-format removal did not reach its planned source boundary");
+    }
+    output.flush();
+    if (!output) {
+        throw FastXlsxError(
+            "failed to finalize staged worksheet conditional-format removal file");
     }
 }
 

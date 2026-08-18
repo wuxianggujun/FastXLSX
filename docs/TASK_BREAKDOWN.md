@@ -12,6 +12,8 @@
 
 ## C1 Patch Facade
 
+- **最新完成**：existing-workbook `WorkbookEditor::remove_conditional_format()` 已进入 public Patch 能力。API 按当前 effective worksheet 的 zero-based `WorksheetConditionalFormatView::index` 删除完整 writer-compatible 单规则 `<conditionalFormatting>` 容器；same-session additions/removals 会改变后续 index，最后一条删除不留下空容器且不重排剩余 priority。删除前完成 strict bounded projection，advanced/custom/dxf/formula/cellIs/multiple-rule source 明确 fail；支持 planned rename、added worksheet、staging/save retry、out-of-range no-state-pollution，并保留 cells、relationships、content types、styles、calc metadata 与 unknown parts。`pending_worksheet_edits()` 以独立 `conditional_format_removal_count` 记录成功删除次数。本切片按 T1 通过直接 conditional-format target 增量构建与 focused CTest 1/1；production 全量 CTest、stored/no-images/install consumer、OpenPyXL 与 Office 保持 `not_run`。
+
 - **已完成基线**：existing-workbook `WorkbookEditor::add_worksheet()` 可事务式追加空白 worksheet，校验名称与 ASCII case-insensitive 重名，分配不冲突的 `sheetId`、relationship id 和 worksheet part path，并协调 stage `xl/workbook.xml`、`xl/_rels/workbook.xml.rels`、`[Content_Types].xml`、新 worksheet part、manifest、public catalog 与 pending/unsaved 状态。提交前失败不污染状态，保存失败保留 retry，成功输出可 reopen；同一 editor 可继续 whole-sheetData replacement、missing-cell Insert upsert 和 rename。
 - `add_worksheet()` 不做 worksheet clone，不复制 styles/sharedStrings、tables、drawings、charts、comments、VBA 或其他 linked objects，也不公开 internal package mutation；新增未保存表必须先 `save_as()` 并重新打开，才能进入 In-memory materialization。
 - 本切片已通过 production 134/134 CTest、stored-only focused 1/1、no-images runtime smoke，以及 production/stored/no-images 三套独立 install consumer；三份代表输出均通过 OpenPyXL 3.1.2 reopen。Office 未运行，保持 `not_run`。

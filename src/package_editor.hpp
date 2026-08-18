@@ -622,6 +622,10 @@ public:
         std::vector<CellRange> ranges, DataBarRule rule);
     void add_conditional_icon_set_by_name(std::string_view sheet_name,
         std::vector<CellRange> ranges, IconSetRule rule);
+    // Removes one current zero-based writer-compatible conditional-format
+    // container after strict bounded projection. Priorities are not renumbered.
+    void remove_conditional_format_by_name(
+        std::string_view sheet_name, std::uint64_t conditional_format_index);
     // Adds one writer-compatible table part and its worksheet tableParts/
     // relationship/content-type metadata in one staged package transaction.
     [[nodiscard]] BasicWorksheetTableCatalogEntry add_basic_table_by_name(

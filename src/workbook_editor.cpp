@@ -990,14 +990,14 @@ void WorkbookEditor::add_conditional_color_scale(
             throw FastXlsxError("conditional formatting range list cannot be empty");
         }
 
-        auto updated_counts = impl_->pending_conditional_format_counts;
-        ++updated_counts[sheet_name_key];
+        auto updated_edits = impl_->pending_conditional_format_edits;
+        ++updated_edits[sheet_name_key].addition_count;
         impl_->editor.add_conditional_color_scale_by_name(
             sheet_name_key, std::vector<CellRange>(ranges.begin(), ranges.end()),
             std::move(rule));
 
         using std::swap;
-        swap(impl_->pending_conditional_format_counts, updated_counts);
+        swap(impl_->pending_conditional_format_edits, updated_edits);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
@@ -1029,14 +1029,14 @@ void WorkbookEditor::add_conditional_color_scale(
             throw FastXlsxError("conditional formatting range list cannot be empty");
         }
 
-        auto updated_counts = impl_->pending_conditional_format_counts;
-        ++updated_counts[sheet_name_key];
+        auto updated_edits = impl_->pending_conditional_format_edits;
+        ++updated_edits[sheet_name_key].addition_count;
         impl_->editor.add_conditional_color_scale_by_name(
             sheet_name_key, std::vector<CellRange>(ranges.begin(), ranges.end()),
             std::move(rule));
 
         using std::swap;
-        swap(impl_->pending_conditional_format_counts, updated_counts);
+        swap(impl_->pending_conditional_format_edits, updated_edits);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
@@ -1093,14 +1093,14 @@ void WorkbookEditor::add_conditional_data_bar(
             throw FastXlsxError("conditional formatting range list cannot be empty");
         }
 
-        auto updated_counts = impl_->pending_conditional_format_counts;
-        ++updated_counts[sheet_name_key];
+        auto updated_edits = impl_->pending_conditional_format_edits;
+        ++updated_edits[sheet_name_key].addition_count;
         impl_->editor.add_conditional_data_bar_by_name(
             sheet_name_key, std::vector<CellRange>(ranges.begin(), ranges.end()),
             std::move(rule));
 
         using std::swap;
-        swap(impl_->pending_conditional_format_counts, updated_counts);
+        swap(impl_->pending_conditional_format_edits, updated_edits);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
@@ -1148,14 +1148,14 @@ void WorkbookEditor::add_conditional_icon_set(
             throw FastXlsxError("conditional formatting range list cannot be empty");
         }
 
-        auto updated_counts = impl_->pending_conditional_format_counts;
-        ++updated_counts[sheet_name_key];
+        auto updated_edits = impl_->pending_conditional_format_edits;
+        ++updated_edits[sheet_name_key].addition_count;
         impl_->editor.add_conditional_icon_set_by_name(
             sheet_name_key, std::vector<CellRange>(ranges.begin(), ranges.end()),
             std::move(rule));
 
         using std::swap;
-        swap(impl_->pending_conditional_format_counts, updated_counts);
+        swap(impl_->pending_conditional_format_edits, updated_edits);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
@@ -1175,6 +1175,39 @@ void WorkbookEditor::add_conditional_icon_set(
     add_conditional_icon_set(
         sheet_name, std::span<const CellRange>(ranges.begin(), ranges.size()),
         std::move(rule));
+}
+
+void WorkbookEditor::remove_conditional_format(
+    std::string_view sheet_name, std::uint64_t conditional_format_index)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    try {
+        if (!impl_->has_current_worksheet(sheet_name_key)) {
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name_key));
+        }
+
+        auto updated_edits = impl_->pending_conditional_format_edits;
+        ++updated_edits[sheet_name_key].removal_count;
+        impl_->editor.remove_conditional_format_by_name(
+            sheet_name_key, conditional_format_index);
+
+        using std::swap;
+        swap(impl_->pending_conditional_format_edits, updated_edits);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            "WorkbookEditor::remove_conditional_format() failed for '"
+            + sheet_name_key + "' at index "
+            + std::to_string(conditional_format_index) + ": " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
 }
 
 void WorkbookEditor::add_data_validation(
@@ -1827,7 +1860,7 @@ void WorkbookEditor::remove_worksheet(std::string_view name)
             || !impl_->pending_external_hyperlink_counts.empty()
             || !impl_->pending_classic_notes.empty()
             || !impl_->pending_data_validation_edits.empty()
-            || !impl_->pending_conditional_format_counts.empty()
+            || !impl_->pending_conditional_format_edits.empty()
             || !impl_->pending_basic_table_edits.empty()
             || !impl_->pending_auto_filter_edits.empty()
             || !impl_->pending_freeze_pane_edits.empty()
@@ -1917,9 +1950,9 @@ void WorkbookEditor::rename_sheet(
             updated_data_validation_edits =
                 impl_->stage_pending_data_validation_edits_move(
                     old_name_key, new_name_key);
-        std::optional<std::map<std::string, std::size_t, std::less<>>>
-            updated_conditional_format_counts =
-                impl_->stage_pending_conditional_format_counts_move(
+        std::optional<WorkbookEditor::Impl::PendingConditionalFormatEdits>
+            updated_conditional_format_edits =
+                impl_->stage_pending_conditional_format_edits_move(
                     old_name_key, new_name_key);
         std::optional<WorkbookEditor::Impl::PendingBasicTableEdits>
             updated_basic_table_edits =
@@ -1968,8 +2001,8 @@ void WorkbookEditor::rename_sheet(
         impl_->commit_pending_classic_notes_move(updated_classic_notes);
         impl_->commit_pending_data_validation_edits_move(
             updated_data_validation_edits);
-        impl_->commit_pending_conditional_format_counts_move(
-            updated_conditional_format_counts);
+        impl_->commit_pending_conditional_format_edits_move(
+            updated_conditional_format_edits);
         impl_->commit_pending_basic_table_edits_move(
             updated_basic_table_edits);
         impl_->commit_pending_auto_filter_edits_move(updated_auto_filter_edits);

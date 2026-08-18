@@ -117,6 +117,12 @@ struct WorkbookEditor::Impl {
     };
     using PendingDataValidationEdits =
         std::map<std::string, PendingDataValidationEdit, std::less<>>;
+    struct PendingConditionalFormatEdit {
+        std::size_t addition_count = 0;
+        std::size_t removal_count = 0;
+    };
+    using PendingConditionalFormatEdits =
+        std::map<std::string, PendingConditionalFormatEdit, std::less<>>;
 
     Impl(detail::PackageEditor editor, WorkbookEditorOptions options)
         : editor(std::move(editor))
@@ -138,7 +144,7 @@ struct WorkbookEditor::Impl {
     std::map<std::string, std::size_t, std::less<>> pending_external_hyperlink_counts;
     PendingClassicNotes pending_classic_notes;
     PendingDataValidationEdits pending_data_validation_edits;
-    std::map<std::string, std::size_t, std::less<>> pending_conditional_format_counts;
+    PendingConditionalFormatEdits pending_conditional_format_edits;
     PendingBasicTableEdits pending_basic_table_edits;
     std::optional<std::vector<detail::BasicWorksheetTableCatalogEntry>>
         source_basic_table_catalog;
@@ -434,32 +440,33 @@ struct WorkbookEditor::Impl {
         swap(pending_data_validation_edits, *updated);
     }
 
-    [[nodiscard]] std::optional<std::map<std::string, std::size_t, std::less<>>>
-    stage_pending_conditional_format_counts_move(
+    [[nodiscard]] std::optional<PendingConditionalFormatEdits>
+    stage_pending_conditional_format_edits_move(
         std::string_view old_name, std::string_view new_name) const
     {
-        const auto source = pending_conditional_format_counts.find(old_name);
-        if (source == pending_conditional_format_counts.end()) {
+        const auto source = pending_conditional_format_edits.find(old_name);
+        if (source == pending_conditional_format_edits.end()) {
             return std::nullopt;
         }
-        auto updated = pending_conditional_format_counts;
+        PendingConditionalFormatEdits updated = pending_conditional_format_edits;
         const auto updated_source = updated.find(old_name);
-        const std::size_t count = updated_source->second;
+        const PendingConditionalFormatEdit edit = updated_source->second;
         updated.erase(updated_source);
-        updated[std::string(new_name)] += count;
+        PendingConditionalFormatEdit& destination = updated[std::string(new_name)];
+        destination.addition_count += edit.addition_count;
+        destination.removal_count += edit.removal_count;
         return updated;
     }
 
-    void commit_pending_conditional_format_counts_move(
-        std::optional<std::map<std::string, std::size_t, std::less<>>>& updated) noexcept
+    void commit_pending_conditional_format_edits_move(
+        std::optional<PendingConditionalFormatEdits>& updated) noexcept
     {
         if (!updated.has_value()) {
             return;
         }
-        static_assert(std::is_nothrow_swappable_v<
-            std::map<std::string, std::size_t, std::less<>>>);
+        static_assert(std::is_nothrow_swappable_v<PendingConditionalFormatEdits>);
         using std::swap;
-        swap(pending_conditional_format_counts, *updated);
+        swap(pending_conditional_format_edits, *updated);
     }
 
     [[nodiscard]] const std::vector<detail::BasicWorksheetTableCatalogEntry>&
@@ -663,9 +670,9 @@ struct WorkbookEditor::Impl {
             const bool data_validations_edited =
                 pending_data_validations != pending_data_validation_edits.end();
             const auto pending_conditional_formats =
-                pending_conditional_format_counts.find(current_name);
-            const bool conditional_formats_added =
-                pending_conditional_formats != pending_conditional_format_counts.end();
+                pending_conditional_format_edits.find(current_name);
+            const bool conditional_formats_edited =
+                pending_conditional_formats != pending_conditional_format_edits.end();
             const auto pending_basic_tables =
                 pending_basic_table_edits.find(current_name);
             const bool basic_tables_added =
@@ -689,7 +696,7 @@ struct WorkbookEditor::Impl {
                 && !external_hyperlinks_added
                 && !classic_notes_added
                 && !data_validations_edited
-                && !conditional_formats_added
+                && !conditional_formats_edited
                 && !basic_tables_added
                 && !auto_filter_changed
                 && !freeze_panes_changed
@@ -723,8 +730,11 @@ struct WorkbookEditor::Impl {
                 summary.data_validation_removal_count =
                     pending_data_validations->second.removal_count;
             }
-            if (conditional_formats_added) {
-                summary.conditional_format_count = pending_conditional_formats->second;
+            if (conditional_formats_edited) {
+                summary.conditional_format_count =
+                    pending_conditional_formats->second.addition_count;
+                summary.conditional_format_removal_count =
+                    pending_conditional_formats->second.removal_count;
             }
             if (basic_tables_added) {
                 summary.table_count = pending_basic_tables->second.tables.size();

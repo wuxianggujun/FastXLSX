@@ -1,6 +1,7 @@
 ﻿#include "package_editor.hpp"
 
 #include "worksheet_comment_reader.hpp"
+#include "worksheet_conditional_format_reader.hpp"
 #include "worksheet_data_validation_reader.hpp"
 #include "worksheet_table_reader.hpp"
 
@@ -9479,6 +9480,57 @@ void PackageEditor::remove_data_validation_by_name(
     replace_worksheet_part_from_chunk_source_with_commit_notes(
         worksheet_part, staged_source, worksheet_metadata_reference_policy(),
         "existing-workbook data validation removal", std::move(commit_notes));
+}
+
+void PackageEditor::remove_conditional_format_by_name(
+    std::string_view sheet_name, std::uint64_t conditional_format_index)
+{
+    const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
+        reader_, manifest_, replacements_, sheet_name);
+    const CurrentWorksheetInputSource input_source =
+        require_current_worksheet_input_source(
+            reader_, replacements_, entry_replacements_, worksheet_part,
+            "conditional-format removal");
+
+    CurrentWorksheetInputChunkReader projection_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for conditional-format removal audit");
+    const WorksheetConditionalFormatReadSummary summary =
+        read_worksheet_conditional_formats_from_chunk_source(
+            [&](std::string& chunk) { return projection_reader(chunk); },
+            WorksheetConditionalFormatReadCallbacks {});
+    if (conditional_format_index >= summary.conditional_format_count) {
+        throw FastXlsxError("worksheet conditional-format index is out of range");
+    }
+
+    CurrentWorksheetInputChunkReader planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for conditional-format removal planning");
+    const WorksheetConditionalFormatRemovalPlan removal_plan =
+        plan_worksheet_conditional_format_removal(
+            [&](std::string& chunk) { return planning_reader(chunk); },
+            conditional_format_index);
+
+    ScopedPackageEditorTempFile rewritten_source_file;
+    CurrentWorksheetInputChunkReader output_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for conditional-format removal rewrite");
+    write_worksheet_conditional_format_removal(
+        [&](std::string& chunk) { return output_reader(chunk); },
+        removal_plan, rewritten_source_file.path());
+
+    const std::vector<PackageEntryChunk> rewritten_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+    PackageEntryChunkReader staged_reader(rewritten_chunks);
+    const WorksheetInputChunkCallback staged_source =
+        [&](std::string& chunk) { return staged_reader(chunk); };
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "existing-workbook conditional-format removal rewrites one strictly projected "
+        "worksheet-local container without relationship or content-type mutation");
+    replace_worksheet_part_from_chunk_source_with_commit_notes(
+        worksheet_part, staged_source, worksheet_metadata_reference_policy(),
+        "existing-workbook conditional-format removal", std::move(commit_notes));
 }
 
 void PackageEditor::add_conditional_color_scale_by_name(

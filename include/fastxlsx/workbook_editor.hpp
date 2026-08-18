@@ -281,6 +281,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// planned worksheet. Zero when no conditional-formatting edit is queued.
     std::size_t conditional_format_count = 0;
 
+    /// Number of successful worksheet-local conditional-formatting removals
+    /// queued for this planned worksheet.
+    std::size_t conditional_format_removal_count = 0;
+
     /// Final number of writer-compatible table parts retained by queued table
     /// lifecycle edits for this planned worksheet.
     std::size_t table_count = 0;
@@ -3424,6 +3428,32 @@ public:
         std::string_view sheet_name,
         std::initializer_list<CellRange> ranges,
         IconSetRule rule);
+
+    /// Removes one current writer-compatible conditional-format rule by index.
+    ///
+    /// API mode: Patch / existing-workbook worksheet metadata edit. `index` is
+    /// zero-based in the current effective source order and matches
+    /// `WorksheetConditionalFormatView::index`. Same-session additions and
+    /// earlier removals affect the index accepted by later calls. Before the
+    /// rewrite, the complete effective conditional-formatting collection is
+    /// traversed by the strict bounded public projection. Advanced/custom rules,
+    /// dxf/formula/cellIs payloads, multiple-rule containers, and malformed
+    /// metadata therefore fail without being taken over or modified.
+    ///
+    /// A successful call removes the complete single-rule
+    /// `<conditionalFormatting>` container and does not renumber remaining
+    /// priorities. The file-backed rewrite preserves cells, relationships,
+    /// content types, styles/dxfs, calculation metadata, and unknown package
+    /// entries. It does not evaluate formulas, repair priorities/ranges, or
+    /// synchronize later structural edits. Failure publishes no package or
+    /// public state and leaves the editor usable for retry.
+    ///
+    /// @throws FastXlsxError if the worksheet or index is invalid, the effective
+    /// conditional-format collection cannot be strictly projected, or staging
+    /// fails.
+    void remove_conditional_format(
+        std::string_view sheet_name,
+        std::uint64_t index);
 
     /// Appends one worksheet-local data-validation rule for one range.
     ///

@@ -595,6 +595,125 @@ void test_preserves_opaque_advanced_multi_rule_source()
         "duplicate source priority should fail before state publication");
 }
 
+void test_remove_conditional_format_lifecycle()
+{
+    const std::filesystem::path source = write_source_with_conditional_formatting(
+        "fastxlsx-workbook-editor-conditional-formatting-removal-source.xlsx");
+    auto source_entries = fastxlsx::test::read_zip_entries(source);
+    source_entries.emplace("custom/conditional-format-removal-opaque.bin", "keep");
+    fastxlsx::test::write_stored_zip_entries(source, source_entries);
+    source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string source_sheet_data = xml_element_fragment(
+        source_entries.at("xl/worksheets/sheet1.xml"), "<sheetData", "</sheetData>");
+    const std::string source_relationships =
+        source_entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    const std::string source_content_types = source_entries.at("[Content_Types].xml");
+    const std::string source_styles = source_entries.at("xl/styles.xml");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(threw_fastxlsx_error([&] { editor.remove_conditional_format("Data", 1); }),
+        "out-of-range conditional-format removal should fail");
+    check(!editor.has_pending_changes() && editor.pending_worksheet_edits().empty(),
+        "out-of-range removal should not publish state");
+    editor.remove_conditional_format("Data", 0);
+    const auto* removal_summary = find_edit_summary(
+        editor.pending_worksheet_edits(), "Data");
+    check(removal_summary != nullptr
+            && removal_summary->conditional_format_count == 0
+            && removal_summary->conditional_format_removal_count == 1,
+        "source conditional-format removal should expose an independent diagnostic count");
+
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-conditional-formatting-removal-output.xlsx");
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet = output_entries.at("xl/worksheets/sheet1.xml");
+    check(count_occurrences(output_worksheet, "<conditionalFormatting ") == 0,
+        "removing the final conditional-format should remove its complete container");
+    check(xml_element_fragment(output_worksheet, "<sheetData", "</sheetData>")
+            == source_sheet_data,
+        "conditional-format removal should preserve cell XML exactly");
+    check(output_entries.at("xl/worksheets/_rels/sheet1.xml.rels") == source_relationships,
+        "conditional-format removal should preserve worksheet relationships");
+    check(output_entries.at("[Content_Types].xml") == source_content_types,
+        "conditional-format removal should preserve content types");
+    check(output_entries.at("xl/styles.xml") == source_styles,
+        "conditional-format removal should preserve styles and dxfs");
+    check(output_entries.at("custom/conditional-format-removal-opaque.bin") == "keep",
+        "conditional-format removal should preserve unknown package entries");
+
+    fastxlsx::WorkbookReader reader = fastxlsx::WorkbookReader::open(output);
+    check(reader.read_worksheet_conditional_formats("Data", {}).conditional_format_count == 0,
+        "reopened worksheet should expose no conditional formats after removal");
+
+    fastxlsx::WorkbookEditor sequence_editor = fastxlsx::WorkbookEditor::open(source);
+    sequence_editor.add_conditional_data_bar(
+        "Data", fastxlsx::CellRange {1, 3, 2, 3}, {});
+    sequence_editor.add_conditional_icon_set(
+        "Data", fastxlsx::CellRange {1, 4, 2, 4}, {});
+    sequence_editor.remove_conditional_format("Data", 1);
+    sequence_editor.remove_conditional_format("Data", 1);
+    sequence_editor.remove_conditional_format("Data", 0);
+    const auto* sequence_summary = find_edit_summary(
+        sequence_editor.pending_worksheet_edits(), "Data");
+    check(sequence_summary != nullptr
+            && sequence_summary->conditional_format_count == 2
+            && sequence_summary->conditional_format_removal_count == 3,
+        "same-session additions and removals should follow the current effective index");
+    const std::filesystem::path sequence_output = artifact(
+        "fastxlsx-workbook-editor-conditional-formatting-removal-sequence-output.xlsx");
+    sequence_editor.save_as(sequence_output);
+    check(count_occurrences(
+            fastxlsx::test::read_zip_entries(sequence_output).at("xl/worksheets/sheet1.xml"),
+            "<conditionalFormatting ") == 0,
+        "effective-index removal should remove each added and source container");
+
+    fastxlsx::WorkbookEditor added_editor = fastxlsx::WorkbookEditor::open(source);
+    added_editor.add_worksheet("Added");
+    fastxlsx::TwoColorScaleRule added_scale;
+    added_editor.add_conditional_color_scale(
+        "Added", fastxlsx::CellRange {1, 1, 2, 1}, added_scale);
+    added_editor.rename_sheet("Added", "Renamed Added");
+    added_editor.remove_conditional_format("Renamed Added", 0);
+    const auto* added_summary = find_edit_summary(
+        added_editor.pending_worksheet_edits(), "Renamed Added");
+    check(added_summary != nullptr && added_summary->added
+            && added_summary->conditional_format_removal_count == 1,
+        "conditional-format removal should support renamed added worksheets");
+
+    fastxlsx::WorkbookEditor retry_editor = fastxlsx::WorkbookEditor::open(source);
+    {
+        ScopedConditionalFormatReplacementStagedHook hook(
+            fail_after_conditional_format_staging);
+        check(threw_fastxlsx_error([&] {
+            retry_editor.remove_conditional_format("Data", 0);
+        }), "injected conditional-format removal staging failure should escape");
+    }
+    check(retry_editor.pending_worksheet_edits().empty()
+            && !retry_editor.has_pending_changes(),
+        "removal staging failure should not publish diagnostics or package state");
+    retry_editor.remove_conditional_format("Data", 0);
+    check(retry_editor.pending_worksheet_edits().front()
+            .conditional_format_removal_count == 1,
+        "conditional-format removal should remain retryable after staging failure");
+
+    auto unsupported_entries = source_entries;
+    replace_first_or_throw(unsupported_entries.at("xl/worksheets/sheet1.xml"),
+        "</colorScale></cfRule></conditionalFormatting>",
+        R"(</colorScale></cfRule><cfRule type="cellIs" priority="9"><formula>A1&gt;0</formula></cfRule></conditionalFormatting>)");
+    const std::filesystem::path unsupported_source = artifact(
+        "fastxlsx-workbook-editor-conditional-formatting-removal-unsupported.xlsx");
+    fastxlsx::test::write_stored_zip_entries(unsupported_source, unsupported_entries);
+    fastxlsx::WorkbookEditor unsupported_editor =
+        fastxlsx::WorkbookEditor::open(unsupported_source);
+    check(threw_fastxlsx_error([&] {
+        unsupported_editor.remove_conditional_format("Data", 0);
+    }), "multiple-rule or advanced conditional-format removal should fail strictly");
+    check(unsupported_editor.pending_worksheet_edits().empty()
+            && !unsupported_editor.has_pending_changes(),
+        "unsupported conditional-format removal should not publish state");
+}
+
 } // namespace
 
 int main()
@@ -606,6 +725,7 @@ int main()
         test_priority_overflow_fails_without_state_pollution();
         test_source_structure_audit_and_encoded_priority();
         test_preserves_opaque_advanced_multi_rule_source();
+        test_remove_conditional_format_lifecycle();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());
         return 1;

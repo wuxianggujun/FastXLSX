@@ -33,6 +33,7 @@ description: "实现或审查 FastXLSX In-memory `WorksheetEditor`。用于 stri
 - Batch duplicate 采用 later-wins 后再比较最终记录。全等 mutation 保持 clean，并在 CellStore guardrail 前返回。
 - 区分 full-cell、value-only 和 style-only 语义。任意 caller non-default StyleId 在 style registry/migration contract 建立前必须拒绝；同 workbook 已验证 StyleId 只按当前 public 契约复用。
 - Structural insert/delete 使用窄 structural formula rewriter；copy/move 使用 source-to-target translation。不要把两种公式语义混用。
+- C8 第一批 structural metadata synchronization 必须把 metadata candidate 与 CellStore candidate 分开预构造，再在同一事务边界发布；先支持 merged cells、worksheet-root auto-filter 与 data validations 的 range translate，无法安全平移或遇到未知 schema 时 strict fail。Hyperlinks、conditional formatting、tables、drawings、comments/VML 和 relationship graph 在各自切片前继续保持 non-sync。
 - Cross-sheet move 是双状态事务：先构造并验证 source/destination candidates，再以 noexcept swap 发布；失败不得留下半边 mutation。
 
 ## Save 与状态
@@ -45,4 +46,5 @@ description: "实现或审查 FastXLSX In-memory `WorksheetEditor`。用于 stri
 
 - 覆盖 strict typed diagnostics、explicit lossy、policy mismatch、guardrail、clean no-op、duplicate later-wins 和 failure-before-state-change。
 - 结构/transfer 覆盖 overlap snapshot、formula boundaries、style ownership、cross-owner rejection 和双边 dirty ownership。
+- Structural metadata 覆盖 row/column insert/delete 的 range translation、边界/overlap/schema rejection、metadata 与 CellStore 双候选 no-pollution、公式/cell/style preservation、unknown-part preservation 及 save retry/reopen；未接入对象必须有明确 non-sync regression。
 - 保存覆盖 post-stage failure、output protection、retry 最新值、reopen、move/reacquire 和 unknown-part preservation。

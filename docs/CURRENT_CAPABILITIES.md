@@ -157,6 +157,9 @@
 
 ## Planned
 
+- 下一阶段候选为 C8 structural metadata synchronization：当前 `WorksheetEditor` 的 row/column insert/delete 只移动 sparse cell records、刷新 dimension 并窄改受影响公式，不自动同步 merged cells、auto filter、data validations、hyperlinks、conditional formatting、tables、drawings 或 comments/VML。调用方不得把它当作完整 Excel row/column shift。
+- C8 第一批计划只覆盖 worksheet-root merged cells、auto filter 与 data validations 的安全 range translate。实现必须保留 bounded XML、strict unsupported-schema rejection、failure-before-state-change、dirty save retry、unknown-part preservation 与 CellStore guardrail；无法证明安全平移时返回 typed/稳定诊断，不静默改变 metadata。
+- C8 第二批再评估 worksheet-local hyperlinks 与 writer-compatible conditional formatting；tables、drawings、comments/VML、relationship/content-type graph、defined names 与 calcChain 不属于第一批。
 - worksheet lifecycle 的最小 add/remove 切片已完成；`remove_worksheet()` 的 unsupported semantics 默认 fail，不扩展为 worksheet clone。
 - `add_internal_hyperlink()`、`add_external_hyperlink()`、classic-note `add_note()` / `update_note()` / `remove_note()`、data-validation add/remove、writer-compatible conditional-format add/update/remove、worksheet-root auto-filter set/clear、merged-cell add/remove 与 primary-view freeze-pane set/clear 已完成并进入 public Patch 能力。
 - `WorkbookEditor::add_table()` / `update_table()` / `remove_table()` 已进入 public Patch 能力，并与 Streaming 共用 `TableOptions`；当前只管理 writer-compatible table metadata/package graph，不包含 cell payload/structural sync 或完整 table object model。

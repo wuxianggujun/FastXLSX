@@ -137,3 +137,12 @@
   现有 tests/benchmarks 是自带的 standalone executables，不消费 Catch2 或 Google Benchmark；本机 vcpkg 安装树也没有这两个包的 CMake config。仅把 feature 加入 preset 会增加 configure/install 成本而不改变任何 target，因此不构成真实接线。
 - `planned-dev` 仍保留为候选 manifest feature，但不得称为当前 test/benchmark dependency，也不加入 production、stored、no-images 或 benchmark preset 的默认 feature 集合。
 - 重新评估条件：开始迁移至少一个真实 test/benchmark target，并能在独立 preset 中通过 `find_package`、target link、最小 focused build 和对应运行验证；迁移完成前不引入空壳 probe target。
+
+## C8 Structural Metadata Synchronization
+
+- [ ] 定义 `WorksheetEditor::insert_rows()` / `delete_rows()` / `insert_columns()` / `delete_columns()` 对 worksheet metadata 的统一坐标平移策略；CellStore 继续只承载 sparse cell records，不把 metadata 塞入 dense matrix。
+- [ ] 第一批只接入 worksheet-root merged cells、auto filter 与 data validations。这些对象先做 range translate、边界/重叠审计和 failure-before-state-change；未知 XML、非法范围或无法安全平移时默认 fail，不静默修复。
+- [ ] 第一批保持现有公式 structural rewriter、cell/style ownership、dimension 与 dirty/save retry 契约；不改变 tables、drawings、comments/VML、relationships、content types 或 calcChain 的既有非同步边界。
+- [ ] 第二批再评估 worksheet-local hyperlinks 与 writer-compatible conditional formatting；公式、threshold、external relationship 或 advanced source 语义不明确时继续 preserve/audit/fail。
+- [ ] tables、drawings、comments/VML 和其他 linked parts 另立 ownership、relationship/content-type 与 transaction 设计后再接入，不把第一批范围扩大成完整 Excel row/column shift。
+- [ ] 每个小切片按 T1 只构建直接受影响 target 并运行 focused CTest；第一批收口且 focused 结果暴露跨模块风险时，才升级到 T2 全量验证。

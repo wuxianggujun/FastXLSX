@@ -53,9 +53,11 @@ description: "规划、实现或审查 FastXLSX worksheet metadata。用于 Stre
 - Public Patch 已公开 `WorkbookEditor::set_freeze_panes()` / `clear_freeze_panes()`：用两次 bounded worksheet event scan 编辑 primary `workbookViewId="0"` 的 direct frozen `<pane>`，支持 missing/self-closing sheetViews/primary sheetView、single-/dual-axis set、zero/explicit clear、planned rename 和同会话新增 worksheet。实现审计 QName/view id/frozen state/child schema/selection pane；普通 split/frozenSplit、pivotSelection 和失效 pane selection fail。它保留其他 workbook views、合法 selection、cells、relationships、content types、tables、`calcPr`、`calcChain` 与 unknown entries。
 - 跨 worksheet XML、worksheet `.rels`、content types、manifest、public diagnostics 和 pending/watermark 的 mutation，必须先在副本中完整 staging，再以 noexcept commit 发布。
 - External hyperlink 的 worksheet XML 与 `.rels` relationship mutation 必须一起 staging；遇到未知、重复、external、非法 target 或 unsupported linked metadata 时默认 fail 或 preserve，不能静默 repair。
-- Row/column insert/delete、copy/move 当前不自动同步 validations、hyperlinks、auto filters、tables、conditional formatting、merged cells 或 drawings；新增同步能力前保持该边界。
+- Row/column insert/delete、copy/move 当前不自动同步 validations、hyperlinks、auto filters、tables、conditional formatting、merged cells 或 drawings；C8 第一批只计划接入 merged cells、worksheet-root auto-filter 与 data validations 的安全 range translate，其余对象继续保持该 non-sync 边界。
 
 ## 验证
+
+- C8 structural metadata synchronization 另测 row/column insert/delete 对 merged cells、worksheet-root auto-filter 与 data validations 的 range translate、边界/overlap/schema rejection、公式及 cell/style payload preservation、unknown-part/relationship/content-type/calc no-side-effect、failure-before-state-change、dirty/save retry/reopen；hyperlink、conditional-format、table、drawing、comment/VML 在未接入前必须保留 non-sync 断言。
 
 - 覆盖 feature XML、schema ordering、relationship/content-type side effects、invalid input 和 feature-specific duplicate/range/count conflicts。
 - Patch 覆盖 failure-before-state-change、pending/unsaved/diagnostic 不污染、save failure retry、reopen 和 unknown-part preservation。

@@ -82,7 +82,6 @@ Thumbs.db
 desktop.ini
 
 # Local/private agent or tool state
-/.ace-tool/
 /.codex/
 /.claude/
 /.cursor/

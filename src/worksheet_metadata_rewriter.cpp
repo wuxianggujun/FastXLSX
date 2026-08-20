@@ -3097,34 +3097,64 @@ WorksheetTablePartRewritePlan plan_worksheet_table_part_removal(
         table_parts_prefix};
 }
 
-WorksheetAutoFilterRewritePlan plan_worksheet_auto_filter_rewrite(
-    const WorksheetInputChunkCallback& read_next_chunk)
-{
+namespace {
+
+struct WorksheetAutoFilterScan {
     bool saw_sheet_data_end = false;
     bool saw_worksheet_end = false;
     bool saw_auto_filter = false;
+    bool auto_filter_self_closing = false;
+    bool has_child_elements = false;
+    std::optional<A1Range> range;
+    std::optional<std::uint64_t> first_after_auto_filter_offset;
+    std::string opening_xml;
+    std::string element_prefix;
+    std::uint64_t auto_filter_start_offset = 0;
+    std::uint64_t auto_filter_start_tag_end_offset = 0;
+    std::uint64_t auto_filter_end_offset = 0;
+    std::uint64_t worksheet_end_offset = 0;
+};
+
+WorksheetAutoFilterScan scan_worksheet_auto_filter(
+    const WorksheetInputChunkCallback& read_next_chunk)
+{
+    WorksheetAutoFilterScan result;
     int last_suffix_rank = 0;
     std::vector<std::string> metadata_stack;
-    std::optional<std::uint64_t> first_after_auto_filter_offset;
-    std::optional<WorksheetAutoFilterRewritePlan> existing_plan;
-    std::uint64_t auto_filter_start_offset = 0;
-    std::uint64_t worksheet_end_offset = 0;
 
     scan_worksheet_events_from_chunk_source(read_next_chunk,
         [&](const WorksheetEvent& event) {
             if (event.kind == WorksheetEventKind::SheetDataEnd) {
-                saw_sheet_data_end = true;
+                result.saw_sheet_data_end = true;
                 return;
             }
             if (event.kind == WorksheetEventKind::WorksheetEnd) {
                 if (!event.self_closing) {
-                    saw_worksheet_end = true;
-                    worksheet_end_offset = event.raw_xml_offset;
+                    result.saw_worksheet_end = true;
+                    result.worksheet_end_offset = event.raw_xml_offset;
                 }
                 return;
             }
             if (event.kind != WorksheetEventKind::Metadata) {
-                return;
+                const bool inside_auto_filter = !metadata_stack.empty()
+                    && metadata_stack.front() == "autoFilter";
+                if (!inside_auto_filter) {
+                    return;
+                }
+                if (event.kind == WorksheetEventKind::RawText) {
+                    if (!std::all_of(event.raw_xml.begin(), event.raw_xml.end(),
+                            [](char character) { return is_xml_space(character); })) {
+                        throw FastXlsxError(
+                            "worksheet autoFilter contains non-whitespace text");
+                    }
+                    return;
+                }
+                if (event.kind == WorksheetEventKind::Comment
+                    || event.kind == WorksheetEventKind::ProcessingInstruction) {
+                    return;
+                }
+                throw FastXlsxError(
+                    "worksheet autoFilter contains unsupported non-element content");
             }
 
             const bool closing = is_closing_tag(event.raw_xml);
@@ -3134,19 +3164,23 @@ WorksheetAutoFilterRewritePlan plan_worksheet_auto_filter_rewrite(
                         "worksheet auto-filter metadata contains mismatched element nesting");
                 }
                 if (metadata_stack.size() == 1 && event.element_name == "autoFilter") {
-                    if (!saw_auto_filter || existing_plan.has_value()) {
+                    if (!result.saw_auto_filter || result.auto_filter_end_offset != 0) {
                         throw FastXlsxError(
                             "worksheet contains duplicate or ambiguous auto-filter metadata");
                     }
-                    existing_plan = WorksheetAutoFilterRewritePlan {
-                        true, auto_filter_start_offset, event_end_offset(event)};
+                    if (xml_element_prefix(event.raw_xml, "autoFilter")
+                        != result.element_prefix) {
+                        throw FastXlsxError(
+                            "worksheet autoFilter opening and closing QName prefixes differ");
+                    }
+                    result.auto_filter_end_offset = event_end_offset(event);
                 }
                 metadata_stack.pop_back();
                 return;
             }
 
             const bool top_level = metadata_stack.empty();
-            if (top_level && saw_sheet_data_end) {
+            if (top_level && result.saw_sheet_data_end) {
                 const std::optional<int> rank =
                     worksheet_suffix_schema_rank(event.element_name);
                 if (!rank.has_value()) {
@@ -3160,29 +3194,34 @@ WorksheetAutoFilterRewritePlan plan_worksheet_auto_filter_rewrite(
                 }
                 last_suffix_rank = *rank;
                 if (*rank > auto_filter_schema_rank
-                    && !first_after_auto_filter_offset.has_value()) {
-                    first_after_auto_filter_offset = event.raw_xml_offset;
+                    && !result.first_after_auto_filter_offset.has_value()) {
+                    result.first_after_auto_filter_offset = event.raw_xml_offset;
                 }
                 if (event.element_name == "autoFilter") {
-                    if (saw_auto_filter) {
+                    if (result.saw_auto_filter) {
                         throw FastXlsxError(
                             "worksheet contains duplicate autoFilter elements");
                     }
-                    saw_auto_filter = true;
+                    result.saw_auto_filter = true;
                     const std::optional<std::string_view> reference =
                         attribute_value(event.raw_xml, "ref");
                     if (!reference.has_value() || reference->empty()) {
                         throw FastXlsxError(
                             "existing worksheet autoFilter is missing its ref");
                     }
-                    if (!parse_a1_range(*reference).has_value()) {
+                    result.range = parse_a1_range(*reference);
+                    if (!result.range.has_value()) {
                         throw FastXlsxError(
                             "existing worksheet autoFilter ref is not a valid A1 range");
                     }
-                    auto_filter_start_offset = event.raw_xml_offset;
+                    result.opening_xml.assign(event.raw_xml);
+                    result.element_prefix =
+                        xml_element_prefix(event.raw_xml, "autoFilter");
+                    result.auto_filter_start_offset = event.raw_xml_offset;
+                    result.auto_filter_start_tag_end_offset = event_end_offset(event);
                     if (event.self_closing) {
-                        existing_plan = WorksheetAutoFilterRewritePlan {
-                            true, event.raw_xml_offset, event_end_offset(event)};
+                        result.auto_filter_self_closing = true;
+                        result.auto_filter_end_offset = event_end_offset(event);
                     }
                 }
             } else if (top_level && event.element_name == "autoFilter") {
@@ -3193,6 +3232,10 @@ WorksheetAutoFilterRewritePlan plan_worksheet_auto_filter_rewrite(
                     "worksheet autoFilter metadata is nested below another element");
             }
 
+            if (!top_level && !metadata_stack.empty()
+                && metadata_stack.front() == "autoFilter") {
+                result.has_child_elements = true;
+            }
             if (!event.self_closing) {
                 metadata_stack.emplace_back(event.element_name);
             }
@@ -3201,21 +3244,49 @@ WorksheetAutoFilterRewritePlan plan_worksheet_auto_filter_rewrite(
     if (!metadata_stack.empty()) {
         throw FastXlsxError("worksheet auto-filter metadata ended inside an open element");
     }
-    if (!saw_sheet_data_end || !saw_worksheet_end) {
+    if (!result.saw_sheet_data_end || !result.saw_worksheet_end) {
         throw FastXlsxError(
             "auto-filter edit requires sheetData and a closing worksheet root");
     }
-    if (saw_auto_filter) {
-        if (!existing_plan.has_value()) {
-            throw FastXlsxError(
-                "worksheet autoFilter element has no closing boundary");
-        }
-        return *existing_plan;
+    if (result.saw_auto_filter && result.auto_filter_end_offset == 0) {
+        throw FastXlsxError(
+            "worksheet autoFilter element has no closing boundary");
     }
+    return result;
+}
+
+std::string opening_tag_with_attribute_value(std::string_view raw_tag,
+    std::string_view attribute_name, std::string_view replacement,
+    std::string_view element_label)
+{
+    std::string tag(raw_tag);
+    const std::optional<std::string_view> current =
+        attribute_value(tag, attribute_name);
+    if (!current.has_value()) {
+        throw FastXlsxError("worksheet " + std::string(element_label)
+            + " is missing its " + std::string(attribute_name) + " attribute");
+    }
+    const std::size_t value_offset = static_cast<std::size_t>(
+        current->data() - tag.data());
+    tag.replace(value_offset, current->size(), replacement);
+    return tag;
+}
+
+} // namespace
+
+WorksheetAutoFilterRewritePlan plan_worksheet_auto_filter_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk)
+{
+    const WorksheetAutoFilterScan scan =
+        scan_worksheet_auto_filter(read_next_chunk);
+    if (scan.saw_auto_filter) {
+        return WorksheetAutoFilterRewritePlan {
+            true, scan.auto_filter_start_offset, scan.auto_filter_end_offset};
+    }
+    const std::uint64_t insertion_offset =
+        scan.first_after_auto_filter_offset.value_or(scan.worksheet_end_offset);
     return WorksheetAutoFilterRewritePlan {
-        false,
-        first_after_auto_filter_offset.value_or(worksheet_end_offset),
-        first_after_auto_filter_offset.value_or(worksheet_end_offset)};
+        false, insertion_offset, insertion_offset};
 }
 
 std::optional<WorksheetFreezePaneRewritePlan>
@@ -3867,7 +3938,7 @@ TransformedRangeAxis transform_range_axis(std::uint32_t range_first,
         }
         if (range_last > axis_limit - edit.count) {
             throw FastXlsxError(
-                "worksheet merged-cell structural insertion exceeds Excel limits");
+                "worksheet structural metadata insertion exceeds Excel limits");
         }
         if (range_first >= edit.first) {
             return TransformedRangeAxis {
@@ -3904,11 +3975,11 @@ void validate_range_structural_edit(WorksheetRangeStructuralEdit edit)
     const std::uint32_t limit = edits_rows ? 1048576U : 16384U;
     if (edit.first == 0 || edit.first > limit) {
         throw FastXlsxError(
-            "worksheet merged-cell structural edit starts outside Excel limits");
+            "worksheet structural metadata edit starts outside Excel limits");
     }
     if (edit.count > limit - edit.first + 1U) {
         throw FastXlsxError(
-            "worksheet merged-cell structural edit count exceeds Excel limits");
+            "worksheet structural metadata edit count exceeds Excel limits");
     }
 }
 
@@ -4026,6 +4097,70 @@ plan_worksheet_merged_cell_rewrite(
         scan.merge_cells_start_offset,
         scan.child_count - 1U,
         scan.merge_cells_element_prefix};
+}
+
+std::optional<WorksheetAutoFilterStructuralRewritePlan>
+plan_worksheet_auto_filter_structural_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    WorksheetRangeStructuralEdit edit)
+{
+    validate_range_structural_edit(edit);
+    if (edit.count == 0) {
+        return std::nullopt;
+    }
+
+    const WorksheetAutoFilterScan scan =
+        scan_worksheet_auto_filter(read_next_chunk);
+    if (!scan.saw_auto_filter || !scan.range.has_value()) {
+        return std::nullopt;
+    }
+
+    const bool edits_rows = edit.kind == WorksheetRangeStructuralEditKind::InsertRows
+        || edit.kind == WorksheetRangeStructuralEditKind::DeleteRows;
+    const std::uint32_t axis_limit = edits_rows ? 1048576U : 16384U;
+    A1Range transformed = *scan.range;
+    const TransformedRangeAxis axis = edits_rows
+        ? transform_range_axis(scan.range->first.row,
+              scan.range->last.row, edit, axis_limit)
+        : transform_range_axis(scan.range->first.column,
+              scan.range->last.column, edit, axis_limit);
+    if (axis.removed) {
+        return WorksheetAutoFilterStructuralRewritePlan {
+            scan.auto_filter_start_offset,
+            scan.auto_filter_end_offset,
+            {},
+            std::nullopt,
+        };
+    }
+    if (edits_rows) {
+        transformed.first.row = axis.first;
+        transformed.last.row = axis.last;
+    } else {
+        transformed.first.column = axis.first;
+        transformed.last.column = axis.last;
+    }
+    if (a1_ranges_equal(*scan.range, transformed)) {
+        return std::nullopt;
+    }
+    if (scan.has_child_elements) {
+        throw FastXlsxError(
+            "worksheet autoFilter structural rewrite cannot preserve criteria or "
+            "sort child semantics");
+    }
+
+    const CellRange final_range {
+        transformed.first.row,
+        transformed.first.column,
+        transformed.last.row,
+        transformed.last.column,
+    };
+    return WorksheetAutoFilterStructuralRewritePlan {
+        scan.auto_filter_start_offset,
+        scan.auto_filter_start_tag_end_offset,
+        opening_tag_with_attribute_value(scan.opening_xml, "ref",
+            range_reference(final_range), "autoFilter"),
+        final_range,
+    };
 }
 
 std::optional<WorksheetMergedCellStructuralRewritePlan>
@@ -4712,43 +4847,96 @@ void write_worksheet_merged_cell_rewrite(
     }
 }
 
-void write_worksheet_merged_cell_structural_rewrite(
+void write_worksheet_structural_metadata_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
-    const WorksheetMergedCellStructuralRewritePlan& plan,
+    const WorksheetStructuralMetadataRewritePlan& plan,
     const std::filesystem::path& output_path)
 {
+    struct StructuralReplacement {
+        std::uint64_t source_offset = 0;
+        std::uint64_t source_end_offset = 0;
+        std::string_view replacement_xml;
+    };
+
+    std::vector<StructuralReplacement> replacements;
+    replacements.reserve(2);
+    if (plan.auto_filter.has_value()) {
+        replacements.push_back(StructuralReplacement {
+            plan.auto_filter->source_offset,
+            plan.auto_filter->source_end_offset,
+            plan.auto_filter->replacement_xml,
+        });
+    }
+    if (plan.merged_cells.has_value()) {
+        replacements.push_back(StructuralReplacement {
+            plan.merged_cells->source_offset,
+            plan.merged_cells->source_end_offset,
+            plan.merged_cells->replacement_xml,
+        });
+    }
+    std::sort(replacements.begin(), replacements.end(),
+        [](const StructuralReplacement& left,
+            const StructuralReplacement& right) {
+            return left.source_offset < right.source_offset;
+        });
+    for (std::size_t index = 0; index < replacements.size(); ++index) {
+        const StructuralReplacement& replacement = replacements[index];
+        if (replacement.source_offset >= replacement.source_end_offset) {
+            throw FastXlsxError(
+                "worksheet structural metadata replacement has an invalid source range");
+        }
+        if (index != 0
+            && replacements[index - 1U].source_end_offset
+                > replacement.source_offset) {
+            throw FastXlsxError(
+                "worksheet structural metadata replacement ranges overlap");
+        }
+    }
+    if (replacements.empty()) {
+        throw FastXlsxError(
+            "worksheet structural metadata rewrite requires a replacement");
+    }
+
     std::ofstream output(output_path, std::ios::binary);
     if (!output) {
         throw FastXlsxError(
-            "failed to create staged worksheet merged-cell structural metadata file");
+            "failed to create staged worksheet structural metadata file");
     }
 
-    bool applied = false;
+    std::size_t next_replacement = 0;
+    std::uint64_t active_source_end_offset = 0;
     scan_worksheet_events_from_chunk_source(read_next_chunk,
         [&](const WorksheetEvent& event) {
             if (is_synthetic_self_closing_end(event)) {
                 return;
             }
 
-            if (!applied && event.raw_xml_offset == plan.source_offset) {
-                write_bytes(output, plan.replacement_xml);
-                applied = true;
+            if (active_source_end_offset != 0
+                && event.raw_xml_offset < active_source_end_offset) {
+                return;
             }
-            if (event.raw_xml_offset >= plan.source_offset
-                && event.raw_xml_offset < plan.source_end_offset) {
+            active_source_end_offset = 0;
+            if (next_replacement < replacements.size()
+                && event.raw_xml_offset
+                    == replacements[next_replacement].source_offset) {
+                const StructuralReplacement& replacement =
+                    replacements[next_replacement];
+                write_bytes(output, replacement.replacement_xml);
+                active_source_end_offset = replacement.source_end_offset;
+                ++next_replacement;
                 return;
             }
             write_bytes(output, event.raw_xml);
         });
 
-    if (!applied) {
+    if (next_replacement != replacements.size()) {
         throw FastXlsxError(
-            "worksheet merged-cell structural rewrite did not reach its planned boundary");
+            "worksheet structural metadata rewrite did not reach every planned boundary");
     }
     output.flush();
     if (!output) {
         throw FastXlsxError(
-            "failed to finalize staged worksheet merged-cell structural metadata file");
+            "failed to finalize staged worksheet structural metadata file");
     }
 }
 

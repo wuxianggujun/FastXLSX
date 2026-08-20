@@ -28,6 +28,17 @@ enum class WorksheetFreezePaneRewriteOperation;
 enum class WorksheetMergedCellRewriteOperation;
 enum class WorksheetRangeStructuralEditKind;
 
+struct WorksheetStructuralMetadataRewriteResult {
+    bool auto_filter_changed = false;
+    std::optional<CellRange> auto_filter_range;
+    bool merged_cells_changed = false;
+
+    [[nodiscard]] bool changed() const noexcept
+    {
+        return auto_filter_changed || merged_cells_changed;
+    }
+};
+
 enum class ClassicNoteSourceEditPolicy {
     RejectSourceOwned,
     AllowCanonicalSourceOwned,
@@ -665,9 +676,11 @@ public:
         std::string_view sheet_name,
         CellRange range,
         WorksheetMergedCellRewriteOperation operation);
-    // Translates all worksheet-root merged ranges for one row/column
-    // structural edit and commits at most one staged worksheet replacement.
-    [[nodiscard]] bool rewrite_merged_cells_for_structural_edit_by_name(
+    // Translates supported worksheet-root range metadata for one row/column
+    // structural edit and commits all changes as one staged worksheet
+    // replacement. The result carries the final auto-filter diagnostic.
+    [[nodiscard]] WorksheetStructuralMetadataRewriteResult
+    rewrite_structural_metadata_by_name(
         std::string_view sheet_name,
         WorksheetRangeStructuralEditKind kind,
         std::uint32_t first,

@@ -24,10 +24,10 @@ public:
         const ScopedStructuralWorksheetReplacementStagedHook&) = delete;
 };
 
-void fail_after_structural_merged_cell_staging()
+void fail_after_structural_metadata_staging()
 {
     throw fastxlsx::FastXlsxError(
-        "injected structural merged-cell staging failure");
+        "injected structural metadata staging failure");
 }
 
 void test_public_worksheet_editor_shift_snapshots_are_owning_across_later_shifts()
@@ -5902,6 +5902,106 @@ void test_public_worksheet_editor_insertions_translate_merged_cells_transactiona
         "merged-cell insertion save should not modify the source package");
 }
 
+void test_public_worksheet_editor_insertions_translate_auto_filter_transactionally()
+{
+    const std::array<fastxlsx::CellRange, 1> source_ranges {{{3, 5, 4, 6}}};
+    const std::array<fastxlsx::CellRange, 1> expected_ranges {{{3, 6, 6, 7}}};
+    const std::filesystem::path source = write_two_sheet_source_with_merged_ranges(
+        "fastxlsx-workbook-editor-public-shift-insert-filter-source.xlsx",
+        source_ranges);
+    auto source_entries = fastxlsx::test::read_zip_entries(source);
+    source_entries.emplace("custom/structural-filter.bin", "preserve-filter-insert");
+    fastxlsx::test::write_stored_zip_entries(source, source_entries);
+    source_entries = fastxlsx::test::read_zip_entries(source);
+
+    const std::filesystem::path missing_output = artifact(
+        "missing-structural-filter-insert-parent/output.xlsx");
+    std::error_code ignored;
+    std::filesystem::remove_all(missing_output.parent_path(), ignored);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-insert-filter-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.set_auto_filter("Data", {2, 2, 5, 4});
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.insert_rows(4, 2);
+    sheet.insert_columns(3, 1);
+
+    const auto summaries = editor.pending_worksheet_edits();
+    check(summaries.size() == 1 && summaries.front().auto_filter_changed,
+        "same-session filter insertion should expose one final filter diagnostic");
+    if (summaries.size() == 1) {
+        check_cell_range_equals(summaries.front().auto_filter_range, 2, 2, 7, 5,
+            "same-session structural auto-filter diagnostic");
+    }
+    check(sheet.has_pending_changes() && editor.pending_change_count() == 1
+            && editor.has_unsaved_changes() && editor.unsaved_change_count() == 2,
+        "filter insertion should retain one Patch edit and one dirty materialized session");
+    check(threw_fastxlsx_error([&] { editor.save_as(missing_output); }),
+        "auto-filter insertion save should fail for a missing output parent");
+    check(sheet.has_pending_changes() && editor.unsaved_change_count() == 2,
+        "failed auto-filter insertion save should preserve both retry states");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
+            && editor.pending_change_count() == 2,
+        "successful auto-filter insertion retry should commit one materialized handoff");
+    check_cell_range_equals(read_worksheet_auto_filter_range(output), 2, 2, 7, 5,
+        "auto-filter row/column insertion output");
+    check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected_ranges,
+        "combined auto-filter and merged-cell insertion output");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("custom/structural-filter.bin")
+            == "preserve-filter-insert",
+        "auto-filter insertions should preserve unknown package entries");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "auto-filter insertions should preserve untouched worksheets");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "auto-filter insertion save should not modify the source package");
+}
+
+void test_public_worksheet_editor_structural_auto_filter_rejects_child_semantics()
+{
+    const std::array<fastxlsx::CellRange, 1> merged_ranges {{{2, 5, 4, 6}}};
+    const std::filesystem::path source = write_two_sheet_source_with_auto_filter(
+        "fastxlsx-workbook-editor-public-shift-insert-filter-child-source.xlsx",
+        {2, 2, 5, 4}, merged_ranges);
+    auto source_entries = fastxlsx::test::read_zip_entries(source);
+    replace_first_or_throw(source_entries.at("xl/worksheets/sheet1.xml"),
+        "<autoFilter ref=\"B2:D5\"/>",
+        "<autoFilter ref=\"B2:D5\"><filterColumn colId=\"0\"><filters>"
+        "<filter val=\"keep\"/></filters></filterColumn>"
+        "<sortState ref=\"B2:D5\"><sortCondition ref=\"B3:B5\"/>"
+        "</sortState></autoFilter>");
+    fastxlsx::test::write_stored_zip_entries(source, source_entries);
+    source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-insert-filter-child-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    check(threw_fastxlsx_error([&] { sheet.insert_rows(3, 1); }),
+        "structural auto-filter rewrite should reject criteria and sort children");
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes()
+            && !editor.has_unsaved_changes() && editor.pending_change_count() == 0
+            && editor.pending_worksheet_edits().empty()
+            && sheet.get_cell("A2").text_value() == "placeholder-a2",
+        "auto-filter child rejection should preserve cells, metadata, and public state");
+    check(editor.last_edit_error().has_value(),
+        "auto-filter child rejection should record a public diagnostic");
+
+    sheet.insert_rows(10, 1);
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes()
+            && !editor.last_edit_error().has_value(),
+        "an unaffected child-bearing autoFilter should remain a clean no-op");
+    editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(output) == source_entries,
+        "clean auto-filter structural no-op should preserve every logical part");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "auto-filter child rejection should leave the source package unchanged");
+}
+
 void test_public_worksheet_editor_metadata_only_insert_and_failure_no_pollution()
 {
     const std::filesystem::path empty_source = artifact(
@@ -5969,7 +6069,7 @@ void test_public_worksheet_editor_metadata_only_insert_and_failure_no_pollution(
         "merged-cell overflow rejection should not publish candidate cells or metadata");
 }
 
-void test_public_worksheet_editor_structural_merged_cell_staging_failure_retries()
+void test_public_worksheet_editor_structural_metadata_staging_failure_retries()
 {
     fastxlsx::StyleId styled_formula_style;
     const std::filesystem::path source =
@@ -5979,7 +6079,8 @@ void test_public_worksheet_editor_structural_merged_cell_staging_failure_retries
     auto source_entries = fastxlsx::test::read_zip_entries(source);
     replace_first_or_throw(source_entries.at("xl/worksheets/sheet1.xml"),
         "</sheetData>",
-        "</sheetData><mergeCells count=\"1\"><mergeCell ref=\"B2:C3\"/>"
+        "</sheetData><autoFilter ref=\"A1:D3\"/>"
+        "<mergeCells count=\"1\"><mergeCell ref=\"B2:C3\"/>"
         "</mergeCells>");
     fastxlsx::test::write_stored_zip_entries(source, source_entries);
 
@@ -5989,7 +6090,7 @@ void test_public_worksheet_editor_structural_merged_cell_staging_failure_retries
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
     {
         const ScopedStructuralWorksheetReplacementStagedHook hook(
-            fail_after_structural_merged_cell_staging);
+            fail_after_structural_metadata_staging);
         check(threw_fastxlsx_error([&] { sheet.insert_rows(2, 1); }),
             "injected structural metadata staging failure should surface publicly");
     }
@@ -6016,6 +6117,8 @@ void test_public_worksheet_editor_structural_merged_cell_staging_failure_retries
     const std::array<fastxlsx::CellRange, 1> expected {{{3, 2, 4, 3}}};
     check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected,
         "staging-failure merged-cell retry output");
+    check_cell_range_equals(read_worksheet_auto_filter_range(output), 1, 1, 4, 4,
+        "staging-failure auto-filter retry output");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
     const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("D3");
@@ -6032,7 +6135,7 @@ void test_public_worksheet_editor_structural_merged_cells_preserve_qname()
         "fastxlsx-workbook-editor-public-shift-insert-prefixed-merged-source.xlsx");
     auto entries = fastxlsx::test::read_zip_entries(source);
     entries.at("xl/worksheets/sheet1.xml") =
-        R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData></x:sheetData><x:mergeCells count="1"><x:mergeCell ref="B2:C3"/></x:mergeCells></x:worksheet>)";
+        R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData></x:sheetData><x:autoFilter custom="keep" ref='B2:C3'><!--filter-comment--></x:autoFilter><x:mergeCells count="1"><x:mergeCell ref="B2:C3"/></x:mergeCells></x:worksheet>)";
     fastxlsx::test::write_stored_zip_entries(source, entries);
     const std::filesystem::path output = artifact(
         "fastxlsx-workbook-editor-public-shift-insert-prefixed-merged-output.xlsx");
@@ -6049,8 +6152,14 @@ void test_public_worksheet_editor_structural_merged_cells_preserve_qname()
         "<x:sheetData xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
         "prefixed worksheet projection should keep regenerated row/cell payload in SpreadsheetML");
     check_contains(worksheet_xml,
+        "<x:autoFilter custom=\"keep\" ref='C2:D4'><!--filter-comment-->"
+        "</x:autoFilter>",
+        "structural auto-filter rewrite should preserve QName, attributes, quotes, and comments");
+    check_contains(worksheet_xml,
         "<x:mergeCells count=\"1\"><x:mergeCell ref=\"C2:D4\"/></x:mergeCells>",
         "structural rewrite should preserve the audited worksheet QName prefix");
+    check_cell_range_equals(read_worksheet_auto_filter_range(output), 2, 3, 4, 4,
+        "prefixed structural auto-filter output");
     const std::array<fastxlsx::CellRange, 1> expected_ranges {{{2, 3, 4, 4}}};
     check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected_ranges,
         "prefixed structural merged-cell output");
@@ -6125,8 +6234,10 @@ int main()
             test_public_worksheet_editor_full_calculation_before_insert_columns_shift();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_insertions_translate_merged_cells_transactionally();
+            test_public_worksheet_editor_insertions_translate_auto_filter_transactionally();
+            test_public_worksheet_editor_structural_auto_filter_rejects_child_semantics();
             test_public_worksheet_editor_metadata_only_insert_and_failure_no_pollution();
-            test_public_worksheet_editor_structural_merged_cell_staging_failure_retries();
+            test_public_worksheet_editor_structural_metadata_staging_failure_retries();
             test_public_worksheet_editor_structural_merged_cells_preserve_qname();
             test_public_worksheet_editor_structural_merged_cells_reject_opaque_content();
     } catch (const std::exception& error) {

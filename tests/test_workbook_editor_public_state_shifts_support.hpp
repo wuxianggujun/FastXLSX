@@ -2924,6 +2924,46 @@ std::filesystem::path write_two_sheet_source_with_merged_ranges(
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_auto_filter(
+    std::string_view name, fastxlsx::CellRange auto_filter_range,
+    std::span<const fastxlsx::CellRange> merged_ranges = {})
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2")});
+        data.set_auto_filter(auto_filter_range);
+        for (const fastxlsx::CellRange range : merged_ranges) {
+            data.merge_cells(range);
+        }
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+    return path;
+}
+
+std::optional<fastxlsx::CellRange> read_worksheet_auto_filter_range(
+    const std::filesystem::path& path, std::string_view sheet_name = "Data")
+{
+    const fastxlsx::WorkbookReader reader = fastxlsx::WorkbookReader::open(path);
+    std::optional<fastxlsx::CellRange> range;
+    fastxlsx::WorksheetMetadataReadCallbacks callbacks;
+    callbacks.on_auto_filter =
+        [&](const fastxlsx::WorksheetAutoFilterView& filter) {
+            range = filter.range;
+        };
+    (void)reader.read_worksheet_metadata(sheet_name, callbacks);
+    return range;
+}
+
 std::vector<fastxlsx::CellRange> read_worksheet_merged_ranges(
     const std::filesystem::path& path, std::string_view sheet_name = "Data")
 {

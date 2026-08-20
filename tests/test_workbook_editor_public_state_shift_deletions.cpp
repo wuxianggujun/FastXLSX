@@ -4004,6 +4004,77 @@ void test_public_worksheet_editor_deletion_removes_last_merged_cell_container()
         "deleting the final merged range should remove its container");
 }
 
+void test_public_worksheet_editor_deletions_translate_auto_filter_transactionally()
+{
+    const std::array<fastxlsx::CellRange, 1> source_ranges {{{2, 7, 5, 8}}};
+    const std::array<fastxlsx::CellRange, 1> expected_ranges {{{2, 5, 3, 6}}};
+    const std::filesystem::path source = write_two_sheet_source_with_auto_filter(
+        "fastxlsx-workbook-editor-public-shift-delete-filter-source.xlsx",
+        {2, 2, 8, 6}, source_ranges);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-delete-filter-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.delete_rows(3, 2);
+    sheet.delete_columns(3, 2);
+
+    const auto summaries = editor.pending_worksheet_edits();
+    check(summaries.size() == 1 && summaries.front().auto_filter_changed,
+        "auto-filter deletion should expose one final filter diagnostic");
+    if (summaries.size() == 1) {
+        check_cell_range_equals(summaries.front().auto_filter_range, 2, 2, 6, 4,
+            "structural auto-filter deletion diagnostic");
+    }
+    check(sheet.has_pending_changes() && editor.unsaved_change_count() == 1,
+        "auto-filter deletion should publish one combined materialized candidate");
+    editor.save_as(output);
+
+    check_cell_range_equals(read_worksheet_auto_filter_range(output), 2, 2, 6, 4,
+        "auto-filter row/column deletion output");
+    check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected_ranges,
+        "combined auto-filter and merged-cell deletion output");
+    check(fastxlsx::test::read_zip_entries(output).at("xl/worksheets/sheet2.xml")
+            == fastxlsx::test::read_zip_entries(source).at("xl/worksheets/sheet2.xml"),
+        "auto-filter deletion should preserve the untouched worksheet");
+}
+
+void test_public_worksheet_editor_full_auto_filter_deletion_removes_child_metadata()
+{
+    const std::filesystem::path source = write_two_sheet_source_with_auto_filter(
+        "fastxlsx-workbook-editor-public-shift-delete-filter-child-source.xlsx",
+        {2, 2, 3, 4});
+    auto entries = fastxlsx::test::read_zip_entries(source);
+    replace_first_or_throw(entries.at("xl/worksheets/sheet1.xml"),
+        "<autoFilter ref=\"B2:D3\"/>",
+        "<autoFilter ref=\"B2:D3\"><filterColumn colId=\"0\"><filters>"
+        "<filter val=\"remove\"/></filters></filterColumn>"
+        "<sortState ref=\"B2:D3\"><sortCondition ref=\"B3:B3\"/>"
+        "</sortState></autoFilter>");
+    fastxlsx::test::write_stored_zip_entries(source, entries);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-delete-filter-child-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.delete_rows(2, 2);
+    const auto summaries = editor.pending_worksheet_edits();
+    check(summaries.size() == 1 && summaries.front().auto_filter_changed
+            && !summaries.front().auto_filter_range.has_value(),
+        "full filter deletion should expose a queued clear diagnostic");
+    editor.save_as(output);
+
+    check(!read_worksheet_auto_filter_range(output).has_value(),
+        "fully deleted auto-filter range should leave no reader projection");
+    const std::string worksheet_xml =
+        fastxlsx::test::read_zip_entries(output).at("xl/worksheets/sheet1.xml");
+    check_not_contains(worksheet_xml, "<autoFilter",
+        "full auto-filter deletion should remove criteria and sort children together");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1"
+            && sheet.get_cell("B1").number_value() == 1.0,
+        "full auto-filter deletion should preserve surviving cell payloads");
+}
+
 } // namespace
 
 int main()
@@ -4028,6 +4099,8 @@ int main()
             test_public_worksheet_editor_row_deletion_translates_merged_cells();
             test_public_worksheet_editor_column_deletion_translates_merged_cells();
             test_public_worksheet_editor_deletion_removes_last_merged_cell_container();
+            test_public_worksheet_editor_deletions_translate_auto_filter_transactionally();
+            test_public_worksheet_editor_full_auto_filter_deletion_removes_child_metadata();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());
         return 1;

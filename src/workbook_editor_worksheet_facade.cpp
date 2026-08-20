@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -48,13 +49,28 @@ void apply_structural_edit(State& state, std::string_view planned_name,
 
     detail::MaterializedWorksheetSession candidate = *session;
     std::forward<Mutation>(mutation)(candidate);
-    const bool metadata_changed =
-        state.editor.rewrite_merged_cells_for_structural_edit_by_name(
+    auto updated_auto_filter_edits = state.pending_auto_filter_edits;
+    std::optional<CellRange>& updated_auto_filter_range =
+        updated_auto_filter_edits[std::string(planned_name)];
+    updated_auto_filter_range = std::nullopt;
+
+    const detail::WorksheetStructuralMetadataRewriteResult metadata =
+        state.editor.rewrite_structural_metadata_by_name(
             planned_name, kind, first, count);
-    if (metadata_changed) {
+    if (metadata.auto_filter_changed) {
+        updated_auto_filter_range = metadata.auto_filter_range;
+    }
+    if (metadata.changed()) {
         candidate.mark_dirty();
     }
+
+    static_assert(std::is_nothrow_swappable_v<
+        decltype(updated_auto_filter_edits)>);
     session->swap(candidate);
+    if (metadata.auto_filter_changed) {
+        using std::swap;
+        swap(state.pending_auto_filter_edits, updated_auto_filter_edits);
+    }
 }
 
 } // namespace

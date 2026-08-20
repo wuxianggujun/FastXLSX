@@ -150,6 +150,18 @@ struct WorksheetMergedCellStructuralRewritePlan {
     std::string replacement_xml;
 };
 
+struct WorksheetAutoFilterStructuralRewritePlan {
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+    std::string replacement_xml;
+    std::optional<CellRange> final_range;
+};
+
+struct WorksheetStructuralMetadataRewritePlan {
+    std::optional<WorksheetAutoFilterStructuralRewritePlan> auto_filter;
+    std::optional<WorksheetMergedCellStructuralRewritePlan> merged_cells;
+};
+
 enum class WorksheetInternalHyperlinkRewriteAction {
     InsertContainerBefore,
     AppendBeforeContainerClose,
@@ -329,6 +341,15 @@ void write_worksheet_auto_filter_rewrite(
     const WorksheetAutoFilterRewritePlan& plan,
     const std::filesystem::path& output_path);
 
+/// Audits the worksheet-root autoFilter and plans one row/column structural
+/// translation. A missing or unchanged filter returns no plan. A fully deleted
+/// range removes the complete filter; any other changed filter with criteria or
+/// sort child elements fails instead of silently changing their semantics.
+[[nodiscard]] std::optional<WorksheetAutoFilterStructuralRewritePlan>
+plan_worksheet_auto_filter_structural_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    WorksheetRangeStructuralEdit edit);
+
 /// Audits primary sheet-view metadata and plans one frozen-pane set/clear.
 /// Clear returns no plan when workbookViewId=0 has no direct frozen pane.
 [[nodiscard]] std::optional<WorksheetFreezePaneRewritePlan>
@@ -368,11 +389,11 @@ plan_worksheet_merged_cell_structural_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     WorksheetRangeStructuralEdit edit);
 
-/// Replaces or removes the complete mergeCells container selected by a
-/// structural rewrite plan while preserving all worksheet bytes outside it.
-void write_worksheet_merged_cell_structural_rewrite(
+/// Applies the planned worksheet-root autoFilter and mergeCells structural
+/// replacements in one file-backed pass. The ranges must not overlap.
+void write_worksheet_structural_metadata_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
-    const WorksheetMergedCellStructuralRewritePlan& plan,
+    const WorksheetStructuralMetadataRewritePlan& plan,
     const std::filesystem::path& output_path);
 
 } // namespace fastxlsx::detail

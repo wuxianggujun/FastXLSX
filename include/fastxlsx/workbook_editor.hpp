@@ -305,12 +305,14 @@ struct WorkbookEditorWorksheetEditSummary {
     /// worksheet.
     std::size_t table_removal_count = 0;
 
-    /// True when set_auto_filter() or clear_auto_filter() changed the
-    /// worksheet-root autoFilter for this planned worksheet.
+    /// True when set_auto_filter(), clear_auto_filter(), or a materialized
+    /// structural row/column edit changed the worksheet-root autoFilter for
+    /// this planned worksheet.
     bool auto_filter_changed = false;
 
     /// Final queued worksheet-root auto-filter range. An empty value together
-    /// with auto_filter_changed=true represents a queued clear operation.
+    /// with auto_filter_changed=true represents an explicit or structural
+    /// clear operation.
     std::optional<CellRange> auto_filter_range;
 
     /// True when set_freeze_panes() or clear_freeze_panes() changed the direct
@@ -1044,8 +1046,9 @@ public:
     /// validating `first_row`; it clears prior public edit diagnostics and does
     /// not dirty the session. For positive counts, every represented sparse
     /// cell with `row >= first_row` is moved down by `row_count`. If no
-    /// represented cell is at or below the insertion point, the call is a
-    /// successful no-op because this slice has no row metadata model.
+    /// represented cell is at or below the insertion point, the sparse-cell
+    /// candidate is unchanged, but supported worksheet-root range metadata can
+    /// still make the operation dirty.
     ///
     /// The shift is preflighted as one sparse-store coordinate transform.
     /// Invalid rows, counts outside the Excel row range, or any shifted record
@@ -1058,13 +1061,16 @@ public:
     /// moved or stayed fixed, uses the narrow structural rewriter: row
     /// references before the insertion point stay fixed and references at or
     /// after it move down. `$` markers are preserved but do not suppress a
-    /// structural row adjustment. Worksheet-root merged ranges are audited and
-    /// translated in the same transaction: ranges before the insertion stay
-    /// fixed, ranges beginning at or after it shift down, and ranges spanning
-    /// the insertion point expand. A metadata-only change dirties even an empty
-    /// CellStore. Malformed/overlapping source ranges or an Excel-bound overflow
-    /// reject before either the cell candidate or metadata replacement is
-    /// published. It does not update tables, autoFilter, data validations,
+    /// structural row adjustment. Worksheet-root merged ranges and the root
+    /// autoFilter range are audited and translated in the same transaction:
+    /// ranges before the insertion stay fixed, ranges beginning at or after it
+    /// shift down, and ranges spanning the insertion point expand. A changed
+    /// autoFilter with criteria/sort child elements rejects rather than
+    /// silently changing those semantics. A metadata-only change dirties even
+    /// an empty CellStore. Malformed/overlapping source ranges, unsupported
+    /// filter children, or an Excel-bound overflow reject before either the
+    /// cell candidate or combined metadata replacement is published. It does
+    /// not update tables, data validations,
     /// conditional formatting, hyperlinks, drawings/charts/VBA, defined names,
     /// relationships,
     /// sharedStrings/styles metadata, or calcChain beyond the existing
@@ -1093,12 +1099,14 @@ public:
     /// before the deleted rows stay fixed, later references move up, and
     /// references into deleted rows become `#REF!`. `$` markers are preserved
     /// on surviving references but do not suppress structural adjustment. The
-    /// Worksheet-root merged ranges are audited in the same transaction. A
-    /// range after the deletion shifts up; an intersecting range is clipped and
-    /// compressed; a fully deleted or single-cell result is removed, including
-    /// the container when no ranges remain. Any invalid final overlap or source
-    /// schema failure leaves cells and package state unchanged. The operation
-    /// does not recalculate or repair autoFilter, data validations,
+    /// Worksheet-root merged ranges and the root autoFilter are audited in the
+    /// same transaction. A range after the deletion shifts up and an
+    /// intersecting range is clipped/compressed. A fully deleted merged range
+    /// or single-cell merged result is removed; a fully deleted autoFilter is
+    /// removed, while its valid single-cell result remains. A surviving changed
+    /// autoFilter with criteria/sort children rejects. Any invalid final
+    /// overlap or source schema failure leaves cells and package state
+    /// unchanged. The operation does not recalculate or repair data validations,
     /// conditional formatting, hyperlinks, tables, drawings/charts/VBA,
     /// relationships, sharedStrings/styles, or calcChain.
     /// This is not a complete Excel row deletion operation and not a large-file
@@ -1113,8 +1121,9 @@ public:
     /// `first_column`; it clears prior public edit diagnostics and does not
     /// dirty the session. For positive counts, every represented sparse cell with
     /// `column >= first_column` is moved right by `column_count`. If no
-    /// represented cell is at or right of the insertion point, the call is a
-    /// successful no-op because this slice has no column metadata model.
+    /// represented cell is at or right of the insertion point, the sparse-cell
+    /// candidate is unchanged, but supported worksheet-root range metadata can
+    /// still make the operation dirty.
     ///
     /// The shift is preflighted as one sparse-store coordinate transform.
     /// Invalid columns, counts outside the Excel column range, or any shifted
@@ -1127,13 +1136,15 @@ public:
     /// moved or stayed fixed, uses the narrow structural rewriter: column
     /// references before the insertion point stay fixed and references at or
     /// after it move right. `$` markers are preserved but do not suppress a
-    /// structural column adjustment. Worksheet-root merged ranges are audited
-    /// and translated in the same transaction: ranges before the insertion stay
-    /// fixed, ranges beginning at or after it shift right, and ranges spanning
-    /// the insertion point expand. A metadata-only change dirties even an empty
-    /// CellStore. Malformed/overlapping source ranges or an Excel-bound overflow
-    /// reject before either candidate is published. It does not update tables,
-    /// autoFilter, data validations, conditional formatting, hyperlinks,
+    /// structural column adjustment. Worksheet-root merged ranges and the root
+    /// autoFilter range are audited and translated in the same transaction:
+    /// ranges before the insertion stay fixed, ranges beginning at or after it
+    /// shift right, and ranges spanning the insertion point expand. A changed
+    /// autoFilter with criteria/sort child elements rejects. A metadata-only
+    /// change dirties even an empty CellStore. Malformed/overlapping source
+    /// ranges, unsupported filter children, or an Excel-bound overflow reject
+    /// before either candidate is published. It does not update tables,
+    /// data validations, conditional formatting, hyperlinks,
     /// drawings/charts/VBA, defined names, relationships,
     /// sharedStrings/styles metadata, or calcChain beyond the existing
     /// worksheet rewrite policy.
@@ -1161,12 +1172,14 @@ public:
     /// before the deleted columns stay fixed, later references move left, and
     /// references into deleted columns become `#REF!`. `$` markers are
     /// preserved on surviving references but do not suppress structural
-    /// adjustment. Worksheet-root merged ranges are audited in the same
-    /// transaction. A range after the deletion shifts left; an intersecting
-    /// range is clipped and compressed; a fully deleted or single-cell result
-    /// is removed, including the container when no ranges remain. Invalid final
-    /// overlap or source schema leaves cells and package state unchanged. The
-    /// operation does not recalculate or repair autoFilter, data validations,
+    /// adjustment. Worksheet-root merged ranges and the root autoFilter are
+    /// audited in the same transaction. A range after the deletion shifts left
+    /// and an intersecting range is clipped/compressed. A fully deleted merged
+    /// range or single-cell merged result is removed; a fully deleted
+    /// autoFilter is removed, while its valid single-cell result remains. A
+    /// surviving changed autoFilter with criteria/sort children rejects.
+    /// Invalid final overlap or source schema leaves cells and package state
+    /// unchanged. The operation does not recalculate or repair data validations,
     /// conditional formatting, hyperlinks, tables, drawings/charts/VBA,
     /// relationships, sharedStrings/styles, or calcChain.
     /// This is not a complete Excel column deletion operation and not a
@@ -3750,10 +3763,13 @@ public:
     /// worksheet relationships, content types, cell values/styles, formulas,
     /// defined names, table definitions, or calculation metadata.
     ///
-    /// The range is 1-based and inclusive. It is not automatically shifted by
-    /// later row, column, or cell structural mutation. The planned worksheet
-    /// name is honored, including rename_sheet() and a worksheet added in the
-    /// same editor.
+    /// The range is 1-based and inclusive. A later materialized
+    /// WorksheetEditor row/column insert or delete translates this root range
+    /// in the same structural metadata transaction; this whole-element setter
+    /// produces no criteria/sort children, so that translation is supported.
+    /// Cell copy/move and other linked objects do not synchronize it. The
+    /// planned worksheet name is honored, including rename_sheet() and a
+    /// worksheet added in the same editor.
     ///
     /// @param sheet_name Existing current-planned worksheet name.
     /// @param range Final worksheet-root auto-filter range.

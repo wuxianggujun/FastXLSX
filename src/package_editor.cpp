@@ -10117,14 +10117,16 @@ bool PackageEditor::rewrite_merged_cell_by_name(
     return true;
 }
 
-bool PackageEditor::rewrite_merged_cells_for_structural_edit_by_name(
+WorksheetStructuralMetadataRewriteResult
+PackageEditor::rewrite_structural_metadata_by_name(
     std::string_view sheet_name,
     WorksheetRangeStructuralEditKind kind,
     std::uint32_t first,
     std::uint32_t count)
 {
+    WorksheetStructuralMetadataRewriteResult result;
     if (count == 0) {
-        return false;
+        return result;
     }
 
     const PartName worksheet_part = resolve_worksheet_part_by_name_for_patch(
@@ -10132,26 +10134,45 @@ bool PackageEditor::rewrite_merged_cells_for_structural_edit_by_name(
     const CurrentWorksheetInputSource input_source =
         require_current_worksheet_input_source(
             reader_, replacements_, entry_replacements_, worksheet_part,
-            "merged-cell structural worksheet edit");
+            "structural metadata worksheet edit");
+    const WorksheetRangeStructuralEdit edit {kind, first, count};
 
-    CurrentWorksheetInputChunkReader planning_reader(
+    CurrentWorksheetInputChunkReader auto_filter_planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for auto-filter structural planning");
+    WorksheetStructuralMetadataRewritePlan rewrite_plan;
+    rewrite_plan.auto_filter =
+        plan_worksheet_auto_filter_structural_rewrite(
+            [&](std::string& chunk) {
+                return auto_filter_planning_reader(chunk);
+            },
+            edit);
+
+    CurrentWorksheetInputChunkReader merged_cell_planning_reader(
         reader_, worksheet_part, input_source,
         "current worksheet input for merged-cell structural planning");
-    const std::optional<WorksheetMergedCellStructuralRewritePlan> rewrite_plan =
+    rewrite_plan.merged_cells =
         plan_worksheet_merged_cell_structural_rewrite(
-            [&](std::string& chunk) { return planning_reader(chunk); },
-            WorksheetRangeStructuralEdit {kind, first, count});
-    if (!rewrite_plan.has_value()) {
-        return false;
+            [&](std::string& chunk) {
+                return merged_cell_planning_reader(chunk);
+            },
+            edit);
+    result.auto_filter_changed = rewrite_plan.auto_filter.has_value();
+    if (rewrite_plan.auto_filter.has_value()) {
+        result.auto_filter_range = rewrite_plan.auto_filter->final_range;
+    }
+    result.merged_cells_changed = rewrite_plan.merged_cells.has_value();
+    if (!result.changed()) {
+        return result;
     }
 
     ScopedPackageEditorTempFile rewritten_source_file;
     CurrentWorksheetInputChunkReader output_reader(
         reader_, worksheet_part, input_source,
-        "current worksheet input for merged-cell structural rewrite");
-    write_worksheet_merged_cell_structural_rewrite(
+        "current worksheet input for structural metadata rewrite");
+    write_worksheet_structural_metadata_rewrite(
         [&](std::string& chunk) { return output_reader(chunk); },
-        *rewrite_plan, rewritten_source_file.path());
+        rewrite_plan, rewritten_source_file.path());
 
     const std::vector<PackageEntryChunk> rewritten_chunks {
         PackageEntryChunk::file(rewritten_source_file.path())};
@@ -10160,13 +10181,14 @@ bool PackageEditor::rewrite_merged_cells_for_structural_edit_by_name(
         [&](std::string& chunk) { return staged_reader(chunk); };
     std::vector<std::string> commit_notes;
     commit_notes.emplace_back(
-        "materialized worksheet structural edit translates worksheet-root merged-cell "
-        "metadata without relationship, content-type, or calc mutation");
+        "materialized worksheet structural edit translates supported worksheet-root "
+        "auto-filter and merged-cell metadata in one transaction without relationship, "
+        "content-type, or calc mutation");
     replace_worksheet_part_from_chunk_source_with_commit_notes(
         worksheet_part, staged_source, worksheet_metadata_reference_policy(),
-        "materialized worksheet merged-cell structural metadata synchronization",
+        "materialized worksheet structural metadata synchronization",
         std::move(commit_notes));
-    return true;
+    return result;
 }
 
 void PackageEditor::replace_worksheet_part_chunks_by_name(std::string_view sheet_name,

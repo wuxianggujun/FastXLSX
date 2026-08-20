@@ -82,11 +82,13 @@ struct CellRecord {
 /// The returned callback references `store`; callers must keep the store alive
 /// and unmodified until the callback is fully consumed. This is the low-copy
 /// handoff used by the current WorkbookEditor Patch facade before the payload is
-/// staged by PackageEditor. It still emits inline strings and does not migrate
-/// sharedStrings, merge styles, update calcChain, repair relationships, or
-/// generate a full worksheet part.
+/// staged by PackageEditor. A non-empty `element_prefix` is applied to the
+/// sheetData QName; that element also declares the default SpreadsheetML
+/// namespace so regenerated unprefixed row/cell descendants remain valid. It
+/// still emits inline strings and does not migrate sharedStrings, merge styles,
+/// update calcChain, repair relationships, or generate a full worksheet part.
 [[nodiscard]] WorksheetInputChunkCallback cell_store_sheet_data_chunk_source(
-    const CellStore& store);
+    const CellStore& store, std::string element_prefix = {});
 
 /// Creates a `<sheetData>` chunk source that writes text cells as shared string
 /// indexes resolved by `shared_string_index_provider`.
@@ -97,7 +99,8 @@ struct CellRecord {
 /// create, repair, or validate workbook sharedStrings relationships.
 [[nodiscard]] WorksheetInputChunkCallback cell_store_sheet_data_chunk_source_with_shared_strings(
     const CellStore& store,
-    std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider);
+    std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider,
+    std::string element_prefix = {});
 
 /// Creates a pull-based chunk source for a minimal worksheet XML part projected
 /// from the internal sparse store.
@@ -418,9 +421,13 @@ private:
 /// preserving styles.xml bytes. Malformed/default-like style tokens, missing
 /// or invalid styles metadata, out-of-range style ids, or qualified style-like
 /// attributes still fail. This is not style migration, style merge, or
-/// existing-workbook style registry support.
+/// existing-workbook style registry support. When
+/// `worksheet_element_prefix` is non-null, the source worksheet-root QName
+/// prefix is copied there only after materialization succeeds; failures leave
+/// caller state unchanged.
 [[nodiscard]] CellStore load_cell_store_from_workbook_sheet(
     const PackageReader& reader, std::string_view sheet_name,
-    CellStoreOptions options = {}, WorksheetEventReaderOptions reader_options = {});
+    CellStoreOptions options = {}, WorksheetEventReaderOptions reader_options = {},
+    std::string* worksheet_element_prefix = nullptr);
 
 } // namespace fastxlsx::detail

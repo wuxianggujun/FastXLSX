@@ -4,6 +4,7 @@
 #include "workbook_editor_worksheet_access.hpp"
 
 #include <fastxlsx/detail/materialized_worksheet_session.hpp>
+#include <fastxlsx/detail/worksheet_metadata_rewriter.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -32,6 +33,28 @@ constexpr std::size_t max_excel_columns = 16384U;
         return value;
     }
     return value.with_style(*existing->style_id);
+}
+
+template <typename State, typename Mutation>
+void apply_structural_edit(State& state, std::string_view planned_name,
+    detail::WorksheetRangeStructuralEditKind kind, std::uint32_t first,
+    std::uint32_t count, Mutation&& mutation)
+{
+    detail::MaterializedWorksheetSession* session =
+        state.materialized_sessions.try_session(planned_name);
+    if (session == nullptr) {
+        throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+    }
+
+    detail::MaterializedWorksheetSession candidate = *session;
+    std::forward<Mutation>(mutation)(candidate);
+    const bool metadata_changed =
+        state.editor.rewrite_merged_cells_for_structural_edit_by_name(
+            planned_name, kind, first, count);
+    if (metadata_changed) {
+        candidate.mark_dirty();
+    }
+    session->swap(candidate);
 }
 
 } // namespace
@@ -601,13 +624,12 @@ void WorksheetEditor::insert_rows(std::uint32_t first_row, std::uint32_t row_cou
     try {
         detail::validate_worksheet_editor_cell_coordinate(first_row, 1);
 
-        detail::MaterializedWorksheetSession* session =
-            state.materialized_sessions.try_session(planned_name_);
-        if (session == nullptr) {
-            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
-        }
-
-        session->insert_rows(first_row, row_count);
+        apply_structural_edit(state, planned_name_,
+            detail::WorksheetRangeStructuralEditKind::InsertRows,
+            first_row, row_count,
+            [=](detail::MaterializedWorksheetSession& candidate) {
+                candidate.insert_rows(first_row, row_count);
+            });
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -621,13 +643,12 @@ void WorksheetEditor::delete_rows(std::uint32_t first_row, std::uint32_t row_cou
     try {
         detail::validate_worksheet_editor_cell_coordinate(first_row, 1);
 
-        detail::MaterializedWorksheetSession* session =
-            state.materialized_sessions.try_session(planned_name_);
-        if (session == nullptr) {
-            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
-        }
-
-        session->delete_rows(first_row, row_count);
+        apply_structural_edit(state, planned_name_,
+            detail::WorksheetRangeStructuralEditKind::DeleteRows,
+            first_row, row_count,
+            [=](detail::MaterializedWorksheetSession& candidate) {
+                candidate.delete_rows(first_row, row_count);
+            });
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -641,13 +662,12 @@ void WorksheetEditor::insert_columns(std::uint32_t first_column, std::uint32_t c
     try {
         detail::validate_worksheet_editor_cell_coordinate(1, first_column);
 
-        detail::MaterializedWorksheetSession* session =
-            state.materialized_sessions.try_session(planned_name_);
-        if (session == nullptr) {
-            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
-        }
-
-        session->insert_columns(first_column, column_count);
+        apply_structural_edit(state, planned_name_,
+            detail::WorksheetRangeStructuralEditKind::InsertColumns,
+            first_column, column_count,
+            [=](detail::MaterializedWorksheetSession& candidate) {
+                candidate.insert_columns(first_column, column_count);
+            });
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -661,13 +681,12 @@ void WorksheetEditor::delete_columns(std::uint32_t first_column, std::uint32_t c
     try {
         detail::validate_worksheet_editor_cell_coordinate(1, first_column);
 
-        detail::MaterializedWorksheetSession* session =
-            state.materialized_sessions.try_session(planned_name_);
-        if (session == nullptr) {
-            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
-        }
-
-        session->delete_columns(first_column, column_count);
+        apply_structural_edit(state, planned_name_,
+            detail::WorksheetRangeStructuralEditKind::DeleteColumns,
+            first_column, column_count,
+            [=](detail::MaterializedWorksheetSession& candidate) {
+                candidate.delete_columns(first_column, column_count);
+            });
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);

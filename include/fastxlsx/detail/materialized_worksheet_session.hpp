@@ -30,9 +30,11 @@ struct MaterializedCellSnapshot {
 /// enforce operation-mixing rules, and persist dirty stores through save_as().
 class MaterializedWorksheetSession {
 public:
-    MaterializedWorksheetSession(std::string planned_name, CellStore store)
+    MaterializedWorksheetSession(std::string planned_name, CellStore store,
+        std::string worksheet_element_prefix = {})
         : planned_name_(std::move(planned_name))
         , store_(std::move(store))
+        , worksheet_element_prefix_(std::move(worksheet_element_prefix))
     {
     }
 
@@ -61,6 +63,27 @@ public:
     void clear_dirty() noexcept
     {
         dirty_ = false;
+    }
+
+    void mark_dirty() noexcept
+    {
+        dirty_ = true;
+    }
+
+    void swap(MaterializedWorksheetSession& other) noexcept
+    {
+        using std::swap;
+        swap(planned_name_, other.planned_name_);
+        store_.swap(other.store_);
+        swap(worksheet_element_prefix_, other.worksheet_element_prefix_);
+        swap(dirty_, other.dirty_);
+    }
+
+    friend void swap(
+        MaterializedWorksheetSession& left,
+        MaterializedWorksheetSession& right) noexcept
+    {
+        left.swap(right);
     }
 
     void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value)
@@ -898,9 +921,9 @@ public:
     {
         if (shared_string_index_provider) {
             return cell_store_sheet_data_chunk_source_with_shared_strings(
-                store_, std::move(shared_string_index_provider));
+                store_, std::move(shared_string_index_provider), worksheet_element_prefix_);
         }
-        return cell_store_sheet_data_chunk_source(store_);
+        return cell_store_sheet_data_chunk_source(store_, worksheet_element_prefix_);
     }
 
     [[nodiscard]] std::string dimension_reference() const
@@ -1368,6 +1391,7 @@ private:
 
     std::string planned_name_;
     CellStore store_;
+    std::string worksheet_element_prefix_;
     bool dirty_ = false;
 };
 
@@ -1458,7 +1482,8 @@ public:
     /// Repeated materialization with matching options preserves the existing
     /// session, including dirty cells. This lets the WorkbookEditor facade retry
     /// a lookup without losing pending edits.
-    MaterializedWorksheetSession& materialize(std::string planned_name, CellStore store)
+    MaterializedWorksheetSession& materialize(std::string planned_name, CellStore store,
+        std::string worksheet_element_prefix = {})
     {
         preflight_materialization(planned_name, store.options());
 
@@ -1470,7 +1495,8 @@ public:
         std::string key = planned_name;
         auto [inserted, _] = sessions_.emplace(
             std::move(key),
-            MaterializedWorksheetSession(std::move(planned_name), std::move(store)));
+            MaterializedWorksheetSession(std::move(planned_name), std::move(store),
+                std::move(worksheet_element_prefix)));
         return inserted->second;
     }
 
@@ -1489,9 +1515,11 @@ public:
             return *existing;
         }
 
-        CellStore store = load_cell_store_from_workbook_sheet(
-            reader, source_sheet_name, std::move(options), reader_options);
-        return materialize(std::move(planned_name), std::move(store));
+        std::string worksheet_element_prefix;
+        CellStore store = load_cell_store_from_workbook_sheet(reader, source_sheet_name,
+            std::move(options), reader_options, &worksheet_element_prefix);
+        return materialize(std::move(planned_name), std::move(store),
+            std::move(worksheet_element_prefix));
     }
 
     [[nodiscard]] MaterializedWorksheetSession* try_session(std::string_view planned_name)

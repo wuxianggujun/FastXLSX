@@ -3906,6 +3906,104 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
         inspect_full_calc_source_formula_audit_output);
 }
 
+void test_public_worksheet_editor_row_deletion_translates_merged_cells()
+{
+    const std::array<fastxlsx::CellRange, 5> source_ranges {{
+        {1, 1, 2, 2},
+        {2, 3, 4, 4},
+        {5, 5, 6, 6},
+        {2, 8, 2, 9},
+        {1, 10, 2, 10},
+    }};
+    const std::array<fastxlsx::CellRange, 3> expected_ranges {{
+        {1, 1, 1, 2},
+        {2, 3, 3, 4},
+        {4, 5, 5, 6},
+    }};
+    const std::filesystem::path source = write_two_sheet_source_with_merged_ranges(
+        "fastxlsx-workbook-editor-public-shift-delete-row-merged-source.xlsx",
+        source_ranges);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-delete-row-merged-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.delete_rows(2, 1);
+    check(sheet.has_pending_changes() && sheet.cell_count() == 2
+            && sheet.get_cell("A1").text_value() == "placeholder-a1"
+            && sheet.get_cell("B1").number_value() == 1.0,
+        "row deletion should publish cell and merged metadata candidates together");
+    editor.save_as(output);
+
+    check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected_ranges,
+        "merged-cell row deletion output");
+    const std::string worksheet_xml =
+        fastxlsx::test::read_zip_entries(output).at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<mergeCells count=\"3\">",
+        "row deletion should normalize the retained merged-cell count");
+    check_not_contains(worksheet_xml, "H2:I2",
+        "row deletion should remove a range fully covered by deleted rows");
+    check_not_contains(worksheet_xml, "J1:J2",
+        "row deletion should remove a range that collapses to one cell");
+}
+
+void test_public_worksheet_editor_column_deletion_translates_merged_cells()
+{
+    const std::array<fastxlsx::CellRange, 5> source_ranges {{
+        {1, 1, 2, 2},
+        {3, 2, 4, 4},
+        {5, 5, 6, 6},
+        {7, 2, 8, 2},
+        {9, 1, 9, 2},
+    }};
+    const std::array<fastxlsx::CellRange, 3> expected_ranges {{
+        {1, 1, 2, 1},
+        {3, 2, 4, 3},
+        {5, 4, 6, 5},
+    }};
+    const std::filesystem::path source = write_two_sheet_source_with_merged_ranges(
+        "fastxlsx-workbook-editor-public-shift-delete-column-merged-source.xlsx",
+        source_ranges);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-delete-column-merged-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.delete_columns(2, 1);
+    editor.save_as(output);
+
+    check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected_ranges,
+        "merged-cell column deletion output");
+    const std::string worksheet_xml =
+        fastxlsx::test::read_zip_entries(output).at("xl/worksheets/sheet1.xml");
+    check_not_contains(worksheet_xml, "B7:B8",
+        "column deletion should remove a range fully covered by deleted columns");
+    check_not_contains(worksheet_xml, "A9:B9",
+        "column deletion should remove a range that collapses to one cell");
+}
+
+void test_public_worksheet_editor_deletion_removes_last_merged_cell_container()
+{
+    const std::array<fastxlsx::CellRange, 1> source_ranges {{{1, 1, 1, 2}}};
+    const std::filesystem::path source = write_two_sheet_source_with_merged_ranges(
+        "fastxlsx-workbook-editor-public-shift-delete-last-merged-source.xlsx",
+        source_ranges);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-delete-last-merged-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.delete_rows(1, 1);
+    editor.save_as(output);
+
+    check(read_worksheet_merged_ranges(output).empty(),
+        "deleting the final merged range should leave no reader projection");
+    check_not_contains(fastxlsx::test::read_zip_entries(output)
+            .at("xl/worksheets/sheet1.xml"),
+        "<mergeCells",
+        "deleting the final merged range should remove its container");
+}
+
 } // namespace
 
 int main()
@@ -3927,6 +4025,9 @@ int main()
             test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift_failed_save_preserves_state();
             test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve_diagnostics();
             test_public_worksheet_editor_full_calculation_source_formula_audits_preserve_source_scan();
+            test_public_worksheet_editor_row_deletion_translates_merged_cells();
+            test_public_worksheet_editor_column_deletion_translates_merged_cells();
+            test_public_worksheet_editor_deletion_removes_last_merged_cell_container();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());
         return 1;

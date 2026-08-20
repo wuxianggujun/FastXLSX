@@ -1,6 +1,34 @@
+#include "../src/package_editor.hpp"
 #include "test_workbook_editor_public_state_shifts_support.hpp"
 
 namespace {
+
+class ScopedStructuralWorksheetReplacementStagedHook {
+public:
+    explicit ScopedStructuralWorksheetReplacementStagedHook(
+        fastxlsx::detail::PackageEditorWorksheetPartReplacementStagedHook hook)
+    {
+        fastxlsx::detail::testing_set_package_editor_worksheet_part_replacement_staged_hook(
+            hook);
+    }
+
+    ~ScopedStructuralWorksheetReplacementStagedHook()
+    {
+        fastxlsx::detail::testing_set_package_editor_worksheet_part_replacement_staged_hook(
+            nullptr);
+    }
+
+    ScopedStructuralWorksheetReplacementStagedHook(
+        const ScopedStructuralWorksheetReplacementStagedHook&) = delete;
+    ScopedStructuralWorksheetReplacementStagedHook& operator=(
+        const ScopedStructuralWorksheetReplacementStagedHook&) = delete;
+};
+
+void fail_after_structural_merged_cell_staging()
+{
+    throw fastxlsx::FastXlsxError(
+        "injected structural merged-cell staging failure");
+}
 
 void test_public_worksheet_editor_shift_snapshots_are_owning_across_later_shifts()
 {
@@ -5814,6 +5842,262 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
 }
 
 
+void test_public_worksheet_editor_insertions_translate_merged_cells_transactionally()
+{
+    const std::array<fastxlsx::CellRange, 3> source_ranges {{
+        {1, 1, 1, 2},
+        {2, 3, 4, 4},
+        {6, 5, 7, 6},
+    }};
+    const std::array<fastxlsx::CellRange, 3> expected_ranges {{
+        {1, 1, 1, 2},
+        {2, 3, 6, 5},
+        {8, 6, 9, 7},
+    }};
+    const std::filesystem::path source = write_two_sheet_source_with_merged_ranges(
+        "fastxlsx-workbook-editor-public-shift-insert-merged-source.xlsx",
+        source_ranges);
+    auto source_entries = fastxlsx::test::read_zip_entries(source);
+    source_entries.emplace("custom/structural-sync.bin", "preserve-insert");
+    fastxlsx::test::write_stored_zip_entries(source, source_entries);
+    source_entries = fastxlsx::test::read_zip_entries(source);
+
+    const std::filesystem::path missing_output = artifact(
+        "missing-structural-insert-parent/output.xlsx");
+    std::error_code ignored;
+    std::filesystem::remove_all(missing_output.parent_path(), ignored);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-insert-merged-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.insert_rows(3, 2);
+    sheet.insert_columns(4, 1);
+
+    check(sheet.has_pending_changes() && editor.has_unsaved_changes()
+            && editor.unsaved_change_count() == 1,
+        "merged-cell insertions should dirty one materialized session");
+    check(sheet.cell_count() == 3 && sheet.get_cell("A1").text_value() == "placeholder-a1"
+            && sheet.get_cell("B1").number_value() == 1.0
+            && sheet.get_cell("A2").text_value() == "placeholder-a2",
+        "metadata-only insertion points should preserve sparse cell payloads");
+    check(threw_fastxlsx_error([&] { editor.save_as(missing_output); }),
+        "merged-cell insertion save should fail for a missing output parent");
+    check(sheet.has_pending_changes() && editor.has_unsaved_changes()
+            && editor.unsaved_change_count() == 1,
+        "failed merged-cell insertion save should retain dirty retry state");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
+        "successful merged-cell insertion retry should clean unsaved state");
+    check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected_ranges,
+        "merged-cell row/column insertion output");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("custom/structural-sync.bin") == "preserve-insert",
+        "merged-cell insertions should preserve unknown package entries");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "merged-cell insertions should preserve untouched worksheets");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "merged-cell insertion save should not modify the source package");
+}
+
+void test_public_worksheet_editor_metadata_only_insert_and_failure_no_pollution()
+{
+    const std::filesystem::path empty_source = artifact(
+        "fastxlsx-workbook-editor-public-shift-insert-empty-merged-source.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(empty_source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.merge_cells({2, 2, 3, 3});
+        writer.close();
+    }
+    const std::filesystem::path empty_output = artifact(
+        "fastxlsx-workbook-editor-public-shift-insert-empty-merged-output.xlsx");
+    fastxlsx::WorkbookEditor empty_editor =
+        fastxlsx::WorkbookEditor::open(empty_source);
+    fastxlsx::WorksheetEditor empty_sheet = empty_editor.worksheet("Data");
+    check(empty_sheet.cell_count() == 0 && !empty_sheet.has_pending_changes(),
+        "metadata-only insertion fixture should materialize an empty CellStore");
+    empty_sheet.insert_rows(2, 1);
+    check(empty_sheet.cell_count() == 0 && empty_sheet.has_pending_changes()
+            && empty_editor.pending_materialized_worksheet_names()
+                == std::vector<std::string> {"Data"},
+        "metadata-only merged-cell insertion should dirty an empty CellStore session");
+    empty_editor.save_as(empty_output);
+    const std::array<fastxlsx::CellRange, 1> empty_expected {{{3, 2, 4, 3}}};
+    check_merged_ranges_equal(read_worksheet_merged_ranges(empty_output), empty_expected,
+        "empty CellStore merged-cell insertion output");
+
+    const std::array<fastxlsx::CellRange, 1> malformed_ranges {{{1, 1, 1, 2}}};
+    const std::filesystem::path malformed_source =
+        write_two_sheet_source_with_merged_ranges(
+            "fastxlsx-workbook-editor-public-shift-insert-malformed-merged-source.xlsx",
+            malformed_ranges);
+    auto malformed_entries = fastxlsx::test::read_zip_entries(malformed_source);
+    replace_first_or_throw(malformed_entries.at("xl/worksheets/sheet1.xml"),
+        "<mergeCells count=\"1\">", "<mergeCells count=\"2\">");
+    fastxlsx::test::write_stored_zip_entries(malformed_source, malformed_entries);
+
+    fastxlsx::WorkbookEditor malformed_editor =
+        fastxlsx::WorkbookEditor::open(malformed_source);
+    fastxlsx::WorksheetEditor malformed_sheet = malformed_editor.worksheet("Data");
+    check(threw_fastxlsx_error([&] { malformed_sheet.insert_rows(1, 1); }),
+        "malformed merged-cell metadata should reject structural insertion");
+    check(!malformed_sheet.has_pending_changes() && !malformed_editor.has_pending_changes()
+            && !malformed_editor.has_unsaved_changes()
+            && malformed_editor.pending_change_count() == 0
+            && malformed_sheet.get_cell("A1").text_value() == "placeholder-a1"
+            && malformed_sheet.get_cell("B1").number_value() == 1.0,
+        "malformed merged-cell rejection should preserve cells and public state");
+    check(malformed_editor.last_edit_error().has_value(),
+        "malformed merged-cell rejection should record a public edit diagnostic");
+
+    const std::array<fastxlsx::CellRange, 1> overflow_ranges {{{1048575, 1, 1048576, 1}}};
+    const std::filesystem::path overflow_source =
+        write_two_sheet_source_with_merged_ranges(
+            "fastxlsx-workbook-editor-public-shift-insert-overflow-merged-source.xlsx",
+            overflow_ranges);
+    fastxlsx::WorkbookEditor overflow_editor =
+        fastxlsx::WorkbookEditor::open(overflow_source);
+    fastxlsx::WorksheetEditor overflow_sheet = overflow_editor.worksheet("Data");
+    check(threw_fastxlsx_error(
+        [&] { overflow_sheet.insert_rows(1048576, 1); }),
+        "merged-cell insertion past the row limit should fail");
+    check(!overflow_sheet.has_pending_changes() && !overflow_editor.has_pending_changes()
+            && overflow_sheet.get_cell("A1").text_value() == "placeholder-a1",
+        "merged-cell overflow rejection should not publish candidate cells or metadata");
+}
+
+void test_public_worksheet_editor_structural_merged_cell_staging_failure_retries()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-shift-insert-merged-staging-source.xlsx",
+            styled_formula_style);
+    auto source_entries = fastxlsx::test::read_zip_entries(source);
+    replace_first_or_throw(source_entries.at("xl/worksheets/sheet1.xml"),
+        "</sheetData>",
+        "</sheetData><mergeCells count=\"1\"><mergeCell ref=\"B2:C3\"/>"
+        "</mergeCells>");
+    fastxlsx::test::write_stored_zip_entries(source, source_entries);
+
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-insert-merged-staging-output.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    {
+        const ScopedStructuralWorksheetReplacementStagedHook hook(
+            fail_after_structural_merged_cell_staging);
+        check(threw_fastxlsx_error([&] { sheet.insert_rows(2, 1); }),
+            "injected structural metadata staging failure should surface publicly");
+    }
+
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes()
+            && !editor.has_unsaved_changes() && editor.pending_change_count() == 0
+            && sheet.get_cell("A2").text_value() == "placeholder-a2"
+            && sheet.get_cell("D2").kind() == fastxlsx::CellValueKind::Formula,
+        "staging failure should preserve the active CellStore and package plan");
+    check(editor.last_edit_error().has_value(),
+        "staging failure should retain a public edit diagnostic");
+
+    sheet.insert_rows(2, 1);
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "retry should apply the cell shift exactly once");
+    const fastxlsx::CellValue shifted_formula = sheet.get_cell("D3");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula
+            && shifted_formula.text_value() == "A1+B1"
+            && shifted_formula.has_style()
+            && shifted_formula.style_id().value() == styled_formula_style.value(),
+        "retry should preserve the translated formula and workbook-local style");
+    editor.save_as(output);
+
+    const std::array<fastxlsx::CellRange, 1> expected {{{3, 2, 4, 3}}};
+    check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected,
+        "staging-failure merged-cell retry output");
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("D3");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula
+            && reopened_formula.text_value() == "A1+B1"
+            && reopened_formula.has_style()
+            && reopened_formula.style_id().value() == styled_formula_style.value(),
+        "staging-failure retry output should reopen with formula/style intact");
+}
+
+void test_public_worksheet_editor_structural_merged_cells_preserve_qname()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-shift-insert-prefixed-merged-source.xlsx");
+    auto entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData></x:sheetData><x:mergeCells count="1"><x:mergeCell ref="B2:C3"/></x:mergeCells></x:worksheet>)";
+    fastxlsx::test::write_stored_zip_entries(source, entries);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-insert-prefixed-merged-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.insert_rows(3, 1);
+    sheet.insert_columns(2, 1);
+    editor.save_as(output);
+
+    const std::string worksheet_xml =
+        fastxlsx::test::read_zip_entries(output).at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        "<x:sheetData xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
+        "prefixed worksheet projection should keep regenerated row/cell payload in SpreadsheetML");
+    check_contains(worksheet_xml,
+        "<x:mergeCells count=\"1\"><x:mergeCell ref=\"C2:D4\"/></x:mergeCells>",
+        "structural rewrite should preserve the audited worksheet QName prefix");
+    const std::array<fastxlsx::CellRange, 1> expected_ranges {{{2, 3, 4, 4}}};
+    check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected_ranges,
+        "prefixed structural merged-cell output");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    check(reopened_sheet.cell_count() == 0 && !reopened_sheet.has_pending_changes(),
+        "prefixed structural output should rematerialize without a sheetData QName mismatch");
+}
+
+void test_public_worksheet_editor_structural_merged_cells_reject_opaque_content()
+{
+    const std::array<fastxlsx::CellRange, 1> ranges {{{2, 2, 3, 3}}};
+    const std::filesystem::path source = write_two_sheet_source_with_merged_ranges(
+        "fastxlsx-workbook-editor-public-shift-insert-opaque-merged-source.xlsx",
+        ranges);
+    auto entries = fastxlsx::test::read_zip_entries(source);
+    replace_first_or_throw(entries.at("xl/worksheets/sheet1.xml"),
+        "<mergeCells count=\"1\">",
+        "<mergeCells count=\"1\" custom=\"keep\">"
+        "<!--keep-comment--><?keep processing?>");
+    fastxlsx::test::write_stored_zip_entries(source, entries);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-insert-opaque-merged-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    check(threw_fastxlsx_error([&] { sheet.insert_rows(2, 1); }),
+        "structural rewrite should reject merge metadata it cannot preserve");
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes()
+            && !editor.has_unsaved_changes()
+            && sheet.get_cell("A2").text_value() == "placeholder-a2",
+        "opaque merge metadata rejection should not publish cells or package state");
+
+    sheet.insert_rows(10, 1);
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes()
+            && !editor.last_edit_error().has_value(),
+        "an unaffected opaque merge container should remain a clean structural no-op");
+    editor.save_as(output);
+    const std::string worksheet_xml =
+        fastxlsx::test::read_zip_entries(output).at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "custom=\"keep\"",
+        "clean structural no-op should preserve unsupported merge attributes");
+    check_contains(worksheet_xml, "<!--keep-comment--><?keep processing?>",
+        "clean structural no-op should preserve merge comments and processing instructions");
+}
+
 } // namespace
 
 int main()
@@ -5840,6 +6124,11 @@ int main()
             test_public_worksheet_editor_full_calculation_before_insert_columns_styled_formula_failed_save_preserves_state();
             test_public_worksheet_editor_full_calculation_before_insert_columns_shift();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
+            test_public_worksheet_editor_insertions_translate_merged_cells_transactionally();
+            test_public_worksheet_editor_metadata_only_insert_and_failure_no_pollution();
+            test_public_worksheet_editor_structural_merged_cell_staging_failure_retries();
+            test_public_worksheet_editor_structural_merged_cells_preserve_qname();
+            test_public_worksheet_editor_structural_merged_cells_reject_opaque_content();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());
         return 1;

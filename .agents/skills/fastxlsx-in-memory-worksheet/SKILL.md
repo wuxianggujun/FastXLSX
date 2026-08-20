@@ -19,7 +19,7 @@ description: "实现或审查 FastXLSX In-memory `WorksheetEditor`。用于 stri
 - `WorkbookEditor::add_worksheet()` 新增但尚未保存的 worksheet 没有 source payload，必须明确拒绝 materialization；`save_as()` 后重新打开，generated worksheet 成为新 source catalog 的一部分才可 materialize。
 - `WorkbookEditor::remove_worksheet()` 拒绝已有 target materialized session 和 queued worksheet payload；删除成功后 source catalog 仍是打开时的 immutable view，planned catalog 与 removed edit summary 才反映当前状态。
 - 只做受 `max_cells` / `memory_budget_bytes` 约束的 small-file sparse random editing。Large worksheet rewrite 必须走 Patch/C5，不扩大 guardrail 冒充低内存随机编辑。
-- `CellStore` 不承载 row/column metadata、merged cells、tables、filters、validations、conditional formatting、hyperlinks、drawings、charts、VBA、defined names、relationships 或 calcChain。
+- `CellStore` 不承载 row/column metadata、merged cells、tables、filters、validations、conditional formatting、hyperlinks、drawings、charts、VBA、defined names、relationships 或 calcChain。Merged-cell structural sync 由 facade 协调独立 metadata rewrite，不得把 ranges 塞入 CellStore。
 
 ## Materialization
 
@@ -33,7 +33,7 @@ description: "实现或审查 FastXLSX In-memory `WorksheetEditor`。用于 stri
 - Batch duplicate 采用 later-wins 后再比较最终记录。全等 mutation 保持 clean，并在 CellStore guardrail 前返回。
 - 区分 full-cell、value-only 和 style-only 语义。任意 caller non-default StyleId 在 style registry/migration contract 建立前必须拒绝；同 workbook 已验证 StyleId 只按当前 public 契约复用。
 - Structural insert/delete 使用窄 structural formula rewriter；copy/move 使用 source-to-target translation。不要把两种公式语义混用。
-- C8 第一批 structural metadata synchronization 必须把 metadata candidate 与 CellStore candidate 分开预构造，再在同一事务边界发布；先支持 merged cells、worksheet-root auto-filter 与 data validations 的 range translate，无法安全平移或遇到未知 schema 时 strict fail。Hyperlinks、conditional formatting、tables、drawings、comments/VML 和 relationship graph 在各自切片前继续保持 non-sync。
+- C8 merged-cell structural sync 已实现：先复制 materialized session 并完成 cell/formula candidate，再 strict scan 当前有效 worksheet 的完整 `<mergeCells>`，一次生成 container replacement/removal，最后 noexcept 发布 session。插入执行 shift/expand，删除执行 shift/clip/full-or-single removal；metadata-only 空 store 也 dirty，schema/count/QName/overlap/bounds 或 staging 失败不发布半边状态。完整 container canonical rewrite 只接管 `count`/`ref` attributes 与 whitespace；其他 attribute、comment/PI 在确实需要 rewrite 时 strict fail，metadata no-op 则原样 preserve。Materialization 必须把 worksheet root prefix 保存在 session/candidate/swap state；prefixed root 的 dirty `<sheetData>` 保留该 prefix，并用 element-local default SpreadsheetML namespace 约束无前缀 row/cell，避免保存后 metadata reader QName mismatch。下一子切片为 worksheet-root auto filter，随后 data validations；hyperlinks、conditional formatting、tables、drawings、comments/VML 和 relationship graph 继续 non-sync。
 - Cross-sheet move 是双状态事务：先构造并验证 source/destination candidates，再以 noexcept swap 发布；失败不得留下半边 mutation。
 
 ## Save 与状态
@@ -46,5 +46,5 @@ description: "实现或审查 FastXLSX In-memory `WorksheetEditor`。用于 stri
 
 - 覆盖 strict typed diagnostics、explicit lossy、policy mismatch、guardrail、clean no-op、duplicate later-wins 和 failure-before-state-change。
 - 结构/transfer 覆盖 overlap snapshot、formula boundaries、style ownership、cross-owner rejection 和双边 dirty ownership。
-- Structural metadata 覆盖 row/column insert/delete 的 range translation、边界/overlap/schema rejection、metadata 与 CellStore 双候选 no-pollution、公式/cell/style preservation、unknown-part preservation 及 save retry/reopen；未接入对象必须有明确 non-sync regression。
+- Structural metadata 的 merged-cell focused gate 覆盖四轴 before/after/intersection、完整删除/single-cell 退化/container cleanup、source order/count、prefixed root + regenerated sheetData/row/cell namespace、空 CellStore dirty、bounds/schema/opaque-content rejection、metadata 与 CellStore 双候选 no-pollution、package staging hook、公式/cell/style/unknown-part preservation及 save retry/reopen；auto filter/data validations 接入时独立补测试，其他对象保持明确 non-sync regression。
 - 保存覆盖 post-stage failure、output protection、retry 最新值、reopen、move/reacquire 和 unknown-part preservation。

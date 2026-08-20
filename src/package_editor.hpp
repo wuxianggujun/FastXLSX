@@ -26,6 +26,7 @@ namespace fastxlsx::detail {
 
 enum class WorksheetFreezePaneRewriteOperation;
 enum class WorksheetMergedCellRewriteOperation;
+enum class WorksheetRangeStructuralEditKind;
 
 enum class ClassicNoteSourceEditPolicy {
     RejectSourceOwned,
@@ -664,6 +665,13 @@ public:
         std::string_view sheet_name,
         CellRange range,
         WorksheetMergedCellRewriteOperation operation);
+    // Translates all worksheet-root merged ranges for one row/column
+    // structural edit and commits at most one staged worksheet replacement.
+    [[nodiscard]] bool rewrite_merged_cells_for_structural_edit_by_name(
+        std::string_view sheet_name,
+        WorksheetRangeStructuralEditKind kind,
+        std::uint32_t first,
+        std::uint32_t count);
     // Internal by-name staged-output variant for worksheet replacement. Resolves
     // the sheet name through the same planned/source workbook catalog path as
     // the chunk-source by-name helper, then validates and audits the provided

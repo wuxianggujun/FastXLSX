@@ -39,6 +39,9 @@ StyleId make_source_style_id(std::uint32_t value) noexcept
 
 namespace {
 
+constexpr std::string_view spreadsheetml_namespace =
+    "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+
 void validate_position(std::uint32_t row, std::uint32_t column)
 {
     (void)cell_reference(row, column);
@@ -652,6 +655,21 @@ std::string_view raw_tag_name(std::string_view raw_tag)
         ++end;
     }
     return local_xml_name(body.substr(0, end));
+}
+
+std::string raw_tag_prefix(std::string_view raw_tag)
+{
+    std::string_view body = tag_body(raw_tag);
+    std::size_t end = 0;
+    while (end < body.size() && !is_space(body[end]) && body[end] != '/'
+        && body[end] != '?') {
+        ++end;
+    }
+    const std::string_view qualified_name = body.substr(0, end);
+    const std::size_t separator = qualified_name.find(':');
+    return separator == std::string_view::npos
+        ? std::string {}
+        : std::string(qualified_name.substr(0, separator));
 }
 
 int hex_digit_value(char ch)
@@ -1449,10 +1467,12 @@ class CellStoreSheetDataChunkSourceState {
 public:
     explicit CellStoreSheetDataChunkSourceState(const CellStore& store,
         std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider =
-            {})
+            {},
+        std::string element_prefix = {})
         : current_(store.records().begin())
         , end_(store.records().end())
         , shared_string_index_provider_(std::move(shared_string_index_provider))
+        , element_prefix_(std::move(element_prefix))
     {
     }
 
@@ -1461,7 +1481,18 @@ public:
         chunk.clear();
         if (!emitted_start_) {
             emitted_start_ = true;
-            chunk = "<sheetData>";
+            chunk = "<";
+            if (!element_prefix_.empty()) {
+                chunk += element_prefix_;
+                chunk += ":";
+            }
+            chunk += "sheetData";
+            if (!element_prefix_.empty()) {
+                chunk += " xmlns=\"";
+                chunk += spreadsheetml_namespace;
+                chunk += "\"";
+            }
+            chunk += ">";
             return true;
         }
 
@@ -1489,7 +1520,12 @@ public:
 
         if (!emitted_end_) {
             emitted_end_ = true;
-            chunk = "</sheetData>";
+            chunk = "</";
+            if (!element_prefix_.empty()) {
+                chunk += element_prefix_;
+                chunk += ":";
+            }
+            chunk += "sheetData>";
             return true;
         }
 
@@ -1512,6 +1548,7 @@ private:
     RecordIterator current_;
     RecordIterator end_;
     std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider_;
+    std::string element_prefix_;
     std::uint32_t current_row_ = 0;
     bool emitted_start_ = false;
     bool emitted_end_ = false;
@@ -2785,9 +2822,11 @@ CellValue CellRecord::to_value() const
     return value;
 }
 
-WorksheetInputChunkCallback cell_store_sheet_data_chunk_source(const CellStore& store)
+WorksheetInputChunkCallback cell_store_sheet_data_chunk_source(
+    const CellStore& store, std::string element_prefix)
 {
-    auto state = std::make_shared<CellStoreSheetDataChunkSourceState>(store);
+    auto state = std::make_shared<CellStoreSheetDataChunkSourceState>(
+        store, nullptr, std::move(element_prefix));
     return [state = std::move(state)](std::string& output_chunk) mutable {
         return state->read(output_chunk);
     };
@@ -2795,10 +2834,11 @@ WorksheetInputChunkCallback cell_store_sheet_data_chunk_source(const CellStore& 
 
 WorksheetInputChunkCallback cell_store_sheet_data_chunk_source_with_shared_strings(
     const CellStore& store,
-    std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider)
+    std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider,
+    std::string element_prefix)
 {
     auto state = std::make_shared<CellStoreSheetDataChunkSourceState>(
-        store, std::move(shared_string_index_provider));
+        store, std::move(shared_string_index_provider), std::move(element_prefix));
     return [state = std::move(state)](std::string& output_chunk) mutable {
         return state->read(output_chunk);
     };
@@ -2877,18 +2917,27 @@ CellStore load_cell_store_from_worksheet_chunks_with_shared_strings_provider(
     WorksheetEventReaderOptions reader_options,
     const SharedStringsProvider* shared_strings_provider,
     const SourceStyleValidator* source_style_validator = nullptr,
-    const SharedStringLossProvider* shared_string_loss_provider = nullptr)
+    const SharedStringLossProvider* shared_string_loss_provider = nullptr,
+    std::string* worksheet_element_prefix = nullptr)
 {
     CellStoreWorksheetLoader loader(
         std::move(options), shared_strings_provider, source_style_validator,
         shared_string_loss_provider);
+    std::string parsed_worksheet_element_prefix;
     scan_worksheet_events_from_chunk_source(
         read_next_chunk,
-        [&loader](const WorksheetEvent& event) {
+        [&loader, &parsed_worksheet_element_prefix](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::WorksheetStart) {
+                parsed_worksheet_element_prefix = raw_tag_prefix(event.raw_xml);
+            }
             loader.consume(event);
         },
         reader_options);
-    return loader.finish();
+    CellStore store = loader.finish();
+    if (worksheet_element_prefix != nullptr) {
+        *worksheet_element_prefix = std::move(parsed_worksheet_element_prefix);
+    }
+    return store;
 }
 
 CellStore load_cell_store_from_worksheet_chunks(
@@ -2922,7 +2971,7 @@ CellStore load_cell_store_from_worksheet_xml(
 
 CellStore load_cell_store_from_workbook_sheet(
     const PackageReader& reader, std::string_view sheet_name, CellStoreOptions options,
-    WorksheetEventReaderOptions reader_options)
+    WorksheetEventReaderOptions reader_options, std::string* worksheet_element_prefix)
 {
     const PartName worksheet_part = [&reader, sheet_name] {
         try {
@@ -2987,7 +3036,8 @@ CellStore load_cell_store_from_workbook_sheet(
             std::move(options), reader_options,
             &shared_strings_provider,
             &source_style_validator,
-            &shared_string_loss_provider);
+            &shared_string_loss_provider,
+            worksheet_element_prefix);
     } catch (const CellStoreMaterializationLossError&) {
         throw;
     } catch (const std::exception& error) {

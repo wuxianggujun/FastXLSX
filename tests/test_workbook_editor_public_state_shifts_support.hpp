@@ -11,10 +11,12 @@
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/workbook_editor.hpp>
 #include <fastxlsx/streaming_writer.hpp>
+#include <fastxlsx/worksheet_reader.hpp>
 
 #include "image_test_bytes.hpp"
 #include "zip_test_utils.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -2896,6 +2898,60 @@ std::filesystem::path write_two_sheet_source(std::string_view name)
     writer.close();
 
     return path;
+}
+
+std::filesystem::path write_two_sheet_source_with_merged_ranges(
+    std::string_view name, std::span<const fastxlsx::CellRange> merged_ranges)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2")});
+        for (const fastxlsx::CellRange range : merged_ranges) {
+            data.merge_cells(range);
+        }
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+    return path;
+}
+
+std::vector<fastxlsx::CellRange> read_worksheet_merged_ranges(
+    const std::filesystem::path& path, std::string_view sheet_name = "Data")
+{
+    const fastxlsx::WorkbookReader reader = fastxlsx::WorkbookReader::open(path);
+    std::vector<fastxlsx::CellRange> ranges;
+    fastxlsx::WorksheetMetadataReadCallbacks callbacks;
+    callbacks.on_merged_cell =
+        [&](const fastxlsx::WorksheetMergedCellView& merged) {
+            ranges.push_back(merged.range);
+        };
+    (void)reader.read_worksheet_metadata(sheet_name, callbacks);
+    return ranges;
+}
+
+void check_merged_ranges_equal(const std::vector<fastxlsx::CellRange>& actual,
+    std::span<const fastxlsx::CellRange> expected, std::string_view scenario)
+{
+    check(actual.size() == expected.size(),
+        std::string(scenario) + " should expose the expected merged-range count");
+    const std::size_t comparable = std::min(actual.size(), expected.size());
+    for (std::size_t index = 0; index < comparable; ++index) {
+        check(actual[index].first_row == expected[index].first_row
+                && actual[index].first_column == expected[index].first_column
+                && actual[index].last_row == expected[index].last_row
+                && actual[index].last_column == expected[index].last_column,
+            std::string(scenario) + " should preserve transformed source order at index "
+                + std::to_string(index));
+    }
 }
 
 std::filesystem::path write_two_sheet_source_with_stationary_formula(

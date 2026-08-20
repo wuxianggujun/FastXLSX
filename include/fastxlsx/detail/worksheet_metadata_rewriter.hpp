@@ -130,6 +130,26 @@ struct WorksheetMergedCellRewritePlan {
     std::string element_prefix;
 };
 
+enum class WorksheetRangeStructuralEditKind {
+    InsertRows,
+    DeleteRows,
+    InsertColumns,
+    DeleteColumns,
+};
+
+struct WorksheetRangeStructuralEdit {
+    WorksheetRangeStructuralEditKind kind =
+        WorksheetRangeStructuralEditKind::InsertRows;
+    std::uint32_t first = 0;
+    std::uint32_t count = 0;
+};
+
+struct WorksheetMergedCellStructuralRewritePlan {
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+    std::string replacement_xml;
+};
+
 enum class WorksheetInternalHyperlinkRewriteAction {
     InsertContainerBefore,
     AppendBeforeContainerClose,
@@ -338,6 +358,21 @@ void write_worksheet_merged_cell_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::string_view merge_cell_xml,
     const WorksheetMergedCellRewritePlan& plan,
+    const std::filesystem::path& output_path);
+
+/// Audits the complete worksheet-root mergeCells container and plans one
+/// atomic row/column structural translation. A missing or unchanged container
+/// returns no plan; ranges that collapse to one cell are removed.
+[[nodiscard]] std::optional<WorksheetMergedCellStructuralRewritePlan>
+plan_worksheet_merged_cell_structural_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    WorksheetRangeStructuralEdit edit);
+
+/// Replaces or removes the complete mergeCells container selected by a
+/// structural rewrite plan while preserving all worksheet bytes outside it.
+void write_worksheet_merged_cell_structural_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetMergedCellStructuralRewritePlan& plan,
     const std::filesystem::path& output_path);
 
 } // namespace fastxlsx::detail

@@ -4173,6 +4173,164 @@ DataValidationStructuralScan scan_worksheet_data_validation_locations(
     return result;
 }
 
+struct HyperlinkStructuralLocation {
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+    std::uint64_t opening_end_offset = 0;
+    std::string opening_xml;
+};
+
+struct HyperlinkStructuralScan {
+    bool saw_container = false;
+    std::uint64_t container_start_offset = 0;
+    std::uint64_t container_end_offset = 0;
+    std::vector<HyperlinkStructuralLocation> hyperlinks;
+};
+
+HyperlinkStructuralScan scan_worksheet_hyperlink_locations(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::size_t expected_hyperlink_count)
+{
+    enum class FrameRole {
+        Generic,
+        Container,
+        Hyperlink,
+    };
+    struct Frame {
+        std::string local_name;
+        std::string element_prefix;
+        FrameRole role = FrameRole::Generic;
+        std::optional<std::size_t> hyperlink_index;
+    };
+
+    HyperlinkStructuralScan result;
+    std::vector<Frame> stack;
+    std::string worksheet_element_prefix;
+    bool saw_worksheet_start = false;
+    bool saw_sheet_data_end = false;
+    bool saw_worksheet_end = false;
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::WorksheetStart) {
+                if (saw_worksheet_start || event.self_closing) {
+                    throw FastXlsxError(
+                        "worksheet hyperlink structural scan found an invalid worksheet root");
+                }
+                saw_worksheet_start = true;
+                worksheet_element_prefix =
+                    xml_element_prefix(event.raw_xml, "worksheet");
+                return;
+            }
+            if (event.kind == WorksheetEventKind::SheetDataEnd) {
+                saw_sheet_data_end = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                if (!event.self_closing) {
+                    saw_worksheet_end = true;
+                }
+                return;
+            }
+            if (event.kind != WorksheetEventKind::Metadata) {
+                return;
+            }
+
+            const std::string element_prefix =
+                xml_element_prefix(event.raw_xml, event.element_name);
+            if (is_closing_tag(event.raw_xml)) {
+                if (stack.empty() || stack.back().local_name != event.element_name
+                    || stack.back().element_prefix != element_prefix) {
+                    throw FastXlsxError(
+                        "worksheet hyperlink structural scan found mismatched QName nesting");
+                }
+                Frame frame = std::move(stack.back());
+                stack.pop_back();
+                if (frame.role == FrameRole::Hyperlink) {
+                    if (!frame.hyperlink_index.has_value()
+                        || *frame.hyperlink_index >= result.hyperlinks.size()) {
+                        throw FastXlsxError(
+                            "worksheet hyperlink structural scan lost a hyperlink boundary");
+                    }
+                    result.hyperlinks[*frame.hyperlink_index].source_end_offset =
+                        event_end_offset(event);
+                } else if (frame.role == FrameRole::Container) {
+                    result.container_end_offset = event_end_offset(event);
+                }
+                return;
+            }
+
+            const bool top_level = stack.empty();
+            const bool direct_container_child = stack.size() == 1U
+                && stack.back().role == FrameRole::Container;
+            FrameRole role = FrameRole::Generic;
+            std::optional<std::size_t> hyperlink_index;
+
+            if (top_level && event.element_name == "hyperlinks"
+                && element_prefix == worksheet_element_prefix) {
+                if (!saw_sheet_data_end || result.saw_container) {
+                    throw FastXlsxError(
+                        "worksheet hyperlink structural scan found an ambiguous container");
+                }
+                result.saw_container = true;
+                result.container_start_offset = event.raw_xml_offset;
+                role = FrameRole::Container;
+                if (event.self_closing) {
+                    result.container_end_offset = event_end_offset(event);
+                }
+            } else if (direct_container_child) {
+                if (event.element_name != "hyperlink"
+                    || element_prefix != worksheet_element_prefix) {
+                    throw FastXlsxError(
+                        "worksheet hyperlink structural scan found an unsupported direct child");
+                }
+                const std::size_t index = result.hyperlinks.size();
+                if (index >= expected_hyperlink_count) {
+                    throw FastXlsxError(
+                        "worksheet hyperlink structural scan found an unexpected child");
+                }
+                result.hyperlinks.push_back(HyperlinkStructuralLocation {
+                    event.raw_xml_offset,
+                    event.self_closing ? event_end_offset(event) : 0,
+                    event_end_offset(event),
+                    std::string(event.raw_xml),
+                });
+                role = FrameRole::Hyperlink;
+                hyperlink_index = index;
+            }
+
+            if (!event.self_closing) {
+                stack.push_back(Frame {
+                    std::string(event.element_name),
+                    element_prefix,
+                    role,
+                    hyperlink_index,
+                });
+            }
+        });
+
+    if (!stack.empty() || !saw_worksheet_start || !saw_sheet_data_end
+        || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "worksheet hyperlink structural scan ended at an invalid boundary");
+    }
+    if (result.hyperlinks.size() != expected_hyperlink_count) {
+        throw FastXlsxError(
+            "worksheet hyperlink structural scan disagrees with the strict projection");
+    }
+    if (result.saw_container && result.container_end_offset == 0) {
+        throw FastXlsxError(
+            "worksheet hyperlink structural scan found no container end");
+    }
+    for (const HyperlinkStructuralLocation& hyperlink : result.hyperlinks) {
+        if (hyperlink.source_end_offset == 0) {
+            throw FastXlsxError(
+                "worksheet hyperlink structural scan found no hyperlink end");
+        }
+    }
+    return result;
+}
+
 bool cell_ranges_equal(CellRange left, CellRange right) noexcept
 {
     return left.first_row == right.first_row
@@ -4253,8 +4411,9 @@ private:
     std::vector<int> lazy_;
 };
 
-void audit_data_validation_range_ownership(
-    std::vector<A1Range> ranges, std::string_view phase)
+void audit_structural_range_ownership(std::vector<A1Range> ranges,
+    std::string_view feature, std::string_view phase,
+    std::string_view range_label)
 {
     const auto less = [](const A1Range& left, const A1Range& right) {
         if (left.first.row != right.first.row) {
@@ -4271,8 +4430,9 @@ void audit_data_validation_range_ownership(
     std::sort(ranges.begin(), ranges.end(), less);
     for (std::size_t index = 1; index < ranges.size(); ++index) {
         if (a1_ranges_equal(ranges[index - 1U], ranges[index])) {
-            throw FastXlsxError("worksheet data validation " + std::string(phase)
-                + " sqref ranges contain a duplicate");
+            throw FastXlsxError("worksheet " + std::string(feature) + " "
+                + std::string(phase) + " " + std::string(range_label)
+                + " contain a duplicate");
         }
     }
 
@@ -4298,8 +4458,9 @@ void audit_data_validation_range_ownership(
             active.pop();
         }
         if (coverage.overlaps(range.first.column, range.last.column)) {
-            throw FastXlsxError("worksheet data validation " + std::string(phase)
-                + " sqref ranges overlap");
+            throw FastXlsxError("worksheet " + std::string(feature) + " "
+                + std::string(phase) + " " + std::string(range_label)
+                + " overlap");
         }
         coverage.add(range.first.column, range.last.column, 1);
         active.push(ActiveRange {
@@ -4568,7 +4729,8 @@ plan_worksheet_data_validation_structural_rewrite(
 
     const std::vector<A1Range> source_ranges =
         flatten_data_validation_ranges(validation_ranges);
-    audit_data_validation_range_ownership(source_ranges, "source");
+    audit_structural_range_ownership(
+        source_ranges, "data validation", "source", "sqref ranges");
     const DataValidationStructuralScan scan =
         scan_worksheet_data_validation_locations(
             read_next_chunk, validation_ranges.size());
@@ -4625,7 +4787,8 @@ plan_worksheet_data_validation_structural_rewrite(
 
     const std::vector<A1Range> final_ranges =
         flatten_data_validation_ranges(transformed_validations);
-    audit_data_validation_range_ownership(final_ranges, "translated");
+    audit_structural_range_ownership(
+        final_ranges, "data validation", "translated", "sqref ranges");
     if (!changed) {
         return std::nullopt;
     }
@@ -4683,6 +4846,137 @@ plan_worksheet_data_validation_structural_rewrite(
     if (plan.replacements.empty()) {
         throw FastXlsxError(
             "worksheet data-validation structural edit changed ranges without a replacement");
+    }
+    return plan;
+}
+
+std::optional<WorksheetHyperlinkStructuralRewritePlan>
+plan_worksheet_hyperlink_structural_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    WorksheetRangeStructuralEdit edit,
+    std::span<const WorksheetHyperlinkStructuralInput> hyperlinks)
+{
+    validate_range_structural_edit(edit);
+    if (edit.count == 0) {
+        return std::nullopt;
+    }
+
+    std::vector<A1Range> source_ranges;
+    source_ranges.reserve(hyperlinks.size());
+    for (const WorksheetHyperlinkStructuralInput& hyperlink : hyperlinks) {
+        (void)range_reference(hyperlink.range);
+        source_ranges.push_back(a1_range_from_cell_range(hyperlink.range));
+    }
+    audit_structural_range_ownership(
+        source_ranges, "hyperlink", "source", "refs");
+
+    const HyperlinkStructuralScan scan =
+        scan_worksheet_hyperlink_locations(read_next_chunk, hyperlinks.size());
+    if (hyperlinks.empty()) {
+        return std::nullopt;
+    }
+    if (!scan.saw_container) {
+        throw FastXlsxError(
+            "worksheet hyperlink strict projection has no matching container");
+    }
+
+    const bool edits_rows = edit.kind == WorksheetRangeStructuralEditKind::InsertRows
+        || edit.kind == WorksheetRangeStructuralEditKind::DeleteRows;
+    const std::uint32_t axis_limit = edits_rows ? 1048576U : 16384U;
+    std::vector<std::optional<CellRange>> transformed_ranges;
+    transformed_ranges.reserve(hyperlinks.size());
+    std::vector<A1Range> final_ranges;
+    final_ranges.reserve(hyperlinks.size());
+    bool changed = false;
+    for (const WorksheetHyperlinkStructuralInput& hyperlink : hyperlinks) {
+        A1Range transformed = a1_range_from_cell_range(hyperlink.range);
+        const TransformedRangeAxis axis = edits_rows
+            ? transform_range_axis(hyperlink.range.first_row,
+                  hyperlink.range.last_row, edit, axis_limit)
+            : transform_range_axis(hyperlink.range.first_column,
+                  hyperlink.range.last_column, edit, axis_limit);
+        if (axis.removed) {
+            transformed_ranges.push_back(std::nullopt);
+            changed = true;
+            continue;
+        }
+        if (edits_rows) {
+            transformed.first.row = axis.first;
+            transformed.last.row = axis.last;
+        } else {
+            transformed.first.column = axis.first;
+            transformed.last.column = axis.last;
+        }
+        const CellRange transformed_range {
+            transformed.first.row,
+            transformed.first.column,
+            transformed.last.row,
+            transformed.last.column,
+        };
+        changed = changed
+            || !cell_ranges_equal(hyperlink.range, transformed_range);
+        transformed_ranges.push_back(transformed_range);
+        final_ranges.push_back(transformed);
+    }
+    audit_structural_range_ownership(
+        final_ranges, "hyperlink", "translated", "refs");
+    if (!changed) {
+        return std::nullopt;
+    }
+
+    WorksheetHyperlinkStructuralRewritePlan plan;
+    const std::size_t final_hyperlink_count = final_ranges.size();
+    if (final_hyperlink_count == 0) {
+        plan.replacements.push_back(WorksheetStructuralMetadataReplacement {
+            scan.container_start_offset,
+            scan.container_end_offset,
+            {},
+        });
+    } else {
+        plan.replacements.reserve(hyperlinks.size());
+        for (std::size_t index = 0; index < hyperlinks.size(); ++index) {
+            const HyperlinkStructuralLocation& location = scan.hyperlinks[index];
+            if (!transformed_ranges[index].has_value()) {
+                plan.replacements.push_back(WorksheetStructuralMetadataReplacement {
+                    location.source_offset,
+                    location.source_end_offset,
+                    {},
+                });
+                continue;
+            }
+            if (cell_ranges_equal(
+                    hyperlinks[index].range, *transformed_ranges[index])) {
+                continue;
+            }
+            plan.replacements.push_back(WorksheetStructuralMetadataReplacement {
+                location.source_offset,
+                location.opening_end_offset,
+                opening_tag_with_attribute_value(location.opening_xml, "ref",
+                    range_reference(*transformed_ranges[index]), "hyperlink"),
+            });
+        }
+    }
+
+    std::unordered_set<std::string> surviving_relationship_ids;
+    for (std::size_t index = 0; index < hyperlinks.size(); ++index) {
+        if (transformed_ranges[index].has_value()
+            && !hyperlinks[index].relationship_id.empty()) {
+            surviving_relationship_ids.insert(hyperlinks[index].relationship_id);
+        }
+    }
+    std::unordered_set<std::string> scheduled_relationship_ids;
+    for (std::size_t index = 0; index < hyperlinks.size(); ++index) {
+        const std::string& relationship_id = hyperlinks[index].relationship_id;
+        if (transformed_ranges[index].has_value() || relationship_id.empty()
+            || surviving_relationship_ids.contains(relationship_id)
+            || !scheduled_relationship_ids.insert(relationship_id).second) {
+            continue;
+        }
+        plan.relationship_ids_to_remove.push_back(relationship_id);
+    }
+    if (plan.replacements.empty()) {
+        throw FastXlsxError(
+            "worksheet hyperlink structural edit changed refs without a replacement");
     }
     return plan;
 }
@@ -5316,7 +5610,12 @@ void write_worksheet_structural_metadata_rewrite(
         plan.data_validations.has_value()
         ? plan.data_validations->replacements.size()
         : 0U;
-    replacements.reserve(2U + data_validation_replacement_count);
+    const std::size_t hyperlink_replacement_count =
+        plan.hyperlinks.has_value()
+        ? plan.hyperlinks->replacements.size()
+        : 0U;
+    replacements.reserve(
+        2U + data_validation_replacement_count + hyperlink_replacement_count);
     if (plan.auto_filter.has_value()) {
         replacements.push_back(StructuralReplacement {
             plan.auto_filter->source_offset,
@@ -5334,6 +5633,16 @@ void write_worksheet_structural_metadata_rewrite(
     if (plan.data_validations.has_value()) {
         for (const WorksheetStructuralMetadataReplacement& replacement :
             plan.data_validations->replacements) {
+            replacements.push_back(StructuralReplacement {
+                replacement.source_offset,
+                replacement.source_end_offset,
+                replacement.replacement_xml,
+            });
+        }
+    }
+    if (plan.hyperlinks.has_value()) {
+        for (const WorksheetStructuralMetadataReplacement& replacement :
+            plan.hyperlinks->replacements) {
             replacements.push_back(StructuralReplacement {
                 replacement.source_offset,
                 replacement.source_end_offset,

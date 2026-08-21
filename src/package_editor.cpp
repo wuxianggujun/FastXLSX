@@ -3,6 +3,7 @@
 #include "worksheet_comment_reader.hpp"
 #include "worksheet_conditional_format_reader.hpp"
 #include "worksheet_data_validation_reader.hpp"
+#include "worksheet_hyperlink_reader.hpp"
 #include "worksheet_table_reader.hpp"
 
 #include <fastxlsx/detail/formula_reference_audit.hpp>
@@ -8520,7 +8521,8 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     std::optional<SinglePassWorksheetTransformStats> single_pass_stats,
     std::vector<Relationship> relationship_additions,
     std::optional<ClassicNotePackageUpdate> classic_note_update,
-    std::optional<BasicTablePackageUpdate> basic_table_update)
+    std::optional<BasicTablePackageUpdate> basic_table_update,
+    std::optional<WorksheetHyperlinkPackageUpdate> hyperlink_update)
 {
     const auto staged_commit_started = std::chrono::steady_clock::now();
     if (chunks.empty()) {
@@ -8576,13 +8578,39 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
         && basic_table_update->action == BasicTablePackageUpdate::Action::Replace;
     const bool remove_basic_table = basic_table_update.has_value()
         && basic_table_update->action == BasicTablePackageUpdate::Action::Remove;
+    const bool remove_hyperlink_relationships = hyperlink_update.has_value()
+        && !hyperlink_update->relationship_ids_to_remove.empty();
     const bool rewrite_worksheet_relationships =
-        !relationship_additions.empty() || remove_classic_notes || remove_basic_table;
+        !relationship_additions.empty() || remove_classic_notes || remove_basic_table
+        || remove_hyperlink_relationships;
     const bool rewrite_classic_note_content_types = classic_note_update.has_value();
     const bool rewrite_basic_table_content_types = add_basic_table || remove_basic_table;
     for (Relationship& relationship : relationship_additions) {
         updated_manifest.add_relationship(
             target_worksheet_part, std::move(relationship));
+    }
+    if (remove_hyperlink_relationships) {
+        RelationshipSet* worksheet_relationships =
+            updated_manifest.relationships_for(target_worksheet_part);
+        if (worksheet_relationships == nullptr) {
+            throw FastXlsxError(
+                "worksheet hyperlink removal requires worksheet relationships");
+        }
+        for (const std::string& relationship_id :
+            hyperlink_update->relationship_ids_to_remove) {
+            const Relationship* relationship =
+                worksheet_relationships->find_by_id(relationship_id);
+            if (relationship == nullptr
+                || relationship->type != relationship_type_hyperlink
+                || relationship->target_mode != Relationship::TargetMode::External) {
+                throw FastXlsxError(
+                    "worksheet hyperlink removal relationship is not an owned external hyperlink");
+            }
+            if (worksheet_relationships->remove_by_id(relationship_id) != 1) {
+                throw FastXlsxError(
+                    "worksheet hyperlink removal could not remove its relationship");
+            }
+        }
     }
     if (classic_note_update.has_value() && !remove_classic_notes) {
         updated_manifest.content_types().add_default(
@@ -8828,6 +8856,8 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
                           ? "worksheet relationships updated for "
                             "final classic note removal"
                           : "worksheet relationships updated for generated classic note parts")
+                : remove_hyperlink_relationships
+                ? "worksheet relationships updated for structural hyperlink removal"
                 : "worksheet relationships updated for external hyperlink edit",
             PackageEntryAuditKind::SourceRelationships, target_worksheet_part.value());
     }
@@ -10196,12 +10226,110 @@ PackageEditor::rewrite_structural_metadata_by_name(
                 return validation_planning_reader(chunk);
             },
             edit, validation_ranges);
+
+    std::optional<RelationshipSet> prospective_relationships;
+    if (const RelationshipSet* current_relationships =
+            manifest_.relationships_for(worksheet_part)) {
+        prospective_relationships = *current_relationships;
+    }
+    std::vector<WorksheetHyperlinkStructuralInput> hyperlinks;
+    WorksheetHyperlinkInternalCallbacks hyperlink_internal_callbacks;
+    hyperlink_internal_callbacks.on_hyperlink =
+        [&](const WorksheetHyperlinkView& hyperlink,
+            std::string_view relationship_id) {
+            hyperlinks.push_back(WorksheetHyperlinkStructuralInput {
+                hyperlink.range,
+                std::string(relationship_id),
+            });
+        };
+    CurrentWorksheetInputChunkReader hyperlink_projection_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for hyperlink structural audit");
+    const WorksheetHyperlinkReadSummary hyperlink_summary =
+        read_worksheet_hyperlinks_from_chunk_source(
+            [&](std::string& chunk) {
+                return hyperlink_projection_reader(chunk);
+            },
+            prospective_relationships.has_value()
+                ? &*prospective_relationships
+                : nullptr,
+            {}, {}, hyperlink_internal_callbacks);
+    if (hyperlink_summary.hyperlink_count
+        != static_cast<std::uint64_t>(hyperlinks.size())) {
+        throw FastXlsxError(
+            "worksheet hyperlink structural projection count is inconsistent");
+    }
+
+    CurrentWorksheetInputChunkReader hyperlink_planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for hyperlink structural planning");
+    rewrite_plan.hyperlinks =
+        plan_worksheet_hyperlink_structural_rewrite(
+            [&](std::string& chunk) {
+                return hyperlink_planning_reader(chunk);
+            },
+            edit, hyperlinks);
+
+    if (rewrite_plan.hyperlinks.has_value()
+        && !rewrite_plan.hyperlinks->relationship_ids_to_remove.empty()) {
+        WorksheetRelationshipReferenceScanner relationship_scanner;
+        CurrentWorksheetInputChunkReader relationship_scan_reader(
+            reader_, worksheet_part, input_source,
+            "current worksheet input for structural hyperlink relationship ownership audit");
+        scan_worksheet_relationship_references_from_chunk_source(
+            relationship_scanner,
+            [&](std::string& chunk) {
+                return relationship_scan_reader(chunk);
+            });
+
+        if (!prospective_relationships.has_value()) {
+            throw FastXlsxError(
+                "worksheet structural hyperlink removal requires worksheet relationships");
+        }
+        for (const std::string& relationship_id :
+            rewrite_plan.hyperlinks->relationship_ids_to_remove) {
+            bool saw_hyperlink_reference = false;
+            for (const WorksheetRelationshipReference& reference :
+                relationship_scanner.references()) {
+                if (reference.relationship_id != relationship_id) {
+                    continue;
+                }
+                if (reference.element != "hyperlink") {
+                    throw FastXlsxError(
+                        "worksheet structural hyperlink removal cannot prove exclusive "
+                        "relationship-id ownership");
+                }
+                saw_hyperlink_reference = true;
+            }
+            if (!saw_hyperlink_reference) {
+                throw FastXlsxError(
+                    "worksheet structural hyperlink removal relationship-id audit "
+                    "found no matching hyperlink reference");
+            }
+
+            const Relationship* relationship =
+                prospective_relationships->find_by_id(relationship_id);
+            if (relationship == nullptr
+                || relationship->type != relationship_type_hyperlink
+                || relationship->target_mode != Relationship::TargetMode::External) {
+                throw FastXlsxError(
+                    "worksheet structural hyperlink removal target is not an external "
+                    "hyperlink relationship");
+            }
+            if (prospective_relationships->remove_by_id(relationship_id) != 1) {
+                throw FastXlsxError(
+                    "worksheet structural hyperlink removal could not stage its relationship");
+            }
+        }
+    }
+
     result.auto_filter_changed = rewrite_plan.auto_filter.has_value();
     if (rewrite_plan.auto_filter.has_value()) {
         result.auto_filter_range = rewrite_plan.auto_filter->final_range;
     }
     result.merged_cells_changed = rewrite_plan.merged_cells.has_value();
     result.data_validations_changed = rewrite_plan.data_validations.has_value();
+    result.hyperlinks_changed = rewrite_plan.hyperlinks.has_value();
     if (!result.changed()) {
         return result;
     }
@@ -10219,15 +10347,40 @@ PackageEditor::rewrite_structural_metadata_by_name(
     PackageEntryChunkReader staged_reader(rewritten_chunks);
     const WorksheetInputChunkCallback staged_source =
         [&](std::string& chunk) { return staged_reader(chunk); };
+    WorksheetReplacementChunkAuditResult replacement_audit =
+        worksheet_replacement_audits_from_chunk_source(
+            worksheet_part, staged_source,
+            prospective_relationships.has_value()
+                ? &*prospective_relationships
+                : nullptr);
+    std::vector<PackageEntryChunk> final_chunks {
+        PackageEntryChunk::file(rewritten_source_file.path())};
+
+    std::optional<WorksheetHyperlinkPackageUpdate> hyperlink_update;
+    if (rewrite_plan.hyperlinks.has_value()
+        && !rewrite_plan.hyperlinks->relationship_ids_to_remove.empty()) {
+        hyperlink_update = WorksheetHyperlinkPackageUpdate {
+            rewrite_plan.hyperlinks->relationship_ids_to_remove,
+        };
+    }
     std::vector<std::string> commit_notes;
     commit_notes.emplace_back(
         "materialized worksheet structural edit translates supported worksheet-root "
-        "auto-filter, merged-cell, and data-validation metadata in one transaction "
-        "without relationship, content-type, or calc mutation");
-    replace_worksheet_part_from_chunk_source_with_commit_notes(
-        worksheet_part, staged_source, worksheet_metadata_reference_policy(),
-        "materialized worksheet structural metadata synchronization",
-        std::move(commit_notes));
+        "auto-filter, merged-cell, data-validation, and hyperlink metadata in one "
+        "transaction; external hyperlink relationships are removed only after "
+        "exclusive worksheet-reference ownership is proven");
+    replace_worksheet_part_prevalidated_chunks(
+        worksheet_part, std::move(final_chunks),
+        worksheet_metadata_reference_policy(),
+        std::move(replacement_audit.payload_audit.notes),
+        std::move(replacement_audit.payload_audit.audits),
+        std::move(replacement_audit.relationship_reference_audit.notes),
+        std::move(replacement_audit.relationship_reference_audit.audits),
+        "materialized worksheet structural metadata synchronization", true, true,
+        std::move(commit_notes), rewritten_source_file.path(),
+        PartWriteMode::StreamRewrite, std::nullopt, std::nullopt, {},
+        std::nullopt, std::nullopt, std::move(hyperlink_update));
+    rewritten_source_file.release();
     return result;
 }
 

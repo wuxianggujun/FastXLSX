@@ -526,10 +526,12 @@ public:
     WorksheetHyperlinkProjectionReader(
         const RelationshipSet* worksheet_relationships,
         const WorksheetHyperlinkReadCallbacks& callbacks,
-        WorksheetHyperlinkReaderOptions options)
+        WorksheetHyperlinkReaderOptions options,
+        const WorksheetHyperlinkInternalCallbacks& internal_callbacks)
         : worksheet_relationships_(worksheet_relationships)
         , callbacks_(callbacks)
         , options_(options)
+        , internal_callbacks_(internal_callbacks)
     {
     }
 
@@ -911,6 +913,7 @@ private:
 
         ++hyperlink_child_count_;
         active_ = std::move(view);
+        active_relationship_id_ = relationship_id.value_or(std::string {});
         if (tag.self_closing) {
             finish_active_hyperlink();
             restore_namespace_declarations(namespace_changes);
@@ -990,9 +993,13 @@ private:
         } else {
             ++summary_.external_hyperlink_count;
         }
+        if (internal_callbacks_.on_hyperlink) {
+            internal_callbacks_.on_hyperlink(value, active_relationship_id_);
+        }
         if (callbacks_.on_hyperlink) {
             callbacks_.on_hyperlink(value);
         }
+        active_relationship_id_.clear();
     }
 
     static bool is_namespace_declaration(std::string_view name) noexcept
@@ -1048,9 +1055,11 @@ private:
     const RelationshipSet* worksheet_relationships_ = nullptr;
     const WorksheetHyperlinkReadCallbacks& callbacks_;
     WorksheetHyperlinkReaderOptions options_;
+    const WorksheetHyperlinkInternalCallbacks& internal_callbacks_;
     WorksheetHyperlinkReadSummary summary_;
     std::vector<Frame> stack_;
     std::optional<WorksheetHyperlinkView> active_;
+    std::string active_relationship_id_;
     std::vector<CellRange> retained_ranges_;
     std::vector<std::string> relationship_prefixes_;
     std::string root_prefix_;
@@ -1071,7 +1080,8 @@ WorksheetHyperlinkReadSummary read_worksheet_hyperlinks_from_chunk_source(
     const WorksheetInputChunkCallback& read_next_chunk,
     const RelationshipSet* worksheet_relationships,
     const WorksheetHyperlinkReadCallbacks& callbacks,
-    WorksheetHyperlinkReaderOptions options)
+    WorksheetHyperlinkReaderOptions options,
+    const WorksheetHyperlinkInternalCallbacks& internal_callbacks)
 {
     if (options.max_xml_window_bytes == 0) {
         throw FastXlsxError(
@@ -1103,7 +1113,7 @@ WorksheetHyperlinkReadSummary read_worksheet_hyperlinks_from_chunk_source(
     }
 
     WorksheetHyperlinkProjectionReader projection(
-        worksheet_relationships, callbacks, options);
+        worksheet_relationships, callbacks, options, internal_callbacks);
     WorksheetEventReaderOptions event_options;
     event_options.max_window_bytes = options.max_xml_window_bytes;
     event_options.copy_context_attributes = false;

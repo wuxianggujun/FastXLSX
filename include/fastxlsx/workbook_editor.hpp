@@ -1062,8 +1062,9 @@ public:
     /// references before the insertion point stay fixed and references at or
     /// after it move down. `$` markers are preserved but do not suppress a
     /// structural row adjustment. Worksheet-root merged ranges, the root
-    /// autoFilter range, and strictly projected data-validation `sqref` ranges
-    /// are audited and translated in the same transaction:
+    /// autoFilter range, strictly projected data-validation `sqref` ranges, and
+    /// strictly projected hyperlink `ref` ranges are audited and translated in
+    /// the same transaction:
     /// ranges before the insertion stay fixed, ranges beginning at or after it
     /// shift down, and ranges spanning the insertion point expand. A changed
     /// autoFilter with criteria/sort child elements rejects rather than
@@ -1072,10 +1073,10 @@ public:
     /// filter children, duplicate/overlapping validation ranges, more than 64K
     /// aggregate validation ranges, or an Excel-bound overflow reject before
     /// either the cell candidate or combined metadata replacement is published.
-    /// Validation rule/formula/prompt/error payload remains byte-preserved. It
-    /// does not update tables, conditional formatting, hyperlinks,
-    /// drawings/charts/VBA, defined names,
-    /// relationships,
+    /// Validation rule/formula/prompt/error payload remains byte-preserved.
+    /// Hyperlink location/target/display/tooltip and external relationships are
+    /// unchanged by insertion. It does not update tables, conditional
+    /// formatting, drawings/charts/VBA, defined names, other relationships,
     /// sharedStrings/styles metadata, or calcChain beyond the existing
     /// worksheet rewrite policy.
     /// This is not a complete Excel row-insert operation and not a large-file
@@ -1102,20 +1103,26 @@ public:
     /// before the deleted rows stay fixed, later references move up, and
     /// references into deleted rows become `#REF!`. `$` markers are preserved
     /// on surviving references but do not suppress structural adjustment. The
-    /// Worksheet-root merged ranges, the root autoFilter, and strictly projected
-    /// data-validation `sqref` ranges are audited in the same transaction. A
+    /// Worksheet-root merged ranges, the root autoFilter, strictly projected
+    /// data-validation `sqref` ranges, and strictly projected hyperlink `ref`
+    /// ranges are audited in the same transaction. A
     /// range after the deletion shifts up and an
     /// intersecting range is clipped/compressed. A fully deleted merged range
     /// or single-cell merged result is removed; a fully deleted autoFilter is
     /// removed, while valid single-cell auto-filter and validation results remain.
     /// A validation with no surviving ranges is removed, and the final removal
     /// removes the container. Its rule/formula/prompt/error payload is otherwise
-    /// byte-preserved. A surviving changed autoFilter with criteria/sort children
-    /// rejects. Any duplicate/overlapping validation range, 64K aggregate-range
-    /// overflow, invalid final overlap, or source schema failure leaves cells and
-    /// package state unchanged. The operation does not recalculate or repair
-    /// conditional formatting, hyperlinks, tables, drawings/charts/VBA,
-    /// relationships, sharedStrings/styles, or calcChain.
+    /// byte-preserved. A fully deleted hyperlink is removed, while a clipped
+    /// single-cell hyperlink remains; its location/target/display/tooltip bytes
+    /// are preserved. An external relationship is removed only when no surviving
+    /// hyperlink uses its id and that id is not referenced by another worksheet
+    /// element. A surviving changed autoFilter with criteria/sort children
+    /// rejects. Any duplicate/overlapping validation or hyperlink range, 64K
+    /// aggregate validation-range overflow, invalid final overlap, relationship
+    /// ownership ambiguity, or source schema failure leaves cells and package
+    /// state unchanged. The operation does not recalculate or repair conditional
+    /// formatting, tables, drawings/charts/VBA, other relationships,
+    /// sharedStrings/styles, or calcChain.
     /// This is not a complete Excel row deletion operation and not a large-file
     /// low-memory random-editing path.
     void delete_rows(std::uint32_t first_row, std::uint32_t row_count);
@@ -1144,8 +1151,9 @@ public:
     /// references before the insertion point stay fixed and references at or
     /// after it move right. `$` markers are preserved but do not suppress a
     /// structural column adjustment. Worksheet-root merged ranges, the root
-    /// autoFilter range, and strictly projected data-validation `sqref` ranges
-    /// are audited and translated in the same transaction:
+    /// autoFilter range, strictly projected data-validation `sqref` ranges, and
+    /// strictly projected hyperlink `ref` ranges are audited and translated in
+    /// the same transaction:
     /// ranges before the insertion stay fixed, ranges beginning at or after it
     /// shift right, and ranges spanning the insertion point expand. A changed
     /// autoFilter with criteria/sort child elements rejects. A metadata-only
@@ -1153,9 +1161,10 @@ public:
     /// ranges, duplicate/overlapping validation ranges, more than 64K aggregate
     /// validation ranges, unsupported filter children, or an Excel-bound
     /// overflow reject before either candidate is published. Validation
-    /// rule/formula/prompt/error payload remains byte-preserved. It does not
-    /// update tables, conditional formatting, hyperlinks,
-    /// drawings/charts/VBA, defined names, relationships,
+    /// rule/formula/prompt/error payload remains byte-preserved. Hyperlink
+    /// location/target/display/tooltip and external relationships are unchanged
+    /// by insertion. It does not update tables, conditional formatting,
+    /// drawings/charts/VBA, defined names, other relationships,
     /// sharedStrings/styles metadata, or calcChain beyond the existing
     /// worksheet rewrite policy.
     /// This is not a complete Excel column-insert operation and not a
@@ -1182,21 +1191,26 @@ public:
     /// before the deleted columns stay fixed, later references move left, and
     /// references into deleted columns become `#REF!`. `$` markers are
     /// preserved on surviving references but do not suppress structural
-    /// adjustment. Worksheet-root merged ranges, the root autoFilter, and
-    /// strictly projected data-validation `sqref` ranges are audited in the same
-    /// transaction. A range after the deletion shifts left
+    /// adjustment. Worksheet-root merged ranges, the root autoFilter, strictly
+    /// projected data-validation `sqref` ranges, and strictly projected
+    /// hyperlink `ref` ranges are audited in the same transaction. A range after
+    /// the deletion shifts left
     /// and an intersecting range is clipped/compressed. A fully deleted merged
     /// range or single-cell merged result is removed; a fully deleted
     /// autoFilter is removed, while valid single-cell auto-filter and validation
     /// results remain. A validation with no surviving ranges is removed, and the
     /// final removal removes the container. Its rule/formula/prompt/error payload
-    /// is otherwise byte-preserved. A surviving changed autoFilter with
-    /// criteria/sort children rejects. Duplicate/overlapping validation ranges,
-    /// a 64K aggregate-range overflow, invalid final overlap, or source schema
-    /// failure leaves cells and package state unchanged. The operation does not
-    /// recalculate or repair conditional formatting, hyperlinks, tables,
-    /// drawings/charts/VBA,
-    /// relationships, sharedStrings/styles, or calcChain.
+    /// is otherwise byte-preserved. A fully deleted hyperlink is removed, while
+    /// a clipped single-cell hyperlink remains; its location/target/display/
+    /// tooltip bytes are preserved. An external relationship is removed only
+    /// when no surviving hyperlink uses its id and that id is not referenced by
+    /// another worksheet element. A surviving changed autoFilter with criteria/
+    /// sort children rejects. Duplicate/overlapping validation or hyperlink
+    /// ranges, a 64K aggregate validation-range overflow, invalid final overlap,
+    /// relationship ownership ambiguity, or source schema failure leaves cells
+    /// and package state unchanged. The operation does not recalculate or repair
+    /// conditional formatting, tables, drawings/charts/VBA, other relationships,
+    /// sharedStrings/styles, or calcChain.
     /// This is not a complete Excel column deletion operation and not a
     /// large-file low-memory random-editing path.
     void delete_columns(std::uint32_t first_column, std::uint32_t column_count);

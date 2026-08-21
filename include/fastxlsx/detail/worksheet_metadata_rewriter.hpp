@@ -169,6 +169,18 @@ struct WorksheetStructuralMetadataReplacement {
     std::string replacement_xml;
 };
 
+struct WorksheetHyperlinkStructuralInput {
+    CellRange range;
+    // Empty for an internal location; populated only for external hyperlinks.
+    std::string relationship_id;
+};
+
+struct WorksheetHyperlinkStructuralRewritePlan {
+    std::vector<WorksheetStructuralMetadataReplacement> replacements;
+    // Relationship ids whose hyperlink references are all removed by this edit.
+    std::vector<std::string> relationship_ids_to_remove;
+};
+
 struct WorksheetDataValidationStructuralRewritePlan {
     std::vector<WorksheetStructuralMetadataReplacement> replacements;
 };
@@ -177,6 +189,7 @@ struct WorksheetStructuralMetadataRewritePlan {
     std::optional<WorksheetAutoFilterStructuralRewritePlan> auto_filter;
     std::optional<WorksheetMergedCellStructuralRewritePlan> merged_cells;
     std::optional<WorksheetDataValidationStructuralRewritePlan> data_validations;
+    std::optional<WorksheetHyperlinkStructuralRewritePlan> hyperlinks;
 };
 
 enum class WorksheetInternalHyperlinkRewriteAction {
@@ -377,6 +390,17 @@ plan_worksheet_data_validation_structural_rewrite(
     WorksheetRangeStructuralEdit edit,
     std::span<const std::vector<CellRange>> validation_ranges);
 
+/// Plans an atomic structural translation for every strictly projected
+/// worksheet-root hyperlink ref. Surviving hyperlink opening tags retain all
+/// bytes except ref; fully removed links and an empty final container are
+/// deleted. External relationship ids are returned only when no hyperlink using
+/// that id survives, so the package layer can complete its ownership audit.
+[[nodiscard]] std::optional<WorksheetHyperlinkStructuralRewritePlan>
+plan_worksheet_hyperlink_structural_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    WorksheetRangeStructuralEdit edit,
+    std::span<const WorksheetHyperlinkStructuralInput> hyperlinks);
+
 /// Audits primary sheet-view metadata and plans one frozen-pane set/clear.
 /// Clear returns no plan when workbookViewId=0 has no direct frozen pane.
 [[nodiscard]] std::optional<WorksheetFreezePaneRewritePlan>
@@ -416,8 +440,9 @@ plan_worksheet_merged_cell_structural_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     WorksheetRangeStructuralEdit edit);
 
-/// Applies the planned worksheet-root autoFilter, mergeCells, and data-validation
-/// structural replacements in one file-backed pass. The ranges must not overlap.
+/// Applies the planned worksheet-root autoFilter, mergeCells, data-validation,
+/// and hyperlink structural replacements in one file-backed pass. The ranges
+/// must not overlap.
 void write_worksheet_structural_metadata_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetStructuralMetadataRewritePlan& plan,

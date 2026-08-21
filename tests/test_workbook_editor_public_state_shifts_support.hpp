@@ -2988,6 +2988,102 @@ std::filesystem::path write_two_sheet_source_with_data_validations(
     return path;
 }
 
+struct StructuralHyperlinkFixture {
+    fastxlsx::CellRange range;
+    fastxlsx::WorksheetHyperlinkKind kind =
+        fastxlsx::WorksheetHyperlinkKind::Internal;
+    std::string target;
+    fastxlsx::HyperlinkOptions options;
+};
+
+std::string structural_test_column_reference(std::uint32_t column)
+{
+    if (column == 0 || column > 16384U) {
+        throw std::logic_error("structural hyperlink fixture column is out of range");
+    }
+
+    std::string result;
+    while (column != 0) {
+        --column;
+        result.insert(result.begin(), static_cast<char>('A' + column % 26U));
+        column /= 26U;
+    }
+    return result;
+}
+
+std::string structural_test_cell_reference(
+    std::uint32_t row, std::uint32_t column)
+{
+    if (row == 0 || row > 1048576U) {
+        throw std::logic_error("structural hyperlink fixture row is out of range");
+    }
+    return structural_test_column_reference(column) + std::to_string(row);
+}
+
+std::string structural_test_range_reference(fastxlsx::CellRange range)
+{
+    const std::string first = structural_test_cell_reference(
+        range.first_row, range.first_column);
+    const std::string last = structural_test_cell_reference(
+        range.last_row, range.last_column);
+    return first == last ? first : first + ":" + last;
+}
+
+std::filesystem::path write_two_sheet_source_with_hyperlinks(
+    std::string_view name,
+    std::span<const StructuralHyperlinkFixture> hyperlinks)
+{
+    const std::filesystem::path path = artifact(name);
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2")});
+        for (const StructuralHyperlinkFixture& hyperlink : hyperlinks) {
+            if (hyperlink.kind == fastxlsx::WorksheetHyperlinkKind::Internal) {
+                data.add_internal_hyperlink(hyperlink.range.first_row,
+                    hyperlink.range.first_column, hyperlink.target,
+                    hyperlink.options);
+            } else {
+                data.add_external_hyperlink(hyperlink.range.first_row,
+                    hyperlink.range.first_column, hyperlink.target,
+                    hyperlink.options);
+            }
+        }
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    bool needs_range_rewrite = false;
+    for (const StructuralHyperlinkFixture& hyperlink : hyperlinks) {
+        needs_range_rewrite = needs_range_rewrite
+            || hyperlink.range.first_row != hyperlink.range.last_row
+            || hyperlink.range.first_column != hyperlink.range.last_column;
+    }
+    if (needs_range_rewrite) {
+        auto entries = fastxlsx::test::read_zip_entries(path);
+        std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+        for (const StructuralHyperlinkFixture& hyperlink : hyperlinks) {
+            if (hyperlink.range.first_row == hyperlink.range.last_row
+                && hyperlink.range.first_column == hyperlink.range.last_column) {
+                continue;
+            }
+            const std::string source_reference = structural_test_cell_reference(
+                hyperlink.range.first_row, hyperlink.range.first_column);
+            replace_first_or_throw(worksheet_xml,
+                "ref=\"" + source_reference + "\"",
+                "ref=\"" + structural_test_range_reference(hyperlink.range) + "\"");
+        }
+        fastxlsx::test::write_stored_zip_entries(path, entries);
+    }
+    return path;
+}
+
 std::optional<fastxlsx::CellRange> read_worksheet_auto_filter_range(
     const std::filesystem::path& path, std::string_view sheet_name = "Data")
 {
@@ -3035,6 +3131,26 @@ read_worksheet_data_validation_views(
             "data-validation reader summary disagrees with collected callbacks");
     }
     return validations;
+}
+
+std::vector<fastxlsx::WorksheetHyperlinkView> read_worksheet_hyperlink_views(
+    const std::filesystem::path& path, std::string_view sheet_name = "Data")
+{
+    const fastxlsx::WorkbookReader reader = fastxlsx::WorkbookReader::open(path);
+    std::vector<fastxlsx::WorksheetHyperlinkView> hyperlinks;
+    fastxlsx::WorksheetHyperlinkReadCallbacks callbacks;
+    callbacks.on_hyperlink =
+        [&](const fastxlsx::WorksheetHyperlinkView& hyperlink) {
+            hyperlinks.push_back(hyperlink);
+        };
+    const fastxlsx::WorksheetHyperlinkReadSummary summary =
+        reader.read_worksheet_hyperlinks(sheet_name, callbacks);
+    if (summary.hyperlink_count
+        != static_cast<std::uint64_t>(hyperlinks.size())) {
+        throw std::runtime_error(
+            "hyperlink reader summary disagrees with collected callbacks");
+    }
+    return hyperlinks;
 }
 
 void check_merged_ranges_equal(const std::vector<fastxlsx::CellRange>& actual,
@@ -3092,6 +3208,36 @@ void check_data_validation_views_equal(
             std::string(scenario) + " ranges at index " + std::to_string(index));
         check_data_validation_rule_equal(actual[index].rule, expected_rules[index],
             std::string(scenario) + " rule at index " + std::to_string(index));
+    }
+}
+
+void check_hyperlink_views_equal(
+    const std::vector<fastxlsx::WorksheetHyperlinkView>& actual,
+    std::span<const StructuralHyperlinkFixture> expected,
+    std::string_view scenario)
+{
+    check(actual.size() == expected.size(),
+        std::string(scenario) + " should expose the expected hyperlink count");
+    const std::size_t comparable = std::min(actual.size(), expected.size());
+    for (std::size_t index = 0; index < comparable; ++index) {
+        const fastxlsx::WorksheetHyperlinkView& value = actual[index];
+        const StructuralHyperlinkFixture& fixture = expected[index];
+        check(value.index == index
+                && value.range.first_row == fixture.range.first_row
+                && value.range.first_column == fixture.range.first_column
+                && value.range.last_row == fixture.range.last_row
+                && value.range.last_column == fixture.range.last_column
+                && value.kind == fixture.kind
+                && value.options.display == fixture.options.display
+                && value.options.tooltip == fixture.options.tooltip
+                && (fixture.kind == fastxlsx::WorksheetHyperlinkKind::Internal
+                        ? value.location == fixture.target
+                            && value.external_target.empty()
+                        : value.external_target == fixture.target
+                            && value.location.empty()),
+            std::string(scenario)
+                + " should preserve range, kind, target, and options at index "
+                + std::to_string(index));
     }
 }
 

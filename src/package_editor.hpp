@@ -33,11 +33,12 @@ struct WorksheetStructuralMetadataRewriteResult {
     std::optional<CellRange> auto_filter_range;
     bool merged_cells_changed = false;
     bool data_validations_changed = false;
+    bool hyperlinks_changed = false;
 
     [[nodiscard]] bool changed() const noexcept
     {
         return auto_filter_changed || merged_cells_changed
-            || data_validations_changed;
+            || data_validations_changed || hyperlinks_changed;
     }
 };
 
@@ -856,6 +857,10 @@ private:
         std::uint32_t table_id = 0;
     };
 
+    struct WorksheetHyperlinkPackageUpdate {
+        std::vector<std::string> relationship_ids_to_remove;
+    };
+
     explicit PackageEditor(PackageReader reader);
     void add_conditional_format_by_name(std::string_view sheet_name,
         std::vector<CellRange> ranges, ConditionalFormatRule rule);
@@ -901,7 +906,8 @@ private:
         std::optional<SinglePassWorksheetTransformStats> single_pass_stats = std::nullopt,
         std::vector<Relationship> relationship_additions = {},
         std::optional<ClassicNotePackageUpdate> classic_note_update = std::nullopt,
-        std::optional<BasicTablePackageUpdate> basic_table_update = std::nullopt);
+        std::optional<BasicTablePackageUpdate> basic_table_update = std::nullopt,
+        std::optional<WorksheetHyperlinkPackageUpdate> hyperlink_update = std::nullopt);
 
     PackageReader reader_;
     PackageManifest manifest_;

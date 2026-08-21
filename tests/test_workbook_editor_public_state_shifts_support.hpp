@@ -2950,6 +2950,44 @@ std::filesystem::path write_two_sheet_source_with_auto_filter(
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_data_validations(
+    std::string_view name,
+    std::span<const std::vector<fastxlsx::CellRange>> validation_ranges,
+    std::span<const fastxlsx::DataValidationRule> validation_rules,
+    std::optional<fastxlsx::CellRange> auto_filter_range = std::nullopt,
+    std::span<const fastxlsx::CellRange> merged_ranges = {})
+{
+    if (validation_ranges.size() != validation_rules.size()) {
+        throw std::logic_error(
+            "data-validation fixture ranges and rules must have the same size");
+    }
+
+    const std::filesystem::path path = artifact(name);
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2")});
+        if (auto_filter_range.has_value()) {
+            data.set_auto_filter(*auto_filter_range);
+        }
+        for (const fastxlsx::CellRange range : merged_ranges) {
+            data.merge_cells(range);
+        }
+        for (std::size_t index = 0; index < validation_ranges.size(); ++index) {
+            data.add_data_validation(validation_ranges[index], validation_rules[index]);
+        }
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+    return path;
+}
+
 std::optional<fastxlsx::CellRange> read_worksheet_auto_filter_range(
     const std::filesystem::path& path, std::string_view sheet_name = "Data")
 {
@@ -2978,6 +3016,27 @@ std::vector<fastxlsx::CellRange> read_worksheet_merged_ranges(
     return ranges;
 }
 
+std::vector<fastxlsx::WorksheetDataValidationView>
+read_worksheet_data_validation_views(
+    const std::filesystem::path& path, std::string_view sheet_name = "Data")
+{
+    const fastxlsx::WorkbookReader reader = fastxlsx::WorkbookReader::open(path);
+    std::vector<fastxlsx::WorksheetDataValidationView> validations;
+    fastxlsx::WorksheetDataValidationReadCallbacks callbacks;
+    callbacks.on_data_validation =
+        [&](const fastxlsx::WorksheetDataValidationView& validation) {
+            validations.push_back(validation);
+        };
+    const fastxlsx::WorksheetDataValidationReadSummary summary =
+        reader.read_worksheet_data_validations(sheet_name, callbacks);
+    if (summary.validation_count
+        != static_cast<std::uint64_t>(validations.size())) {
+        throw std::runtime_error(
+            "data-validation reader summary disagrees with collected callbacks");
+    }
+    return validations;
+}
+
 void check_merged_ranges_equal(const std::vector<fastxlsx::CellRange>& actual,
     std::span<const fastxlsx::CellRange> expected, std::string_view scenario)
 {
@@ -2991,6 +3050,48 @@ void check_merged_ranges_equal(const std::vector<fastxlsx::CellRange>& actual,
                 && actual[index].last_column == expected[index].last_column,
             std::string(scenario) + " should preserve transformed source order at index "
                 + std::to_string(index));
+    }
+}
+
+void check_data_validation_rule_equal(const fastxlsx::DataValidationRule& actual,
+    const fastxlsx::DataValidationRule& expected, std::string_view scenario)
+{
+    check(actual.type == expected.type
+            && actual.operator_type == expected.operator_type
+            && actual.formula1 == expected.formula1
+            && actual.formula2 == expected.formula2
+            && actual.allow_blank == expected.allow_blank
+            && actual.hide_dropdown_arrow == expected.hide_dropdown_arrow
+            && actual.show_input_message == expected.show_input_message
+            && actual.show_error_message == expected.show_error_message
+            && actual.error_style == expected.error_style
+            && actual.prompt_title == expected.prompt_title
+            && actual.prompt == expected.prompt
+            && actual.error_title == expected.error_title
+            && actual.error == expected.error,
+        std::string(scenario) + " should preserve the complete validation rule");
+}
+
+void check_data_validation_views_equal(
+    const std::vector<fastxlsx::WorksheetDataValidationView>& actual,
+    std::span<const std::vector<fastxlsx::CellRange>> expected_ranges,
+    std::span<const fastxlsx::DataValidationRule> expected_rules,
+    std::string_view scenario)
+{
+    check(expected_ranges.size() == expected_rules.size(),
+        std::string(scenario) + " fixture should have matching range and rule counts");
+    check(actual.size() == expected_ranges.size(),
+        std::string(scenario) + " should expose the expected validation count");
+    const std::size_t comparable =
+        std::min(actual.size(), std::min(expected_ranges.size(), expected_rules.size()));
+    for (std::size_t index = 0; index < comparable; ++index) {
+        check(actual[index].index == index,
+            std::string(scenario) + " should retain source order at index "
+                + std::to_string(index));
+        check_merged_ranges_equal(actual[index].ranges, expected_ranges[index],
+            std::string(scenario) + " ranges at index " + std::to_string(index));
+        check_data_validation_rule_equal(actual[index].rule, expected_rules[index],
+            std::string(scenario) + " rule at index " + std::to_string(index));
     }
 }
 

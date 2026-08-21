@@ -3,12 +3,18 @@
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
 #include <fastxlsx/detail/worksheet_metadata_serializer.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace fastxlsx::detail {
+
+inline constexpr std::size_t worksheet_data_validation_structural_range_limit =
+    64U * 1024U;
 
 struct WorksheetInternalHyperlinkRewrite {
     std::string cell_reference;
@@ -157,9 +163,20 @@ struct WorksheetAutoFilterStructuralRewritePlan {
     std::optional<CellRange> final_range;
 };
 
+struct WorksheetStructuralMetadataReplacement {
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+    std::string replacement_xml;
+};
+
+struct WorksheetDataValidationStructuralRewritePlan {
+    std::vector<WorksheetStructuralMetadataReplacement> replacements;
+};
+
 struct WorksheetStructuralMetadataRewritePlan {
     std::optional<WorksheetAutoFilterStructuralRewritePlan> auto_filter;
     std::optional<WorksheetMergedCellStructuralRewritePlan> merged_cells;
+    std::optional<WorksheetDataValidationStructuralRewritePlan> data_validations;
 };
 
 enum class WorksheetInternalHyperlinkRewriteAction {
@@ -350,6 +367,16 @@ plan_worksheet_auto_filter_structural_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     WorksheetRangeStructuralEdit edit);
 
+/// Plans an atomic structural translation for every strictly projected
+/// worksheet-root data-validation sqref. Fully removed rules and an empty final
+/// container are deleted; surviving opening tags retain all bytes except sqref
+/// and, when children are removed, the container count value.
+[[nodiscard]] std::optional<WorksheetDataValidationStructuralRewritePlan>
+plan_worksheet_data_validation_structural_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    WorksheetRangeStructuralEdit edit,
+    std::span<const std::vector<CellRange>> validation_ranges);
+
 /// Audits primary sheet-view metadata and plans one frozen-pane set/clear.
 /// Clear returns no plan when workbookViewId=0 has no direct frozen pane.
 [[nodiscard]] std::optional<WorksheetFreezePaneRewritePlan>
@@ -389,8 +416,8 @@ plan_worksheet_merged_cell_structural_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     WorksheetRangeStructuralEdit edit);
 
-/// Applies the planned worksheet-root autoFilter and mergeCells structural
-/// replacements in one file-backed pass. The ranges must not overlap.
+/// Applies the planned worksheet-root autoFilter, mergeCells, and data-validation
+/// structural replacements in one file-backed pass. The ranges must not overlap.
 void write_worksheet_structural_metadata_rewrite(
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetStructuralMetadataRewritePlan& plan,

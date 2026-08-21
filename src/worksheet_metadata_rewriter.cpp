@@ -13,6 +13,7 @@
 #include <map>
 #include <numeric>
 #include <optional>
+#include <queue>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -4010,6 +4011,326 @@ std::string serialize_merged_cell_container(
     return xml;
 }
 
+struct DataValidationStructuralLocation {
+    std::uint64_t source_offset = 0;
+    std::uint64_t source_end_offset = 0;
+    std::uint64_t opening_end_offset = 0;
+    std::string opening_xml;
+};
+
+struct DataValidationStructuralScan {
+    bool saw_container = false;
+    std::uint64_t container_start_offset = 0;
+    std::uint64_t container_end_offset = 0;
+    std::uint64_t container_opening_end_offset = 0;
+    std::string container_opening_xml;
+    std::vector<DataValidationStructuralLocation> validations;
+};
+
+DataValidationStructuralScan scan_worksheet_data_validation_locations(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::size_t expected_validation_count)
+{
+    enum class FrameRole {
+        Generic,
+        Container,
+        Validation,
+    };
+    struct Frame {
+        std::string local_name;
+        std::string element_prefix;
+        FrameRole role = FrameRole::Generic;
+        std::optional<std::size_t> validation_index;
+    };
+
+    DataValidationStructuralScan result;
+    std::vector<Frame> stack;
+    std::string worksheet_element_prefix;
+    bool saw_worksheet_start = false;
+    bool saw_sheet_data_end = false;
+    bool saw_worksheet_end = false;
+
+    scan_worksheet_events_from_chunk_source(read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::WorksheetStart) {
+                if (saw_worksheet_start || event.self_closing) {
+                    throw FastXlsxError(
+                        "worksheet data-validation structural scan found an invalid worksheet root");
+                }
+                saw_worksheet_start = true;
+                worksheet_element_prefix =
+                    xml_element_prefix(event.raw_xml, "worksheet");
+                return;
+            }
+            if (event.kind == WorksheetEventKind::SheetDataEnd) {
+                saw_sheet_data_end = true;
+                return;
+            }
+            if (event.kind == WorksheetEventKind::WorksheetEnd) {
+                if (!event.self_closing) {
+                    saw_worksheet_end = true;
+                }
+                return;
+            }
+            if (event.kind != WorksheetEventKind::Metadata) {
+                return;
+            }
+
+            const std::string element_prefix =
+                xml_element_prefix(event.raw_xml, event.element_name);
+            if (is_closing_tag(event.raw_xml)) {
+                if (stack.empty() || stack.back().local_name != event.element_name
+                    || stack.back().element_prefix != element_prefix) {
+                    throw FastXlsxError(
+                        "worksheet data-validation structural scan found mismatched QName nesting");
+                }
+                Frame frame = std::move(stack.back());
+                stack.pop_back();
+                if (frame.role == FrameRole::Validation) {
+                    if (!frame.validation_index.has_value()
+                        || *frame.validation_index >= result.validations.size()) {
+                        throw FastXlsxError(
+                            "worksheet data-validation structural scan lost a validation boundary");
+                    }
+                    result.validations[*frame.validation_index].source_end_offset =
+                        event_end_offset(event);
+                } else if (frame.role == FrameRole::Container) {
+                    result.container_end_offset = event_end_offset(event);
+                }
+                return;
+            }
+
+            const bool top_level = stack.empty();
+            const bool direct_container_child = stack.size() == 1U
+                && stack.back().role == FrameRole::Container;
+            FrameRole role = FrameRole::Generic;
+            std::optional<std::size_t> validation_index;
+
+            if (top_level && event.element_name == "dataValidations"
+                && element_prefix == worksheet_element_prefix) {
+                if (!saw_sheet_data_end || result.saw_container) {
+                    throw FastXlsxError(
+                        "worksheet data-validation structural scan found an ambiguous container");
+                }
+                result.saw_container = true;
+                result.container_start_offset = event.raw_xml_offset;
+                result.container_opening_end_offset = event_end_offset(event);
+                result.container_opening_xml.assign(event.raw_xml);
+                role = FrameRole::Container;
+                if (event.self_closing) {
+                    result.container_end_offset = event_end_offset(event);
+                }
+            } else if (direct_container_child) {
+                if (event.element_name != "dataValidation"
+                    || element_prefix != worksheet_element_prefix) {
+                    throw FastXlsxError(
+                        "worksheet data-validation structural scan found an unsupported direct child");
+                }
+                const std::size_t index = result.validations.size();
+                if (index >= expected_validation_count) {
+                    throw FastXlsxError(
+                        "worksheet data-validation structural scan found an unexpected child");
+                }
+                result.validations.push_back(DataValidationStructuralLocation {
+                    event.raw_xml_offset,
+                    event.self_closing ? event_end_offset(event) : 0,
+                    event_end_offset(event),
+                    std::string(event.raw_xml),
+                });
+                role = FrameRole::Validation;
+                validation_index = index;
+            }
+
+            if (!event.self_closing) {
+                stack.push_back(Frame {
+                    std::string(event.element_name),
+                    element_prefix,
+                    role,
+                    validation_index,
+                });
+            }
+        });
+
+    if (!stack.empty() || !saw_worksheet_start || !saw_sheet_data_end
+        || !saw_worksheet_end) {
+        throw FastXlsxError(
+            "worksheet data-validation structural scan ended at an invalid boundary");
+    }
+    if (result.validations.size() != expected_validation_count) {
+        throw FastXlsxError(
+            "worksheet data-validation structural scan disagrees with the strict projection");
+    }
+    if (result.saw_container && result.container_end_offset == 0) {
+        throw FastXlsxError(
+            "worksheet data-validation structural scan found no container end");
+    }
+    for (const DataValidationStructuralLocation& validation : result.validations) {
+        if (validation.source_end_offset == 0) {
+            throw FastXlsxError(
+                "worksheet data-validation structural scan found no validation end");
+        }
+    }
+    return result;
+}
+
+bool cell_ranges_equal(CellRange left, CellRange right) noexcept
+{
+    return left.first_row == right.first_row
+        && left.first_column == right.first_column
+        && left.last_row == right.last_row
+        && left.last_column == right.last_column;
+}
+
+bool cell_range_lists_equal(
+    std::span<const CellRange> left, std::span<const CellRange> right) noexcept
+{
+    return left.size() == right.size()
+        && std::equal(left.begin(), left.end(), right.begin(), cell_ranges_equal);
+}
+
+class DataValidationColumnCoverage {
+public:
+    DataValidationColumnCoverage()
+        : tree_(node_count, 0)
+        , lazy_(node_count, 0)
+    {
+    }
+
+    void add(std::uint32_t first, std::uint32_t last, int delta)
+    {
+        add(1U, 1U, 16384U, first, last, delta);
+    }
+
+    [[nodiscard]] bool overlaps(std::uint32_t first, std::uint32_t last) const
+    {
+        return maximum(1U, 1U, 16384U, first, last) != 0;
+    }
+
+private:
+    void add(std::size_t node, std::uint32_t begin, std::uint32_t end,
+        std::uint32_t query_begin, std::uint32_t query_end, int delta)
+    {
+        if (query_begin <= begin && end <= query_end) {
+            tree_[node] += delta;
+            lazy_[node] += delta;
+            return;
+        }
+        const std::uint32_t middle = begin + (end - begin) / 2U;
+        if (query_begin <= middle) {
+            add(node * 2U, begin, middle, query_begin, query_end, delta);
+        }
+        if (query_end > middle) {
+            add(node * 2U + 1U, middle + 1U, end,
+                query_begin, query_end, delta);
+        }
+        tree_[node] = lazy_[node]
+            + std::max(tree_[node * 2U], tree_[node * 2U + 1U]);
+    }
+
+    [[nodiscard]] int maximum(std::size_t node, std::uint32_t begin,
+        std::uint32_t end, std::uint32_t query_begin,
+        std::uint32_t query_end) const
+    {
+        if (query_begin <= begin && end <= query_end) {
+            return tree_[node];
+        }
+        const std::uint32_t middle = begin + (end - begin) / 2U;
+        int result = 0;
+        if (query_begin <= middle) {
+            result = std::max(result,
+                maximum(node * 2U, begin, middle, query_begin, query_end));
+        }
+        if (query_end > middle) {
+            result = std::max(result,
+                maximum(node * 2U + 1U, middle + 1U, end,
+                    query_begin, query_end));
+        }
+        return lazy_[node] + result;
+    }
+
+    static constexpr std::size_t node_count = 4U * 16384U + 4U;
+    std::vector<int> tree_;
+    std::vector<int> lazy_;
+};
+
+void audit_data_validation_range_ownership(
+    std::vector<A1Range> ranges, std::string_view phase)
+{
+    const auto less = [](const A1Range& left, const A1Range& right) {
+        if (left.first.row != right.first.row) {
+            return left.first.row < right.first.row;
+        }
+        if (left.first.column != right.first.column) {
+            return left.first.column < right.first.column;
+        }
+        if (left.last.row != right.last.row) {
+            return left.last.row < right.last.row;
+        }
+        return left.last.column < right.last.column;
+    };
+    std::sort(ranges.begin(), ranges.end(), less);
+    for (std::size_t index = 1; index < ranges.size(); ++index) {
+        if (a1_ranges_equal(ranges[index - 1U], ranges[index])) {
+            throw FastXlsxError("worksheet data validation " + std::string(phase)
+                + " sqref ranges contain a duplicate");
+        }
+    }
+
+    struct ActiveRange {
+        std::uint32_t last_row = 0;
+        std::uint32_t first_column = 0;
+        std::uint32_t last_column = 0;
+    };
+    struct ActiveRangeLaterEnd {
+        bool operator()(const ActiveRange& left, const ActiveRange& right) const noexcept
+        {
+            return left.last_row > right.last_row;
+        }
+    };
+
+    DataValidationColumnCoverage coverage;
+    std::priority_queue<ActiveRange, std::vector<ActiveRange>, ActiveRangeLaterEnd>
+        active;
+    for (const A1Range& range : ranges) {
+        while (!active.empty() && active.top().last_row < range.first.row) {
+            coverage.add(active.top().first_column,
+                active.top().last_column, -1);
+            active.pop();
+        }
+        if (coverage.overlaps(range.first.column, range.last.column)) {
+            throw FastXlsxError("worksheet data validation " + std::string(phase)
+                + " sqref ranges overlap");
+        }
+        coverage.add(range.first.column, range.last.column, 1);
+        active.push(ActiveRange {
+            range.last.row, range.first.column, range.last.column});
+    }
+}
+
+std::vector<A1Range> flatten_data_validation_ranges(
+    std::span<const std::vector<CellRange>> validations)
+{
+    std::size_t total_range_count = 0;
+    for (const std::vector<CellRange>& ranges : validations) {
+        if (ranges.size() > worksheet_data_validation_structural_range_limit
+                - total_range_count) {
+            throw FastXlsxError(
+                "worksheet data validation structural edit exceeds the aggregate range limit");
+        }
+        total_range_count += ranges.size();
+    }
+
+    std::vector<A1Range> flattened;
+    flattened.reserve(total_range_count);
+    for (const std::vector<CellRange>& ranges : validations) {
+        for (const CellRange range : ranges) {
+            (void)range_reference(range);
+            flattened.push_back(a1_range_from_cell_range(range));
+        }
+    }
+    return flattened;
+}
+
 } // namespace
 
 std::optional<WorksheetMergedCellRewritePlan>
@@ -4232,6 +4553,138 @@ plan_worksheet_merged_cell_structural_rewrite(
         serialize_merged_cell_container(
             transformed_ranges, scan.merge_cells_element_prefix),
     };
+}
+
+std::optional<WorksheetDataValidationStructuralRewritePlan>
+plan_worksheet_data_validation_structural_rewrite(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    WorksheetRangeStructuralEdit edit,
+    std::span<const std::vector<CellRange>> validation_ranges)
+{
+    validate_range_structural_edit(edit);
+    if (edit.count == 0) {
+        return std::nullopt;
+    }
+
+    const std::vector<A1Range> source_ranges =
+        flatten_data_validation_ranges(validation_ranges);
+    audit_data_validation_range_ownership(source_ranges, "source");
+    const DataValidationStructuralScan scan =
+        scan_worksheet_data_validation_locations(
+            read_next_chunk, validation_ranges.size());
+    if (validation_ranges.empty()) {
+        return std::nullopt;
+    }
+    if (!scan.saw_container) {
+        throw FastXlsxError(
+            "worksheet data-validation strict projection has no matching container");
+    }
+
+    const bool edits_rows = edit.kind == WorksheetRangeStructuralEditKind::InsertRows
+        || edit.kind == WorksheetRangeStructuralEditKind::DeleteRows;
+    const std::uint32_t axis_limit = edits_rows ? 1048576U : 16384U;
+    std::vector<std::vector<CellRange>> transformed_validations;
+    transformed_validations.reserve(validation_ranges.size());
+    bool changed = false;
+    std::size_t final_validation_count = 0;
+    for (const std::vector<CellRange>& ranges : validation_ranges) {
+        std::vector<CellRange> transformed_ranges;
+        transformed_ranges.reserve(ranges.size());
+        for (const CellRange range : ranges) {
+            A1Range transformed = a1_range_from_cell_range(range);
+            const TransformedRangeAxis axis = edits_rows
+                ? transform_range_axis(range.first_row,
+                      range.last_row, edit, axis_limit)
+                : transform_range_axis(range.first_column,
+                      range.last_column, edit, axis_limit);
+            if (axis.removed) {
+                changed = true;
+                continue;
+            }
+            if (edits_rows) {
+                transformed.first.row = axis.first;
+                transformed.last.row = axis.last;
+            } else {
+                transformed.first.column = axis.first;
+                transformed.last.column = axis.last;
+            }
+            const CellRange transformed_range {
+                transformed.first.row,
+                transformed.first.column,
+                transformed.last.row,
+                transformed.last.column,
+            };
+            changed = changed || !cell_ranges_equal(range, transformed_range);
+            transformed_ranges.push_back(transformed_range);
+        }
+        if (!transformed_ranges.empty()) {
+            ++final_validation_count;
+        }
+        transformed_validations.push_back(std::move(transformed_ranges));
+    }
+
+    const std::vector<A1Range> final_ranges =
+        flatten_data_validation_ranges(transformed_validations);
+    audit_data_validation_range_ownership(final_ranges, "translated");
+    if (!changed) {
+        return std::nullopt;
+    }
+
+    WorksheetDataValidationStructuralRewritePlan plan;
+    if (final_validation_count == 0) {
+        plan.replacements.push_back(WorksheetStructuralMetadataReplacement {
+            scan.container_start_offset,
+            scan.container_end_offset,
+            {},
+        });
+        return plan;
+    }
+
+    const std::size_t removed_validation_count =
+        validation_ranges.size() - final_validation_count;
+    plan.replacements.reserve(
+        validation_ranges.size() + (removed_validation_count == 0 ? 0U : 1U));
+    if (removed_validation_count != 0) {
+        plan.replacements.push_back(WorksheetStructuralMetadataReplacement {
+            scan.container_start_offset,
+            scan.container_opening_end_offset,
+            metadata_container_opening_with_count(scan.container_opening_xml,
+                static_cast<std::uint64_t>(final_validation_count), false,
+                "data validation"),
+        });
+    }
+
+    for (std::size_t index = 0; index < validation_ranges.size(); ++index) {
+        const DataValidationStructuralLocation& location = scan.validations[index];
+        const std::vector<CellRange>& transformed = transformed_validations[index];
+        if (transformed.empty()) {
+            plan.replacements.push_back(WorksheetStructuralMetadataReplacement {
+                location.source_offset,
+                location.source_end_offset,
+                {},
+            });
+            continue;
+        }
+        if (cell_range_lists_equal(validation_ranges[index], transformed)) {
+            continue;
+        }
+        const std::string final_sqref = sqref(transformed);
+        if (final_sqref.size() > 64U * 1024U) {
+            throw FastXlsxError(
+                "worksheet data validation translated sqref exceeds the structural text limit");
+        }
+        plan.replacements.push_back(WorksheetStructuralMetadataReplacement {
+            location.source_offset,
+            location.opening_end_offset,
+            opening_tag_with_attribute_value(location.opening_xml, "sqref",
+                final_sqref, "dataValidation"),
+        });
+    }
+    if (plan.replacements.empty()) {
+        throw FastXlsxError(
+            "worksheet data-validation structural edit changed ranges without a replacement");
+    }
+    return plan;
 }
 
 void write_worksheet_hyperlink_rewrite(
@@ -4859,7 +5312,11 @@ void write_worksheet_structural_metadata_rewrite(
     };
 
     std::vector<StructuralReplacement> replacements;
-    replacements.reserve(2);
+    const std::size_t data_validation_replacement_count =
+        plan.data_validations.has_value()
+        ? plan.data_validations->replacements.size()
+        : 0U;
+    replacements.reserve(2U + data_validation_replacement_count);
     if (plan.auto_filter.has_value()) {
         replacements.push_back(StructuralReplacement {
             plan.auto_filter->source_offset,
@@ -4873,6 +5330,16 @@ void write_worksheet_structural_metadata_rewrite(
             plan.merged_cells->source_end_offset,
             plan.merged_cells->replacement_xml,
         });
+    }
+    if (plan.data_validations.has_value()) {
+        for (const WorksheetStructuralMetadataReplacement& replacement :
+            plan.data_validations->replacements) {
+            replacements.push_back(StructuralReplacement {
+                replacement.source_offset,
+                replacement.source_end_offset,
+                replacement.replacement_xml,
+            });
+        }
     }
     std::sort(replacements.begin(), replacements.end(),
         [](const StructuralReplacement& left,

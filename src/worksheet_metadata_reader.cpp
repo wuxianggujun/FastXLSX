@@ -561,6 +561,9 @@ private:
             throw FastXlsxError(
                 "worksheet metadata target container contains non-whitespace text");
         }
+        if (!stack_.empty()) {
+            return;
+        }
         throw FastXlsxError("worksheet metadata contains unexpected text");
     }
 

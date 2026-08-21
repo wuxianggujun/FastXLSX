@@ -144,6 +144,18 @@ void test_projects_metadata_in_source_order()
         "worksheet metadata reader changed the source package");
 }
 
+void test_ignores_text_in_non_target_metadata_subtrees()
+{
+    const std::filesystem::path path = write_fixture(
+        "worksheet-metadata-reader-data-validation-text.xlsx",
+        R"(<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData/><x:autoFilter ref="A1:D9"/><x:mergeCells count="1"><x:mergeCell ref="A2:B2"/></x:mergeCells><x:dataValidations count="1"><x:dataValidation type="list" sqref="C2:C9"><x:formula1>"One,Two"</x:formula1></x:dataValidation></x:dataValidations></x:worksheet>)");
+    const fastxlsx::WorkbookReader reader = fastxlsx::WorkbookReader::open(path);
+    const fastxlsx::WorksheetMetadataReadSummary summary =
+        reader.read_worksheet_metadata("Data");
+    check(summary.auto_filter_count == 1 && summary.merged_cell_count == 1,
+        "non-target data-validation formula text should not block metadata projection");
+}
+
 class CallbackFailure : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
@@ -261,6 +273,9 @@ void test_rejects_unsupported_and_malformed_shapes()
     expect_metadata_failure("worksheet-metadata-schema-order.xlsx",
         R"(<worksheet><sheetData/><mergeCells><mergeCell ref="A1:B1"/></mergeCells><autoFilter ref="A1"/></worksheet>)",
         "schema order");
+    expect_metadata_failure("worksheet-metadata-root-text.xlsx",
+        R"(<worksheet><sheetData/>unexpected<dataValidations count="0"/></worksheet>)",
+        "unexpected text");
 }
 
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
@@ -308,6 +323,7 @@ int main()
 {
     try {
         test_projects_metadata_in_source_order();
+        test_ignores_text_in_non_target_metadata_subtrees();
         test_callback_failure_allows_retry();
         test_guardrails();
         test_rejects_unsupported_and_malformed_shapes();

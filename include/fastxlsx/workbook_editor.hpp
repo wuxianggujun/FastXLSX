@@ -1061,17 +1061,20 @@ public:
     /// moved or stayed fixed, uses the narrow structural rewriter: row
     /// references before the insertion point stay fixed and references at or
     /// after it move down. `$` markers are preserved but do not suppress a
-    /// structural row adjustment. Worksheet-root merged ranges and the root
-    /// autoFilter range are audited and translated in the same transaction:
+    /// structural row adjustment. Worksheet-root merged ranges, the root
+    /// autoFilter range, and strictly projected data-validation `sqref` ranges
+    /// are audited and translated in the same transaction:
     /// ranges before the insertion stay fixed, ranges beginning at or after it
     /// shift down, and ranges spanning the insertion point expand. A changed
     /// autoFilter with criteria/sort child elements rejects rather than
     /// silently changing those semantics. A metadata-only change dirties even
     /// an empty CellStore. Malformed/overlapping source ranges, unsupported
-    /// filter children, or an Excel-bound overflow reject before either the
-    /// cell candidate or combined metadata replacement is published. It does
-    /// not update tables, data validations,
-    /// conditional formatting, hyperlinks, drawings/charts/VBA, defined names,
+    /// filter children, duplicate/overlapping validation ranges, more than 64K
+    /// aggregate validation ranges, or an Excel-bound overflow reject before
+    /// either the cell candidate or combined metadata replacement is published.
+    /// Validation rule/formula/prompt/error payload remains byte-preserved. It
+    /// does not update tables, conditional formatting, hyperlinks,
+    /// drawings/charts/VBA, defined names,
     /// relationships,
     /// sharedStrings/styles metadata, or calcChain beyond the existing
     /// worksheet rewrite policy.
@@ -1099,14 +1102,18 @@ public:
     /// before the deleted rows stay fixed, later references move up, and
     /// references into deleted rows become `#REF!`. `$` markers are preserved
     /// on surviving references but do not suppress structural adjustment. The
-    /// Worksheet-root merged ranges and the root autoFilter are audited in the
-    /// same transaction. A range after the deletion shifts up and an
+    /// Worksheet-root merged ranges, the root autoFilter, and strictly projected
+    /// data-validation `sqref` ranges are audited in the same transaction. A
+    /// range after the deletion shifts up and an
     /// intersecting range is clipped/compressed. A fully deleted merged range
     /// or single-cell merged result is removed; a fully deleted autoFilter is
-    /// removed, while its valid single-cell result remains. A surviving changed
-    /// autoFilter with criteria/sort children rejects. Any invalid final
-    /// overlap or source schema failure leaves cells and package state
-    /// unchanged. The operation does not recalculate or repair data validations,
+    /// removed, while valid single-cell auto-filter and validation results remain.
+    /// A validation with no surviving ranges is removed, and the final removal
+    /// removes the container. Its rule/formula/prompt/error payload is otherwise
+    /// byte-preserved. A surviving changed autoFilter with criteria/sort children
+    /// rejects. Any duplicate/overlapping validation range, 64K aggregate-range
+    /// overflow, invalid final overlap, or source schema failure leaves cells and
+    /// package state unchanged. The operation does not recalculate or repair
     /// conditional formatting, hyperlinks, tables, drawings/charts/VBA,
     /// relationships, sharedStrings/styles, or calcChain.
     /// This is not a complete Excel row deletion operation and not a large-file
@@ -1136,15 +1143,18 @@ public:
     /// moved or stayed fixed, uses the narrow structural rewriter: column
     /// references before the insertion point stay fixed and references at or
     /// after it move right. `$` markers are preserved but do not suppress a
-    /// structural column adjustment. Worksheet-root merged ranges and the root
-    /// autoFilter range are audited and translated in the same transaction:
+    /// structural column adjustment. Worksheet-root merged ranges, the root
+    /// autoFilter range, and strictly projected data-validation `sqref` ranges
+    /// are audited and translated in the same transaction:
     /// ranges before the insertion stay fixed, ranges beginning at or after it
     /// shift right, and ranges spanning the insertion point expand. A changed
     /// autoFilter with criteria/sort child elements rejects. A metadata-only
-    /// change dirties even an empty CellStore. Malformed/overlapping source
-    /// ranges, unsupported filter children, or an Excel-bound overflow reject
-    /// before either candidate is published. It does not update tables,
-    /// data validations, conditional formatting, hyperlinks,
+    /// change dirties even an empty CellStore. Malformed/overlapping merged
+    /// ranges, duplicate/overlapping validation ranges, more than 64K aggregate
+    /// validation ranges, unsupported filter children, or an Excel-bound
+    /// overflow reject before either candidate is published. Validation
+    /// rule/formula/prompt/error payload remains byte-preserved. It does not
+    /// update tables, conditional formatting, hyperlinks,
     /// drawings/charts/VBA, defined names, relationships,
     /// sharedStrings/styles metadata, or calcChain beyond the existing
     /// worksheet rewrite policy.
@@ -1172,15 +1182,20 @@ public:
     /// before the deleted columns stay fixed, later references move left, and
     /// references into deleted columns become `#REF!`. `$` markers are
     /// preserved on surviving references but do not suppress structural
-    /// adjustment. Worksheet-root merged ranges and the root autoFilter are
-    /// audited in the same transaction. A range after the deletion shifts left
+    /// adjustment. Worksheet-root merged ranges, the root autoFilter, and
+    /// strictly projected data-validation `sqref` ranges are audited in the same
+    /// transaction. A range after the deletion shifts left
     /// and an intersecting range is clipped/compressed. A fully deleted merged
     /// range or single-cell merged result is removed; a fully deleted
-    /// autoFilter is removed, while its valid single-cell result remains. A
-    /// surviving changed autoFilter with criteria/sort children rejects.
-    /// Invalid final overlap or source schema leaves cells and package state
-    /// unchanged. The operation does not recalculate or repair data validations,
-    /// conditional formatting, hyperlinks, tables, drawings/charts/VBA,
+    /// autoFilter is removed, while valid single-cell auto-filter and validation
+    /// results remain. A validation with no surviving ranges is removed, and the
+    /// final removal removes the container. Its rule/formula/prompt/error payload
+    /// is otherwise byte-preserved. A surviving changed autoFilter with
+    /// criteria/sort children rejects. Duplicate/overlapping validation ranges,
+    /// a 64K aggregate-range overflow, invalid final overlap, or source schema
+    /// failure leaves cells and package state unchanged. The operation does not
+    /// recalculate or repair conditional formatting, hyperlinks, tables,
+    /// drawings/charts/VBA,
     /// relationships, sharedStrings/styles, or calcChain.
     /// This is not a complete Excel column deletion operation and not a
     /// large-file low-memory random-editing path.
@@ -3614,10 +3629,13 @@ public:
     /// a DOM or cell matrix.
     ///
     /// This API does not detect overlapping validation ranges, modify cells or
-    /// styles, request recalculation, or synchronize validation ranges/formulas
-    /// with later row, column, cell, formula, table, or defined-name edits.
-    /// Failure occurs before public edit state is published and the editor
-    /// remains usable for retry.
+    /// styles, or request recalculation. A later WorksheetEditor row/column
+    /// insert/delete strictly projects the effective collection and translates
+    /// `sqref` ranges with shift/expand or shift/clip/full-removal semantics;
+    /// validation formulas and prompt/error payload are preserved, not rewritten.
+    /// Point cell edits, copy/move, table, formula, and defined-name edits do not
+    /// synchronize validation semantics. Failure occurs before public edit state
+    /// is published and the editor remains usable for retry.
     ///
     /// @throws FastXlsxError if the worksheet/range/rule is invalid, existing
     /// validation metadata is malformed or ambiguously ordered, or staging
@@ -3658,9 +3676,12 @@ public:
     ///
     /// The rewrite is file-backed and preserves non-target validations, cells,
     /// relationships, content types, styles, calc metadata, and unknown package
-    /// entries. It does not evaluate formulas, validate cell values, repair or
-    /// merge ranges, or synchronize later structural edits. Failure publishes no
-    /// package or public state and leaves the editor usable for retry.
+    /// entries. It does not evaluate formulas, validate cell values, or repair or
+    /// merge ranges. Surviving validations participate in the same strict
+    /// WorksheetEditor row/column `sqref` translation described by
+    /// add_data_validation(); other edits do not synchronize them. Failure
+    /// publishes no package or public state and leaves the editor usable for
+    /// retry.
     ///
     /// @throws FastXlsxError if the worksheet or index is invalid, the effective
     /// validation container cannot be strictly projected, or staging fails.

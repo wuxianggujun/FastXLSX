@@ -5961,6 +5961,105 @@ void test_public_worksheet_editor_insertions_translate_auto_filter_transactional
         "auto-filter insertion save should not modify the source package");
 }
 
+void test_public_worksheet_editor_insertions_translate_data_validations_transactionally()
+{
+    std::array<std::vector<fastxlsx::CellRange>, 2> source_validation_ranges {{
+        {{2, 1, 4, 1}, {6, 3, 7, 4}},
+        {{2, 8, 3, 8}},
+    }};
+    std::array<fastxlsx::DataValidationRule, 2> source_rules;
+    source_rules[0].type = fastxlsx::DataValidationType::Custom;
+    source_rules[0].formula1 = "A2<>\"A&B\"";
+    source_rules[0].allow_blank = true;
+    source_rules[0].show_input_message = true;
+    source_rules[0].show_error_message = true;
+    source_rules[0].error_style = fastxlsx::DataValidationErrorStyle::Warning;
+    source_rules[0].prompt_title = "Choose 'value'";
+    source_rules[0].prompt = "A & B";
+    source_rules[0].error_title = "Bad & \"value\"";
+    source_rules[0].error = "Use < 10";
+    source_rules[1].type = fastxlsx::DataValidationType::Whole;
+    source_rules[1].operator_type = fastxlsx::DataValidationOperator::Between;
+    source_rules[1].formula1 = "1";
+    source_rules[1].formula2 = "10";
+
+    const std::array<fastxlsx::CellRange, 1> merged_ranges {{{3, 5, 4, 6}}};
+    const std::filesystem::path source = write_two_sheet_source_with_data_validations(
+        "fastxlsx-workbook-editor-public-shift-insert-validation-source.xlsx",
+        source_validation_ranges, source_rules, fastxlsx::CellRange {2, 2, 5, 4},
+        merged_ranges);
+    auto source_entries = fastxlsx::test::read_zip_entries(source);
+    source_entries.emplace("custom/structural-validation.bin",
+        "preserve-validation-insert");
+    fastxlsx::test::write_stored_zip_entries(source, source_entries);
+    source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::DataValidationRule added_rule;
+    added_rule.type = fastxlsx::DataValidationType::List;
+    added_rule.formula1 = "\"Red,Blue\"";
+    added_rule.hide_dropdown_arrow = true;
+    const std::array<fastxlsx::CellRange, 2> added_ranges {{
+        {3, 10, 5, 10},
+        {8, 12, 9, 13},
+    }};
+    const std::filesystem::path missing_output = artifact(
+        "missing-structural-validation-insert-parent/output.xlsx");
+    std::error_code ignored;
+    std::filesystem::remove_all(missing_output.parent_path(), ignored);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-insert-validation-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.add_data_validation("Data", added_ranges, added_rule);
+    editor.remove_data_validation("Data", 1);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.insert_rows(4, 2);
+    sheet.insert_columns(3, 1);
+
+    const auto summaries = editor.pending_worksheet_edits();
+    check(summaries.size() == 1
+            && summaries.front().data_validation_count == 1
+            && summaries.front().data_validation_removal_count == 1
+            && summaries.front().auto_filter_changed,
+        "structural validation insertion should retain Patch diagnostics and final filter state");
+    check(sheet.has_pending_changes() && editor.has_unsaved_changes()
+            && editor.unsaved_change_count() == 3,
+        "validation insertion should retain two Patch edits and one dirty materialized session");
+    check(threw_fastxlsx_error([&] { editor.save_as(missing_output); }),
+        "data-validation insertion save should fail for a missing output parent");
+    check(sheet.has_pending_changes() && editor.has_unsaved_changes()
+            && editor.unsaved_change_count() == 3,
+        "failed data-validation insertion save should preserve all retry state");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
+        "successful data-validation insertion retry should clean unsaved state");
+    const std::array<std::vector<fastxlsx::CellRange>, 2> expected_ranges {{
+        {{2, 1, 6, 1}, {8, 4, 9, 5}},
+        {{3, 11, 7, 11}, {10, 13, 11, 14}},
+    }};
+    const std::array<fastxlsx::DataValidationRule, 2> expected_rules {{
+        source_rules[0], added_rule,
+    }};
+    check_data_validation_views_equal(read_worksheet_data_validation_views(output),
+        expected_ranges, expected_rules,
+        "same-session data-validation row/column insertion output");
+    check_cell_range_equals(read_worksheet_auto_filter_range(output), 2, 2, 7, 5,
+        "combined data-validation auto-filter insertion output");
+    const std::array<fastxlsx::CellRange, 1> expected_merged {{{3, 6, 6, 7}}};
+    check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected_merged,
+        "combined data-validation merged-cell insertion output");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("custom/structural-validation.bin")
+            == "preserve-validation-insert",
+        "data-validation insertion should preserve unknown package entries");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "data-validation insertion should preserve untouched worksheets");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "data-validation insertion save should not modify the source package");
+}
+
 void test_public_worksheet_editor_structural_auto_filter_rejects_child_semantics()
 {
     const std::array<fastxlsx::CellRange, 1> merged_ranges {{{2, 5, 4, 6}}};
@@ -6010,6 +6109,10 @@ void test_public_worksheet_editor_metadata_only_insert_and_failure_no_pollution(
         fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(empty_source);
         fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
         data.merge_cells({2, 2, 3, 3});
+        fastxlsx::DataValidationRule list;
+        list.type = fastxlsx::DataValidationType::List;
+        list.formula1 = "\"A,B\"";
+        data.add_data_validation({2, 4, 3, 4}, list);
         writer.close();
     }
     const std::filesystem::path empty_output = artifact(
@@ -6028,6 +6131,19 @@ void test_public_worksheet_editor_metadata_only_insert_and_failure_no_pollution(
     const std::array<fastxlsx::CellRange, 1> empty_expected {{{3, 2, 4, 3}}};
     check_merged_ranges_equal(read_worksheet_merged_ranges(empty_output), empty_expected,
         "empty CellStore merged-cell insertion output");
+    fastxlsx::DataValidationRule expected_list;
+    expected_list.type = fastxlsx::DataValidationType::List;
+    expected_list.formula1 = "\"A,B\"";
+    const std::array<std::vector<fastxlsx::CellRange>, 1> expected_validation_ranges {{
+        {{3, 4, 4, 4}},
+    }};
+    const std::array<fastxlsx::DataValidationRule, 1> expected_validation_rules {{
+        expected_list,
+    }};
+    check_data_validation_views_equal(
+        read_worksheet_data_validation_views(empty_output),
+        expected_validation_ranges, expected_validation_rules,
+        "empty CellStore data-validation insertion output");
 
     const std::array<fastxlsx::CellRange, 1> malformed_ranges {{{1, 1, 1, 2}}};
     const std::filesystem::path malformed_source =
@@ -6081,7 +6197,9 @@ void test_public_worksheet_editor_structural_metadata_staging_failure_retries()
         "</sheetData>",
         "</sheetData><autoFilter ref=\"A1:D3\"/>"
         "<mergeCells count=\"1\"><mergeCell ref=\"B2:C3\"/>"
-        "</mergeCells>");
+        "</mergeCells><dataValidations count=\"1\"><dataValidation type=\"list\" "
+        "sqref=\"E2:E3\"><formula1>\"A,B\"</formula1></dataValidation>"
+        "</dataValidations>");
     fastxlsx::test::write_stored_zip_entries(source, source_entries);
 
     const std::filesystem::path output = artifact(
@@ -6119,6 +6237,16 @@ void test_public_worksheet_editor_structural_metadata_staging_failure_retries()
         "staging-failure merged-cell retry output");
     check_cell_range_equals(read_worksheet_auto_filter_range(output), 1, 1, 4, 4,
         "staging-failure auto-filter retry output");
+    fastxlsx::DataValidationRule retry_rule;
+    retry_rule.type = fastxlsx::DataValidationType::List;
+    retry_rule.formula1 = "\"A,B\"";
+    const std::array<std::vector<fastxlsx::CellRange>, 1> retry_ranges {{
+        {{3, 5, 4, 5}},
+    }};
+    const std::array<fastxlsx::DataValidationRule, 1> retry_rules {{retry_rule}};
+    check_data_validation_views_equal(read_worksheet_data_validation_views(output),
+        retry_ranges, retry_rules,
+        "staging-failure data-validation retry output");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
     const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("D3");
@@ -6135,7 +6263,7 @@ void test_public_worksheet_editor_structural_merged_cells_preserve_qname()
         "fastxlsx-workbook-editor-public-shift-insert-prefixed-merged-source.xlsx");
     auto entries = fastxlsx::test::read_zip_entries(source);
     entries.at("xl/worksheets/sheet1.xml") =
-        R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData></x:sheetData><x:autoFilter custom="keep" ref='B2:C3'><!--filter-comment--></x:autoFilter><x:mergeCells count="1"><x:mergeCell ref="B2:C3"/></x:mergeCells></x:worksheet>)";
+        R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData></x:sheetData><x:autoFilter custom="keep" ref='B2:C3'><!--filter-comment--></x:autoFilter><x:mergeCells count="1"><x:mergeCell ref="B2:C3"/></x:mergeCells><x:dataValidations count='1'><x:dataValidation promptTitle="Pick &quot;one&quot;" type='list' showInputMessage="1" sqref='B2:C3' prompt='A &amp; B'><x:formula1>"One,Two"</x:formula1></x:dataValidation></x:dataValidations></x:worksheet>)";
     fastxlsx::test::write_stored_zip_entries(source, entries);
     const std::filesystem::path output = artifact(
         "fastxlsx-workbook-editor-public-shift-insert-prefixed-merged-output.xlsx");
@@ -6158,11 +6286,31 @@ void test_public_worksheet_editor_structural_merged_cells_preserve_qname()
     check_contains(worksheet_xml,
         "<x:mergeCells count=\"1\"><x:mergeCell ref=\"C2:D4\"/></x:mergeCells>",
         "structural rewrite should preserve the audited worksheet QName prefix");
+    check_contains(worksheet_xml,
+        "<x:dataValidation promptTitle=\"Pick &quot;one&quot;\" type='list' "
+        "showInputMessage=\"1\" sqref='C2:D4' prompt='A &amp; B'>"
+        "<x:formula1>\"One,Two\"</x:formula1></x:dataValidation>",
+        "data-validation structural rewrite should preserve QName, order, quotes, and child XML");
     check_cell_range_equals(read_worksheet_auto_filter_range(output), 2, 3, 4, 4,
         "prefixed structural auto-filter output");
     const std::array<fastxlsx::CellRange, 1> expected_ranges {{{2, 3, 4, 4}}};
     check_merged_ranges_equal(read_worksheet_merged_ranges(output), expected_ranges,
         "prefixed structural merged-cell output");
+    fastxlsx::DataValidationRule prefixed_rule;
+    prefixed_rule.type = fastxlsx::DataValidationType::List;
+    prefixed_rule.formula1 = "\"One,Two\"";
+    prefixed_rule.show_input_message = true;
+    prefixed_rule.prompt_title = "Pick \"one\"";
+    prefixed_rule.prompt = "A & B";
+    const std::array<std::vector<fastxlsx::CellRange>, 1> prefixed_ranges {{
+        {{2, 3, 4, 4}},
+    }};
+    const std::array<fastxlsx::DataValidationRule, 1> prefixed_rules {{
+        prefixed_rule,
+    }};
+    check_data_validation_views_equal(read_worksheet_data_validation_views(output),
+        prefixed_ranges, prefixed_rules,
+        "prefixed structural data-validation output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
@@ -6235,6 +6383,7 @@ int main()
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_insertions_translate_merged_cells_transactionally();
             test_public_worksheet_editor_insertions_translate_auto_filter_transactionally();
+            test_public_worksheet_editor_insertions_translate_data_validations_transactionally();
             test_public_worksheet_editor_structural_auto_filter_rejects_child_semantics();
             test_public_worksheet_editor_metadata_only_insert_and_failure_no_pollution();
             test_public_worksheet_editor_structural_metadata_staging_failure_retries();

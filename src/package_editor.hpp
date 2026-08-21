@@ -32,10 +32,12 @@ struct WorksheetStructuralMetadataRewriteResult {
     bool auto_filter_changed = false;
     std::optional<CellRange> auto_filter_range;
     bool merged_cells_changed = false;
+    bool data_validations_changed = false;
 
     [[nodiscard]] bool changed() const noexcept
     {
-        return auto_filter_changed || merged_cells_changed;
+        return auto_filter_changed || merged_cells_changed
+            || data_validations_changed;
     }
 };
 
@@ -678,7 +680,8 @@ public:
         WorksheetMergedCellRewriteOperation operation);
     // Translates supported worksheet-root range metadata for one row/column
     // structural edit and commits all changes as one staged worksheet
-    // replacement. The result carries the final auto-filter diagnostic.
+    // replacement. The result carries the final auto-filter diagnostic while
+    // data-validation rules retain their existing public add/remove counts.
     [[nodiscard]] WorksheetStructuralMetadataRewriteResult
     rewrite_structural_metadata_by_name(
         std::string_view sheet_name,

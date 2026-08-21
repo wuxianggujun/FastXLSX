@@ -70,9 +70,10 @@ enum class DataValidationErrorStyle {
 ///
 /// FastXLSX copies formula and prompt/error text into writer/editor state or an
 /// owning bounded-reader callback value. Formula text is not parsed, evaluated,
-/// or checked against cell contents. The rule does not imply formula
-/// recalculation, relationships, content types, styles, or structural range
-/// synchronization.
+/// or checked against cell contents. The rule does not by itself imply formula
+/// recalculation, relationships, content types, styles, or structural edits.
+/// WorksheetEditor row/column insert/delete separately translates strictly
+/// projected validation ranges without rewriting this rule payload.
 struct DataValidationRule {
     /// Validation kind mapped to the OpenXML `type` attribute.
     DataValidationType type = DataValidationType::List;

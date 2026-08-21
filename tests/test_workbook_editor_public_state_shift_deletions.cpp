@@ -4075,6 +4075,136 @@ void test_public_worksheet_editor_full_auto_filter_deletion_removes_child_metada
         "full auto-filter deletion should preserve surviving cell payloads");
 }
 
+void test_public_worksheet_editor_deletions_translate_data_validations()
+{
+    std::array<std::vector<fastxlsx::CellRange>, 3> source_ranges {{
+        {{1, 1, 2, 2}, {2, 3, 4, 4}},
+        {{2, 8, 3, 9}},
+        {{5, 4, 6, 5}},
+    }};
+    std::array<fastxlsx::DataValidationRule, 3> source_rules;
+    source_rules[0].type = fastxlsx::DataValidationType::List;
+    source_rules[0].formula1 = "\"One,Two\"";
+    source_rules[0].show_input_message = true;
+    source_rules[0].prompt_title = "Pick & choose";
+    source_rules[0].prompt = "Use < 10";
+    source_rules[1].type = fastxlsx::DataValidationType::Whole;
+    source_rules[1].operator_type = fastxlsx::DataValidationOperator::Between;
+    source_rules[1].formula1 = "1";
+    source_rules[1].formula2 = "10";
+    source_rules[2].type = fastxlsx::DataValidationType::Custom;
+    source_rules[2].formula1 = "D5<>\"A&B\"";
+
+    const std::filesystem::path source = write_two_sheet_source_with_data_validations(
+        "fastxlsx-workbook-editor-public-shift-delete-validation-source.xlsx",
+        source_ranges, source_rules);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-delete-validation-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.delete_rows(2, 2);
+    sheet.delete_columns(3, 1);
+    check(sheet.has_pending_changes() && editor.unsaved_change_count() == 1,
+        "data-validation deletions should publish one combined materialized candidate");
+    editor.save_as(output);
+
+    const std::array<std::vector<fastxlsx::CellRange>, 2> expected_ranges {{
+        {{1, 1, 1, 2}, {2, 3, 2, 3}},
+        {{3, 3, 4, 4}},
+    }};
+    const std::array<fastxlsx::DataValidationRule, 2> expected_rules {{
+        source_rules[0], source_rules[2],
+    }};
+    check_data_validation_views_equal(read_worksheet_data_validation_views(output),
+        expected_ranges, expected_rules,
+        "data-validation row/column deletion output");
+    const std::string worksheet_xml =
+        fastxlsx::test::read_zip_entries(output).at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dataValidations count=\"2\">",
+        "data-validation deletion should normalize the retained child count");
+    check_not_contains(worksheet_xml, "H2:I3",
+        "data-validation deletion should remove a fully covered rule");
+    check_contains(worksheet_xml, "sqref=\"A1:B1 C2\"",
+        "data-validation deletion should retain clipped and single-cell ranges");
+}
+
+void test_public_worksheet_editor_deletion_removes_last_data_validation_container()
+{
+    const std::array<std::vector<fastxlsx::CellRange>, 1> source_ranges {{
+        {{2, 2, 3, 3}},
+    }};
+    std::array<fastxlsx::DataValidationRule, 1> source_rules;
+    source_rules[0].type = fastxlsx::DataValidationType::List;
+    source_rules[0].formula1 = "\"A,B\"";
+    const std::filesystem::path source = write_two_sheet_source_with_data_validations(
+        "fastxlsx-workbook-editor-public-shift-delete-last-validation-source.xlsx",
+        source_ranges, source_rules);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-shift-delete-last-validation-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.delete_rows(2, 2);
+    editor.save_as(output);
+
+    check(read_worksheet_data_validation_views(output).empty(),
+        "deleting the final validation should leave no bounded reader projection");
+    check_not_contains(fastxlsx::test::read_zip_entries(output)
+            .at("xl/worksheets/sheet1.xml"),
+        "<dataValidations",
+        "deleting the final validation should remove its complete container");
+}
+
+void test_public_worksheet_editor_structural_data_validation_overlap_rejections()
+{
+    fastxlsx::DataValidationRule rule;
+    rule.type = fastxlsx::DataValidationType::List;
+    rule.formula1 = "\"A,B\"";
+
+    const std::array<std::vector<fastxlsx::CellRange>, 1> duplicate_ranges {{
+        {{1, 1, 2, 1}, {1, 1, 2, 1}},
+    }};
+    const std::array<fastxlsx::DataValidationRule, 1> duplicate_rules {{rule}};
+    const std::filesystem::path duplicate_source =
+        write_two_sheet_source_with_data_validations(
+            "fastxlsx-workbook-editor-public-shift-delete-duplicate-validation-source.xlsx",
+            duplicate_ranges, duplicate_rules);
+    const auto duplicate_entries = fastxlsx::test::read_zip_entries(duplicate_source);
+    fastxlsx::WorkbookEditor duplicate_editor =
+        fastxlsx::WorkbookEditor::open(duplicate_source);
+    fastxlsx::WorksheetEditor duplicate_sheet = duplicate_editor.worksheet("Data");
+    check(threw_fastxlsx_error([&] { duplicate_sheet.delete_rows(2, 1); }),
+        "duplicate validation ranges should reject structural deletion");
+    check(!duplicate_sheet.has_pending_changes()
+            && !duplicate_editor.has_pending_changes()
+            && !duplicate_editor.has_unsaved_changes()
+            && duplicate_sheet.get_cell("A2").text_value() == "placeholder-a2",
+        "duplicate validation rejection should preserve cells and public state");
+    check(fastxlsx::test::read_zip_entries(duplicate_source) == duplicate_entries,
+        "duplicate validation rejection should not modify the source package");
+
+    const std::array<std::vector<fastxlsx::CellRange>, 2> overlapping_ranges {{
+        {{1, 1, 2, 2}},
+        {{2, 2, 3, 3}},
+    }};
+    const std::array<fastxlsx::DataValidationRule, 2> overlapping_rules {{rule, rule}};
+    const std::filesystem::path overlapping_source =
+        write_two_sheet_source_with_data_validations(
+            "fastxlsx-workbook-editor-public-shift-delete-overlap-validation-source.xlsx",
+            overlapping_ranges, overlapping_rules);
+    fastxlsx::WorkbookEditor overlapping_editor =
+        fastxlsx::WorkbookEditor::open(overlapping_source);
+    fastxlsx::WorksheetEditor overlapping_sheet = overlapping_editor.worksheet("Data");
+    check(threw_fastxlsx_error([&] { overlapping_sheet.delete_columns(2, 1); }),
+        "overlapping validation ranges should reject structural deletion");
+    check(!overlapping_sheet.has_pending_changes()
+            && !overlapping_editor.has_pending_changes()
+            && !overlapping_editor.has_unsaved_changes()
+            && overlapping_sheet.get_cell("B1").number_value() == 1.0,
+        "overlapping validation rejection should preserve cells and public state");
+}
+
 } // namespace
 
 int main()
@@ -4101,6 +4231,9 @@ int main()
             test_public_worksheet_editor_deletion_removes_last_merged_cell_container();
             test_public_worksheet_editor_deletions_translate_auto_filter_transactionally();
             test_public_worksheet_editor_full_auto_filter_deletion_removes_child_metadata();
+            test_public_worksheet_editor_deletions_translate_data_validations();
+            test_public_worksheet_editor_deletion_removes_last_data_validation_container();
+            test_public_worksheet_editor_structural_data_validation_overlap_rejections();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());
         return 1;

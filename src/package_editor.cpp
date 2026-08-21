@@ -10157,11 +10157,51 @@ PackageEditor::rewrite_structural_metadata_by_name(
                 return merged_cell_planning_reader(chunk);
             },
             edit);
+
+    std::vector<std::vector<CellRange>> validation_ranges;
+    std::size_t retained_validation_range_count = 0;
+    WorksheetDataValidationReadCallbacks validation_callbacks;
+    validation_callbacks.on_data_validation =
+        [&](const WorksheetDataValidationView& validation) {
+            if (validation.ranges.size()
+                > worksheet_data_validation_structural_range_limit
+                    - retained_validation_range_count) {
+                throw FastXlsxError(
+                    "worksheet data validation structural edit exceeds the aggregate range limit");
+            }
+            retained_validation_range_count += validation.ranges.size();
+            validation_ranges.push_back(validation.ranges);
+        };
+    CurrentWorksheetInputChunkReader validation_projection_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for data-validation structural audit");
+    const WorksheetDataValidationReadSummary validation_summary =
+        read_worksheet_data_validations_from_chunk_source(
+            [&](std::string& chunk) {
+                return validation_projection_reader(chunk);
+            },
+            validation_callbacks);
+    if (validation_summary.validation_count
+        != static_cast<std::uint64_t>(validation_ranges.size())) {
+        throw FastXlsxError(
+            "worksheet data validation structural projection count is inconsistent");
+    }
+
+    CurrentWorksheetInputChunkReader validation_planning_reader(
+        reader_, worksheet_part, input_source,
+        "current worksheet input for data-validation structural planning");
+    rewrite_plan.data_validations =
+        plan_worksheet_data_validation_structural_rewrite(
+            [&](std::string& chunk) {
+                return validation_planning_reader(chunk);
+            },
+            edit, validation_ranges);
     result.auto_filter_changed = rewrite_plan.auto_filter.has_value();
     if (rewrite_plan.auto_filter.has_value()) {
         result.auto_filter_range = rewrite_plan.auto_filter->final_range;
     }
     result.merged_cells_changed = rewrite_plan.merged_cells.has_value();
+    result.data_validations_changed = rewrite_plan.data_validations.has_value();
     if (!result.changed()) {
         return result;
     }
@@ -10182,8 +10222,8 @@ PackageEditor::rewrite_structural_metadata_by_name(
     std::vector<std::string> commit_notes;
     commit_notes.emplace_back(
         "materialized worksheet structural edit translates supported worksheet-root "
-        "auto-filter and merged-cell metadata in one transaction without relationship, "
-        "content-type, or calc mutation");
+        "auto-filter, merged-cell, and data-validation metadata in one transaction "
+        "without relationship, content-type, or calc mutation");
     replace_worksheet_part_from_chunk_source_with_commit_notes(
         worksheet_part, staged_source, worksheet_metadata_reference_policy(),
         "materialized worksheet structural metadata synchronization",
